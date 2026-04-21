@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>iPlayground 完訓證明</title>
+    <link rel="stylesheet" href="/assets/home.css">
+  </head>
+  <body>
+    <div class="shell">
+      <main class="hero">
+        <section class="panel hero-card" aria-labelledby="page-title">
+          <div class="brand-row">
+            <img class="brand-logo" src="/assets/logo_b_alpha.png" alt="iPlayground">
+          </div>
+
+          <div class="hero-copy">
+            <div class="eyebrow">完訓證明申請首頁</div>
+            <h1 id="page-title">填好資料，就能往完訓證明流程前進。</h1>
+            <p class="lead">
+              這個首頁先完成會眾輸入介面，讓活動名、報名人姓名與 email 的欄位先固定下來。
+              目前尚未串接資料庫與證明產生流程，因此送出後只會顯示前端提示，不會建立任何紀錄。
+            </p>
+          </div>
+
+          <div class="hero-form-shell">
+            <h2 class="form-title">會眾資料</h2>
+            <p class="form-subtitle">
+              請先填寫基本資訊。這一版只完成介面，不會送出到後端，也不會讀取 DB。
+            </p>
+
+            <form id="document-request-form">
+              <div class="field">
+                <span id="event-name-label" class="field-label">活動名</span>
+                <div class="custom-select" id="event-name-select">
+                  <input id="event-name" name="eventName" type="hidden" value="iPlayground 2026">
+                  <button
+                    class="custom-select-trigger"
+                    id="event-name-trigger"
+                    type="button"
+                    aria-expanded="false"
+                    aria-haspopup="listbox"
+                    aria-controls="event-name-options"
+                    aria-labelledby="event-name-label event-name-value"
+                  >
+                    <span id="event-name-value" class="custom-select-value">iPlayground 2026</span>
+                    <span class="select-caret" aria-hidden="true"></span>
+                  </button>
+                  <div class="custom-select-menu" id="event-name-options" role="listbox" hidden>
+                    <button
+                      class="custom-select-option is-selected"
+                      type="button"
+                      role="option"
+                      aria-selected="true"
+                      data-value="iPlayground 2026"
+                    >
+                      iPlayground 2026
+                    </button>
+                  </div>
+                </div>
+                <div id="event-name-hint" class="hint">目前先固定單一選項，未來會改由資料來源動態帶入。</div>
+              </div>
+
+              <div class="field">
+                <span id="attendee-name-label" class="field-label">報名人姓名</span>
+                <input
+                  id="attendee-name"
+                  name="attendeeName"
+                  type="text"
+                  autocomplete="name"
+                  aria-labelledby="attendee-name-label"
+                  placeholder="請輸入您的報名人姓名"
+                >
+              </div>
+
+              <div class="field">
+                <span id="email-label" class="field-label">email</span>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autocomplete="email"
+                  inputmode="email"
+                  aria-labelledby="email-label"
+                  placeholder="name@example.com"
+                >
+              </div>
+
+              <div class="form-actions">
+                <button class="primary-action" type="button" id="preview-action">確認欄位配置</button>
+                <div class="secondary-note">送出流程尚未啟用</div>
+              </div>
+
+              <div id="form-feedback" class="feedback" role="status" aria-live="polite">
+                目前為靜態 GUI 示意頁，按下按鈕後會顯示前端提示，方便先確認欄位與版面。
+              </div>
+            </form>
+
+            <p class="footnote">
+              若後續要接上 DB，建議先由活動清單提供下拉選項，再將姓名與 email 送往受保護的管理或查詢流程。
+            </p>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <small>本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有，未經授權不得轉載、重製或作其他商業用途。</small>
+      </footer>
+    </div>
+
+    <script src="/assets/home.js"></script>
+  </body>
+</html>
