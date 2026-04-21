@@ -76,6 +76,7 @@
 ## 安全規則
 
 - 不得將任何機密、金鑰、連線字串或 SAS Token 提交到儲存庫。
+- 不得將任何 Azure 環境專屬設定、匯出的設定檔或部署憑證提交到儲存庫，例如 `local.settings.json`、publish profile、Portal 匯出的設定內容或其他含實際 Azure 設定值的檔案；僅可提交去敏後的範本與 IaC 定義。
 - 只要 Azure 能乾淨支援，就優先使用 Managed Identity，而非長效機密。
 - 產生 Blob Storage 下載連結時，優先使用 user delegation SAS，而非 account key 簽署的 SAS。
 - 公開驗證回應應保持最小揭露並兼顧隱私。
@@ -142,6 +143,7 @@ scripts/
 
 - 重大技術決策變更時，必須同步更新本檔案。
 - 重要架構變更應記錄於 `docs/adr/`。
+- 凡是 Azure 資源建立、部署、設定變更或環境初始化流程，都必須同步記錄於 `docs/`。
 - 一旦引入環境變數、Storage 容器與 Cosmos 容器，應補上文件。
 - 公開或管理 API 一旦實作，應提供 API 範例。
 

@@ -10,8 +10,9 @@ __pycache__/
 .funcignore.local
 .python_packages/
 local.settings.json
+infra/bicep/main.json
+infra/bicep/*.local.bicepparam
 
 dist/
 build/
 *.egg-info/
-

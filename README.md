@@ -86,3 +86,13 @@ func start --port 7075 --skip-azure-storage-check
 - `local.settings.json` 內已設定 `AzureWebJobsDisableHomepage=true`，避免根目錄顯示 Azure Functions 預設首頁。
 - 目前未接 Azurite 或實體 Storage Account，因此本機啟動時可能看到 `AzureWebJobsStorage` 的 unhealthy 訊息；在 `--skip-azure-storage-check` 下，這不影響目前兩個純文字頁面。
 - 目前不保留其他 API、管理路由與下載流程。
+
+## Azure 部署
+
+目前已建立以 GitHub Actions + OIDC 部署 Azure Functions Flex Consumption 的基線檔案：
+
+- [infra/bicep/main.bicep](infra/bicep/main.bicep)
+- [.github/workflows/deploy-function-app.yml](.github/workflows/deploy-function-app.yml)
+- [docs/deployment-github-actions.md](docs/deployment-github-actions.md)
+
+目前基線已收斂為單一 production 環境，但實際 Azure 設定值不提交到 git。`infra/bicep/` 負責定義 Azure 資源，Azure CLI 負責套用這些定義，GitHub Actions 則負責既有 Function App 的程式碼部署。完整流程請參考 [docs/deployment-github-actions.md](docs/deployment-github-actions.md)。
