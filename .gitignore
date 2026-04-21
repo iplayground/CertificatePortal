@@ -1,0 +1,17 @@
+.DS_Store
+.python-version
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+
+.azurefunctions/
+.funcignore.local
+.python_packages/
+local.settings.json
+
+dist/
+build/
+*.egg-info/
+
