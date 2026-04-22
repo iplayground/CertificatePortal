@@ -37,8 +37,8 @@ def test_portal_login_page_returns_html_with_expected_fields() -> None:
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["X-Robots-Tag"] == "noindex, nofollow"
     assert "<html lang=\"zh-TW\">" in body
-    assert "<title>iPlayground 管理平台登入</title>" in body
-    assert '<h1 id="portal-title">管理中心</h1>' in body
+    assert "<title>完訓證明管理平台 - iPlayground</title>" in body
+    assert '<h1 id="portal-title">完訓證明管理平台</h1>' in body
     assert '<p class="panel-kicker">管理者登入</p>' in body
     assert 'id="portal-login-view"' in body
     assert 'id="portal-dashboard"' not in body
@@ -57,6 +57,8 @@ def test_portal_login_page_returns_html_with_expected_fields() -> None:
     assert 'class="portal-form-shell"' in body
     assert 'type="submit" disabled' in body
     assert 'name="color-scheme"' in body
+    assert 'href="/assets/favicon.png"' in body
+    assert 'sizes="32x32"' in body
     assert 'href="/assets/theme.css"' in body
     assert 'href="/assets/portal.css"' in body
     assert 'src="/assets/portal-login.js"' in body
@@ -76,7 +78,7 @@ def test_portal_dashboard_page_returns_html_with_expected_fields() -> None:
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["X-Robots-Tag"] == "noindex, nofollow"
     assert "<html lang=\"zh-TW\">" in body
-    assert "<title>iPlayground 管理者中心</title>" in body
+    assert "<title>完訓證明管理平台 - iPlayground</title>" in body
     assert 'id="portal-dashboard"' in body
     assert 'class="portal-dashboard-shell"' in body
     assert 'data-home-page-path="/"' in body
@@ -101,6 +103,7 @@ def test_portal_dashboard_page_returns_html_with_expected_fields() -> None:
     assert 'src="/portal/dashboard/welcome"' in body
     assert 'href="/assets/theme.css"' in body
     assert 'href="/assets/portal.css"' in body
+    assert 'href="/assets/favicon.png"' in body
     assert 'src="/assets/portal-dashboard.js"' in body
     assert "完訓證明管理平台" in body
     assert "iPlayground Certify" not in body
@@ -119,7 +122,7 @@ def test_portal_dashboard_welcome_page_returns_html_with_expected_fields() -> No
     assert response.headers["Content-Language"] == "zh-TW"
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["X-Robots-Tag"] == "noindex, nofollow"
-    assert "<title>完訓證明管理平台</title>" in body
+    assert "<title>完訓證明管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
     assert 'data-portal-account-storage-key="portalSignedInAccount"' in body
     assert 'class="embedded-page-shell"' in body
@@ -147,6 +150,7 @@ def test_portal_dashboard_welcome_page_returns_html_with_expected_fields() -> No
     assert "最近更新" not in body
     assert "檢視清單" not in body
     assert "上傳清單" not in body
+    assert 'href="/assets/favicon.png"' in body
     assert 'src="/assets/portal-dashboard-welcome.js"' in body
 
 
@@ -158,11 +162,12 @@ def test_portal_dashboard_records_page_returns_html_with_expected_fields() -> No
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
-    assert "<title>檢視清單</title>" in body
+    assert "<title>檢視清單 - 完訓證明管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
     assert "embedded-page-card" in body
     assert "檢視清單" in body
     assert "獨立工作頁" in body
+    assert 'href="/assets/favicon.png"' in body
 
 
 def test_portal_dashboard_upload_page_returns_html_with_expected_fields() -> None:
@@ -173,11 +178,12 @@ def test_portal_dashboard_upload_page_returns_html_with_expected_fields() -> Non
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
-    assert "<title>上傳清單</title>" in body
+    assert "<title>上傳清單 - 完訓證明管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
     assert "embedded-page-card" in body
     assert "上傳清單" in body
     assert "獨立工作頁" in body
+    assert 'href="/assets/favicon.png"' in body
 
 
 def test_portal_css_asset_returns_expected_content_type() -> None:
@@ -258,12 +264,28 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert 'window.sessionStorage.removeItem(portalAccountStorageKey)' in body
     assert "logoutButton.addEventListener" in body
     assert "window.location.assign(homePagePath)" in body
+    assert "syncPageTitleFromFrame" in body
+    assert "document.title = nextTitle" in body
     assert "activateView" in body
     assert "syncViewFromFrame" in body
     assert "contentFrame.src = targetButton.dataset.viewPath ?? welcomePagePath" in body
     assert "contentFrame.addEventListener" in body
     assert "button.dataset.viewTarget" in body
     assert "button.dataset.viewPath" in body
+
+
+def test_favicon_asset_returns_expected_content_type_for_portal_pages() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/favicon.png",
+            route_params={"asset_name": "favicon.png"},
+        )
+    )
+    body = response.get_body()
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    assert body.startswith(b"\x89PNG")
 
 
 def test_portal_dashboard_welcome_js_asset_returns_expected_content_type() -> None:

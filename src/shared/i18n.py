@@ -21,6 +21,10 @@ HTML_LANGUAGE_TAG_BY_LOCALE: dict[Locale, str] = {
     "zh-TW": "zh-TW",
     "en-US": "en-US",
 }
+OPEN_GRAPH_LOCALE_BY_LOCALE: dict[Locale, str] = {
+    "zh-TW": "zh_TW",
+    "en-US": "en_US",
+}
 LOCALE_FILE_BY_LOCALE: dict[Locale, Path] = {
     locale: LOCALE_DIR / f"{locale}.json" for locale in SUPPORTED_LOCALES
 }
@@ -42,6 +46,7 @@ LOCALE_ALIASES: dict[str, Locale] = {
 HOME_PAGE_COPY_KEYS = frozenset(
     {
         "page_title",
+        "page_description",
         "locale_switcher_label",
         "hero_title",
         "hero_lead",
@@ -60,6 +65,7 @@ HOME_PAGE_COPY_KEYS = frozenset(
         "copyright_notice",
         "empty_name_text",
         "empty_email_text",
+        "meta_image_alt",
         "preview_feedback_template",
     }
 )
@@ -86,6 +92,7 @@ def get_home_page_context(locale: Locale) -> dict[str, str]:
     return {
         **catalog.home_page,
         "html_lang": HTML_LANGUAGE_TAG_BY_LOCALE[locale],
+        "open_graph_locale": OPEN_GRAPH_LOCALE_BY_LOCALE[locale],
         "current_locale": locale,
         "locale_cookie_name": LOCALE_COOKIE_NAME,
         "locale_cookie_max_age": str(LOCALE_COOKIE_MAX_AGE_SECONDS),
@@ -220,6 +227,7 @@ def get_home_page_i18n_json() -> str:
     payload = {
         locale: {
             "html_lang": HTML_LANGUAGE_TAG_BY_LOCALE[locale],
+            "open_graph_locale": OPEN_GRAPH_LOCALE_BY_LOCALE[locale],
             "locale_option_labels": load_locale_catalog(locale).locale_option_labels,
             "home_page": load_locale_catalog(locale).home_page,
         }

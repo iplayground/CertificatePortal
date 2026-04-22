@@ -7,6 +7,7 @@ const homePagePath = portalPage.dataset.homePagePath ?? "/";
 const portalAccountStorageKey =
   portalPage.dataset.portalAccountStorageKey ?? "portalSignedInAccount";
 const welcomePagePath = portalPage.dataset.welcomePagePath ?? "/portal/dashboard/welcome";
+const defaultPageTitle = document.title;
 
 const viewButtons = Array.from(document.querySelectorAll("[data-view-target]"));
 
@@ -62,6 +63,13 @@ function syncViewFromFrame() {
   setActiveView(matchingButton.dataset.viewTarget ?? "welcome");
 }
 
+function syncPageTitleFromFrame() {
+  const frameDocument = contentFrame.contentDocument;
+  const nextTitle = frameDocument?.title?.trim() || defaultPageTitle;
+
+  document.title = nextTitle;
+}
+
 function activateView(targetView) {
   const targetButton =
     viewButtons.find((button) => button.dataset.viewTarget === targetView) ??
@@ -83,6 +91,7 @@ viewButtons.forEach((button) => {
 
 contentFrame.addEventListener("load", () => {
   syncViewFromFrame();
+  syncPageTitleFromFrame();
 });
 
 logoutButton.addEventListener("click", () => {
@@ -92,3 +101,4 @@ logoutButton.addEventListener("click", () => {
 
 syncSignedInAccount();
 syncViewFromFrame();
+syncPageTitleFromFrame();

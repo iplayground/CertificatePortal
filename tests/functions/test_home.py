@@ -32,6 +32,8 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert response.headers["Vary"] == "Cookie, Accept-Language"
     assert "iPlayground 2026" in body
     assert "iPlayground 2025" not in body
+    assert "iPlayground 完訓證明申請入口" in body
+    assert "完訓證明申請 - iPlayground" in body
     assert "報名人姓名" in body
     assert "會眾姓名" not in body
     assert "email" in body
@@ -47,7 +49,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'data-locale="en-US"' in body
     assert "繁體中文" in body
     assert "English" in body
-    assert "完訓證明申請首頁" in body
+    assert "完訓證明申請" in body
     assert "本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有" in body
     assert "Azure Functions 線上頁面已啟用" not in body
     assert 'src="/assets/logo_b_alpha.png"' in body
@@ -56,6 +58,24 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'data-value="iPlayground 2025"' not in body
     assert 'name="viewport"' in body
     assert 'name="color-scheme"' in body
+    assert 'name="theme-color"' in body
+    assert 'name="robots"' in body
+    assert 'name="application-name"' in body
+    assert 'name="description"' in body
+    assert 'property="og:url"' in body
+    assert 'property="og:title"' in body
+    assert 'property="og:description"' in body
+    assert 'property="og:image"' in body
+    assert 'name="twitter:card"' in body
+    assert 'name="twitter:title"' not in body
+    assert 'name="twitter:description"' not in body
+    assert 'content="http://localhost:7075/"' in body
+    assert 'content="http://localhost:7075/assets/logo_sq_b.png"' in body
+    assert 'rel="canonical"' in body
+    assert 'rel="icon"' in body
+    assert 'href="/assets/favicon.png"' in body
+    assert 'sizes="32x32"' in body
+    assert 'href="/assets/logo_sq_b.png"' in body
     assert 'href="/assets/theme.css"' in body
     assert 'href="/assets/home.css"' in body
     assert 'src="/assets/home.js"' in body
@@ -73,8 +93,9 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert response.status_code == 200
     assert response.headers["Content-Language"] == "en-US"
     assert "<html lang=\"en-US\">" in body
-    assert "Certificate Request Home" in body
+    assert "Certificate Request - iPlayground" in body
     assert "iPlayground 2025" not in body
+    assert "This page is currently a UI preview before the full flow is connected." in body
     assert "Registrant name" in body
     assert "Submission flow not enabled yet" in body
     assert "Taipei Elite Software Developer Association (77212283)" in body
@@ -82,6 +103,24 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert 'data-current-locale="en-US"' in body
     assert "繁體中文" in body
     assert "English" in body
+
+
+def test_home_page_prefers_forwarded_origin_for_head_urls() -> None:
+    response = home_page(
+        build_request(
+            "http://127.0.0.1:7075/",
+            headers={
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-Host": "certify.iplayground.test",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'rel="canonical" href="https://certify.iplayground.test/"' in body
+    assert 'property="og:url" content="https://certify.iplayground.test/"' in body
+    assert 'property="og:image" content="https://certify.iplayground.test/assets/logo_sq_b.png"' in body
 
 
 def test_home_page_prefers_cookie_locale_over_accept_language() -> None:
@@ -98,7 +137,7 @@ def test_home_page_prefers_cookie_locale_over_accept_language() -> None:
 
     assert response.status_code == 200
     assert response.headers["Content-Language"] == "zh-TW"
-    assert "完訓證明申請首頁" in body
+    assert "完訓證明申請" in body
     assert 'class="locale-menu-option is-current"' in body
 
 
@@ -130,7 +169,7 @@ def test_home_page_maps_simplified_chinese_to_traditional_chinese_locale() -> No
 
     assert response.status_code == 200
     assert response.headers["Content-Language"] == "zh-TW"
-    assert "完訓證明申請首頁" in body
+    assert "完訓證明申請" in body
 
 
 def test_home_css_asset_returns_expected_content_type() -> None:
@@ -199,6 +238,10 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "closeLocaleMenu" in body
     assert "document.title = homePageCopy.page_title" in body
     assert "htmlRoot.lang = bundle.html_lang" in body
+    assert "updateMetaContent" in body
+    assert "metaDescription" in body
+    assert "metaOgLocale" in body
+    assert "metaTwitterDescription" not in body
     assert 'homePage.classList.add("is-locale-menu-open")' in body
     assert 'homePage.classList.remove("is-locale-menu-open")' in body
     assert 'localeMenu?.addEventListener("pointerdown"' in body
@@ -224,6 +267,20 @@ def test_logo_asset_returns_png_bytes() -> None:
         build_request(
             "http://localhost:7075/assets/logo_b_alpha.png",
             route_params={"asset_name": "logo_b_alpha.png"},
+        )
+    )
+    body = response.get_body()
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    assert body.startswith(b"\x89PNG")
+
+
+def test_favicon_asset_returns_png_bytes() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/favicon.png",
+            route_params={"asset_name": "favicon.png"},
         )
     )
     body = response.get_body()

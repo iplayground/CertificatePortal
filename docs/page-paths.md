@@ -25,9 +25,9 @@
 - 首頁 `/` 不提供管理平台按鈕入口
 - 管理平台固定使用繁體中文
 - 管理平台目前不納入 i18n 範圍
-- 尚未接入實際驗證與授權流程，目前只要帳號與密碼皆有輸入即可從登入頁前往管理中心
-- 登入後的管理中心目前位於 `/portal/dashboard`
-- 管理中心以 iframe 載入歡迎頁、`檢視清單` 與 `上傳清單` 三個獨立頁面
+- 尚未接入實際驗證與授權流程，目前只要帳號與密碼皆有輸入即可從登入頁前往完訓證明管理平台
+- 登入後的完訓證明管理平台目前位於 `/portal/dashboard`
+- 完訓證明管理平台以 iframe 載入歡迎頁、`檢視清單` 與 `上傳清單` 三個獨立頁面
 - 左側功能清單固定顯示 `檢視清單` 與 `上傳清單`
 
 公開頁面語系目前採以下規則：
@@ -44,6 +44,13 @@
 - 夜間模式沿用管理平台既有深色視覺
 - `/assets/theme.css` 提供共用主題 token
 - 個別頁面 CSS 只負責版面與元件樣式
+
+目前 HTML 頁面共用下列 head 規則：
+
+- 所有 HTML 頁面都載入 `/assets/favicon.png`
+- 頁面 title 統一使用 `頁面名稱 - iPlayground`
+- `/portal/dashboard` 會在 iframe 載入後，將父頁 title 同步成目前內容頁 title
+- 首頁只保留 `twitter:card`，其餘社群分享資訊以 Open Graph metadata 為主
 
 - `/`
   - 顯示置中單卡式首頁版型
@@ -62,7 +69,7 @@
   - 不提供語系切換器，但會沿用首頁選擇的語系 cookie
 - `/portal`
   - 作為管理平台登入入口
-  - 顯示 `管理中心` 標題與 `管理者登入` 小標
+  - 顯示 `完訓證明管理平台` 標題與 `管理者登入` 小標
   - 套用與首頁相同的日夜主題切換規則
   - 提供管理者帳號與密碼欄位
   - 提供顯示或隱藏密碼的前端互動
@@ -71,13 +78,14 @@
   - 以瀏覽器 session storage 暫存目前輸入的帳號字串，用於登入後頁面顯示
   - 不提供語系切換器
 - `/portal/dashboard`
-  - 作為管理者登入後的桌面版工作區頁面
+  - 作為完訓證明管理平台登入後的桌面版工作區頁面
   - 以電腦版作業為前提，不特別提供 dashboard 的 RWD 版面切換
   - 左側保留固定導覽列
   - 左側品牌區塊下方、功能清單上方顯示目前登入帳號與返回首頁按鈕
   - 右側工作區固定使用 iframe 呈現
   - 點擊左上方 `完訓證明管理平台` 品牌按鈕時，右側 iframe 載入 `/portal/dashboard/welcome`
   - 點擊功能項目時，右側 iframe 會切換到對應的獨立頁面
+  - 父頁 title 會同步成目前 iframe 顯示頁面的 title
   - 點擊 `返回首頁` 會清除前端暫存帳號並回到 `/`
 - `/portal/dashboard/welcome`
   - 作為 dashboard 右側 iframe 預設載入的歡迎頁
@@ -99,6 +107,7 @@
 | `GET` | `/assets/portal.css` | 管理平台登入頁與管理中心共用樣式 |
 | `GET` | `/assets/portal-login.js` | 管理平台登入頁互動腳本 |
 | `GET` | `/assets/portal-dashboard.js` | 管理中心頁面互動腳本 |
+| `GET` | `/assets/favicon.png` | 所有 HTML 頁面共用 favicon |
 | `GET` | `/assets/home.css` | 首頁樣式 |
 | `GET` | `/assets/home.js` | 首頁互動腳本 |
 | `GET` | `/assets/theme.css` | 首頁與管理平台共用的日夜主題 token |

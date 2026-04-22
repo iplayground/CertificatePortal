@@ -36,6 +36,13 @@ iPlayground 完訓證明系統。
 - 文案固定使用繁體中文
 - 目前先只完成登入頁 GUI 與前端欄位檢查
 
+目前 HTML 頁面已建立共用 head 基線：
+
+- 所有 HTML 頁面都載入 `/assets/favicon.png`
+- 頁面 title 統一使用 `頁面名稱 - iPlayground`
+- `/portal/dashboard` 會在 iframe 載入後，將父頁 title 同步成目前內容頁 title
+- 首頁只保留 `twitter:card`，其餘社群分享資訊以 Open Graph metadata 為主
+
 ## 技術基線
 
 - Python `3.13`
@@ -75,7 +82,7 @@ iPlayground 完訓證明系統。
 
 - 置中單卡式登入版型
 - 固定以 `/portal` 作為管理入口
-- `管理中心` 標題與 `管理者登入` 小標
+- `完訓證明管理平台` 標題與 `管理者登入` 小標
 - 延用與首頁相同的日夜主題切換規則
 - 管理者帳號欄位，使用 `email` 輸入格式
 - 密碼欄位與顯示或隱藏密碼互動

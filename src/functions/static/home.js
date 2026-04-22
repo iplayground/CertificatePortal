@@ -19,6 +19,12 @@ const heroTitle = document.getElementById("page-title");
 const heroLead = document.getElementById("hero-lead");
 const formTitle = document.getElementById("form-title");
 const formSubtitle = document.getElementById("form-subtitle");
+const metaApplicationName = document.getElementById("meta-application-name");
+const metaDescription = document.getElementById("meta-description");
+const metaOgLocale = document.getElementById("meta-og-locale");
+const metaOgTitle = document.getElementById("meta-og-title");
+const metaOgDescription = document.getElementById("meta-og-description");
+const metaOgImageAlt = document.getElementById("meta-og-image-alt");
 const eventNameLabel = document.getElementById("event-name-label");
 const eventNameHint = document.getElementById("event-name-hint");
 const attendeeNameLabel = document.getElementById("attendee-name-label");
@@ -71,6 +77,14 @@ function updateTextContent(element, text) {
   }
 
   element.textContent = text;
+}
+
+function updateMetaContent(element, content) {
+  if (!(element instanceof HTMLMetaElement) || typeof content !== "string") {
+    return;
+  }
+
+  element.content = content;
 }
 
 function applyEventNameValue(nextValue) {
@@ -147,8 +161,23 @@ function applyHomePageLocale(nextLocale) {
     htmlRoot.lang = bundle.html_lang;
   }
 
+  if (typeof bundle.open_graph_locale === "string") {
+    updateMetaContent(metaOgLocale, bundle.open_graph_locale);
+  }
+
   if (typeof homePageCopy.page_title === "string") {
     document.title = homePageCopy.page_title;
+    updateMetaContent(metaApplicationName, homePageCopy.page_title);
+    updateMetaContent(metaOgTitle, homePageCopy.page_title);
+  }
+
+  if (typeof homePageCopy.page_description === "string") {
+    updateMetaContent(metaDescription, homePageCopy.page_description);
+    updateMetaContent(metaOgDescription, homePageCopy.page_description);
+  }
+
+  if (typeof homePageCopy.meta_image_alt === "string") {
+    updateMetaContent(metaOgImageAlt, homePageCopy.meta_image_alt);
   }
 
   if (typeof homePageCopy.locale_switcher_label === "string") {

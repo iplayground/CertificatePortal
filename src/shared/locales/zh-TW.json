@@ -4,9 +4,10 @@
     "en-US": "English"
   },
   "home_page": {
-    "page_title": "iPlayground 完訓證明",
+    "page_title": "完訓證明申請 - iPlayground",
+    "page_description": "iPlayground 完訓證明申請入口，提供會眾確認活動、報名人姓名與 email 欄位配置。此頁目前為流程接線前的介面預覽。",
     "locale_switcher_label": "語系",
-    "hero_title": "完訓證明申請首頁",
+    "hero_title": "完訓證明申請",
     "hero_lead": "這個首頁先完成會眾輸入介面，讓活動名、報名人姓名與 email 的欄位先固定下來。目前尚未串接資料庫與證明產生流程，因此送出後只會顯示前端提示，不會建立任何紀錄。",
     "form_title": "會眾資料",
     "form_subtitle": "請先填寫基本資訊。這一版只完成介面，不會送出到後端，也不會讀取 DB。",
@@ -23,6 +24,7 @@
     "copyright_notice": "本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有，未經授權不得轉載、重製或作其他商業用途。",
     "empty_name_text": "未填寫姓名",
     "empty_email_text": "未填寫 email",
+    "meta_image_alt": "iPlayground 完訓證明識別標誌",
     "preview_feedback_template": "已確認目前首頁欄位配置。活動名：{eventName}；報名人姓名：{attendeeName}；email：{email}。目前尚未串接資料庫、驗證與證明生成流程。"
   },
   "verify_page": {
