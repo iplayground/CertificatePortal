@@ -6,8 +6,7 @@
   "home_page": {
     "page_title": "iPlayground Certificate",
     "locale_switcher_label": "Language",
-    "eyebrow": "Certificate Request Home",
-    "hero_title": "Complete the fields and continue to the certificate flow.",
+    "hero_title": "Certificate Request Home",
     "hero_lead": "This home page currently focuses on the attendee input UI and keeps the event name, registrant name, and email fields fixed. The database and certificate generation flow are not connected yet, so submitting the form only shows a client-side message and does not create any records.",
     "form_title": "Attendee Information",
     "form_subtitle": "Fill in the basic information first. This version only implements the interface, so nothing is submitted to the backend or read from the DB.",
@@ -20,7 +19,7 @@
     "preview_action_label": "Preview field layout",
     "secondary_note": "Submission flow not enabled yet",
     "form_feedback_initial": "This is currently a static GUI preview. Press the button to show a client-side message so you can confirm the fields and layout.",
-    "footnote": "When the DB is connected later, the event list should populate this dropdown first, then send the name and email into a protected admin or lookup flow.",
+    "footnote": "When the DB is connected later, the event list should populate this dropdown first, then send the name and email into a protected portal or lookup flow.",
     "copyright_notice": "All website content and related materials are owned by Taipei Elite Software Developer Association (77212283). Unauthorized reproduction, redistribution, or commercial use is prohibited.",
     "empty_name_text": "Name not provided",
     "empty_email_text": "Email not provided",

@@ -6,8 +6,7 @@
   "home_page": {
     "page_title": "iPlayground 完訓證明",
     "locale_switcher_label": "語系",
-    "eyebrow": "完訓證明申請首頁",
-    "hero_title": "填好資料，就能往完訓證明流程前進。",
+    "hero_title": "完訓證明申請首頁",
     "hero_lead": "這個首頁先完成會眾輸入介面，讓活動名、報名人姓名與 email 的欄位先固定下來。目前尚未串接資料庫與證明產生流程，因此送出後只會顯示前端提示，不會建立任何紀錄。",
     "form_title": "會眾資料",
     "form_subtitle": "請先填寫基本資訊。這一版只完成介面，不會送出到後端，也不會讀取 DB。",

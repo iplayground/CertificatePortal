@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>iPlayground 管理平台登入</title>
+    <link rel="stylesheet" href="/assets/portal.css">
+  </head>
+  <body
+    data-empty-account-message="請輸入管理者帳號。"
+    data-invalid-account-message="請輸入有效的電子郵件地址。"
+    data-empty-password-message="請輸入密碼。"
+    data-default-feedback-message=""
+    data-ready-feedback-message="前端欄位檢查已通過，實際驗證與授權流程尚未接入。"
+    data-show-password-label="顯示密碼"
+    data-hide-password-label="隱藏密碼"
+  >
+    <div class="page-shell">
+      <main class="portal-stage">
+        <section class="panel portal-card" aria-labelledby="portal-title">
+          <div class="brand-lockup">
+            <img class="brand-logo" src="/assets/logo_b_alpha.png" alt="iPlayground">
+          </div>
+
+          <div class="portal-copy">
+            <h1 id="portal-title">管理中心</h1>
+          </div>
+
+          <div class="portal-form-shell">
+            <p class="panel-kicker">管理者登入</p>
+            <form id="portal-login-form" novalidate>
+              <div class="field">
+                <span id="portal-account-label" class="field-label">管理者帳號</span>
+                <input
+                  id="portal-account"
+                  name="account"
+                  type="email"
+                  autocomplete="email"
+                  inputmode="email"
+                  autocapitalize="none"
+                  aria-labelledby="portal-account-label"
+                  spellcheck="false"
+                  placeholder="請輸入管理者帳號或電子郵件"
+                >
+              </div>
+
+              <div class="field">
+                <span id="portal-password-label" class="field-label">密碼</span>
+                <div class="password-field">
+                  <input
+                    id="portal-password"
+                    name="password"
+                    type="password"
+                    autocomplete="current-password"
+                    aria-labelledby="portal-password-label"
+                    placeholder="請輸入密碼"
+                  >
+                  <button
+                    class="password-toggle"
+                    id="toggle-password"
+                    type="button"
+                    aria-controls="portal-password"
+                    aria-label="顯示密碼"
+                  >
+                    顯示
+                  </button>
+                </div>
+              </div>
+
+              <button class="submit-button" id="login-submit" type="submit" disabled>登入管理平台</button>
+
+              <div class="form-feedback" id="form-feedback" role="status" aria-live="polite"></div>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/assets/portal.js"></script>
+  </body>
+</html>

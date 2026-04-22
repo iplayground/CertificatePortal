@@ -20,7 +20,7 @@ def load_home_page_template() -> str:
 
 @blueprint.function_name(name="home_page")
 @blueprint.route(
-    route="{x:regex(^$)?}",
+    route="/",
     methods=["GET"],
     auth_level=func.AuthLevel.ANONYMOUS,
 )

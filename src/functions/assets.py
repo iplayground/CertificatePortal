@@ -13,6 +13,8 @@ ASSET_DEFINITIONS: dict[str, tuple[Path, str, bool]] = {
     "home.js": (STATIC_DIR / "home.js", "application/javascript", True),
     "language_icon.svg": (STATIC_DIR / "language_icon.svg", "image/svg+xml", True),
     "logo_b_alpha.png": (STATIC_DIR / "logo_b_alpha.png", "image/png", False),
+    "portal.css": (STATIC_DIR / "portal.css", "text/css", True),
+    "portal.js": (STATIC_DIR / "portal.js", "application/javascript", True),
 }
 
 

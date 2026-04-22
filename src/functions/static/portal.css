@@ -1,0 +1,362 @@
+:root {
+  color-scheme: light;
+  --bg-deep: #07111f;
+  --bg-mid: #0e1b33;
+  --surface: rgba(255, 255, 255, 0.96);
+  --surface-soft: rgba(255, 255, 255, 0.1);
+  --line: rgba(143, 177, 255, 0.18);
+  --text: #ebf2ff;
+  --text-strong: #09111f;
+  --muted: rgba(235, 242, 255, 0.76);
+  --muted-strong: #546079;
+  --accent: #ff8a3d;
+  --accent-deep: #ea6e1e;
+  --accent-soft: rgba(255, 138, 61, 0.16);
+  --accent-cool: #5dbbff;
+  --accent-cool-soft: rgba(93, 187, 255, 0.16);
+  --danger: #b42318;
+  --danger-soft: rgba(180, 35, 24, 0.1);
+  --success: #0f766e;
+  --success-soft: rgba(15, 118, 110, 0.12);
+  --shadow-xl: 0 34px 90px rgba(4, 8, 16, 0.35);
+  --shadow-lg: 0 18px 40px rgba(8, 17, 32, 0.18);
+  --radius-xl: 36px;
+  --radius-lg: 24px;
+  --radius-md: 18px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg-deep);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "SF Pro Display", "PingFang TC", "Noto Sans TC", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(93, 187, 255, 0.18), transparent 24%),
+    radial-gradient(circle at 85% 16%, rgba(255, 138, 61, 0.2), transparent 18%),
+    linear-gradient(160deg, var(--bg-deep) 0%, var(--bg-mid) 52%, #111b2d 100%);
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+body::before {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 74px,
+      rgba(255, 255, 255, 0.03) 74px,
+      rgba(255, 255, 255, 0.03) 75px
+    ),
+    repeating-linear-gradient(
+      180deg,
+      transparent 0,
+      transparent 74px,
+      rgba(255, 255, 255, 0.03) 74px,
+      rgba(255, 255, 255, 0.03) 75px
+    );
+  opacity: 0.42;
+}
+
+body::after {
+  background:
+    radial-gradient(circle at 16% 24%, rgba(93, 187, 255, 0.14), transparent 22%),
+    radial-gradient(circle at 86% 80%, rgba(255, 138, 61, 0.16), transparent 18%);
+  filter: blur(16px);
+}
+
+code {
+  font-family: "SF Mono", "JetBrains Mono", "Noto Sans Mono", monospace;
+  font-size: 0.95em;
+}
+
+.page-shell {
+  position: relative;
+  z-index: 1;
+  width: min(100% - 32px, 960px);
+  margin: 0 auto;
+  padding: 42px 0 56px;
+}
+
+.portal-stage {
+  display: flex;
+  justify-content: center;
+}
+
+.panel {
+  width: min(100%, 780px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow-xl);
+}
+
+.portal-card {
+  position: relative;
+  overflow: hidden;
+  padding: 42px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(246, 249, 255, 0.94) 58%, rgba(255, 245, 238, 0.94) 100%);
+  backdrop-filter: blur(18px);
+}
+
+.portal-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top left, rgba(93, 187, 255, 0.14), transparent 24%),
+    radial-gradient(circle at top right, rgba(255, 138, 61, 0.14), transparent 20%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.portal-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.brand-lockup {
+  display: grid;
+  justify-items: center;
+  margin-bottom: 24px;
+}
+
+.brand-logo {
+  display: block;
+  width: min(100%, 280px);
+  height: auto;
+}
+
+.portal-copy {
+  text-align: center;
+}
+
+h1 {
+  margin: 0 auto;
+  max-width: 14ch;
+  color: var(--text-strong);
+  font-size: clamp(2.5rem, 5vw, 4.2rem);
+  line-height: 0.96;
+  letter-spacing: -0.05em;
+  text-align: center;
+}
+
+.portal-form-shell {
+  margin-top: 28px;
+  padding: 28px;
+  border: 1px solid rgba(93, 187, 255, 0.14);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--text-strong);
+}
+
+.panel-kicker {
+  margin: 0 0 20px;
+  color: var(--accent-deep);
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+form {
+  display: grid;
+  gap: 18px;
+  margin-top: 0;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field-label {
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.field input {
+  width: 100%;
+  min-height: 56px;
+  padding: 16px 18px;
+  border: 1px solid rgba(9, 17, 31, 0.12);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.98);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 16px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.field input::placeholder {
+  color: rgba(84, 96, 121, 0.8);
+}
+
+.field input:focus {
+  outline: none;
+  border-color: rgba(93, 187, 255, 0.58);
+  box-shadow:
+    0 0 0 5px rgba(93, 187, 255, 0.14),
+    0 14px 28px rgba(14, 27, 51, 0.1);
+  transform: translateY(-1px);
+}
+
+.field.has-error input {
+  border-color: rgba(180, 35, 24, 0.42);
+  box-shadow: 0 0 0 4px rgba(180, 35, 24, 0.1);
+}
+
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 92px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 14px;
+  background: rgba(93, 187, 255, 0.14);
+  color: #174872;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+  outline: none;
+  background: rgba(93, 187, 255, 0.24);
+  transform: translateY(calc(-50% - 1px));
+}
+
+.submit-button {
+  border: 0;
+  border-radius: 18px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, var(--accent) 0%, #ffb063 100%);
+  color: #fff;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 18px 34px rgba(255, 138, 61, 0.24);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.submit-button:hover,
+.submit-button:focus-visible {
+  outline: none;
+  transform: translateY(-1px);
+  box-shadow: 0 22px 38px rgba(255, 138, 61, 0.28);
+}
+
+.submit-button:disabled {
+  background: linear-gradient(135deg, rgba(132, 147, 176, 0.9) 0%, rgba(174, 184, 201, 0.92) 100%);
+  color: rgba(255, 255, 255, 0.88);
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.submit-button:disabled:hover,
+.submit-button:disabled:focus-visible {
+  outline: none;
+  box-shadow: none;
+  transform: none;
+}
+
+.form-feedback {
+  min-height: 0;
+  padding: 16px 18px;
+  border: 1px solid rgba(9, 17, 31, 0.12);
+  border-radius: var(--radius-md);
+  background: #f8fbff;
+  color: var(--muted-strong);
+  line-height: 1.7;
+}
+
+.form-feedback:empty {
+  display: none;
+}
+
+.form-feedback.is-error {
+  border-color: rgba(180, 35, 24, 0.2);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.form-feedback.is-success {
+  border-color: rgba(15, 118, 110, 0.22);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+@media (max-width: 960px) {
+  .page-shell {
+    width: min(100% - 24px, 960px);
+    padding: 28px 0 32px;
+  }
+
+  .portal-card {
+    padding: 30px;
+  }
+
+  .portal-form-shell {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  body::before {
+    opacity: 0.24;
+  }
+
+  .page-shell {
+    width: min(100% - 20px, 960px);
+  }
+
+  .portal-card {
+    padding: 22px;
+    border-radius: 28px;
+  }
+
+  .portal-form-shell {
+    padding: 20px;
+  }
+
+  h1 {
+    max-width: none;
+    font-size: clamp(2.2rem, 10vw, 3rem);
+  }
+
+  .password-field input {
+    padding-right: 84px;
+  }
+
+  .password-toggle {
+    right: 8px;
+    padding-inline: 12px;
+  }
+}

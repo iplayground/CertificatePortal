@@ -43,7 +43,6 @@ HOME_PAGE_COPY_KEYS = frozenset(
     {
         "page_title",
         "locale_switcher_label",
-        "eyebrow",
         "hero_title",
         "hero_lead",
         "form_title",

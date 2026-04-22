@@ -15,7 +15,6 @@ const localeTrigger = document.getElementById("locale-trigger");
 const localeTriggerValue = localeTrigger?.querySelector(".locale-trigger-value") ?? null;
 const localeMenu = document.getElementById("locale-options");
 const localeOptions = Array.from(document.querySelectorAll(".locale-menu-option"));
-const eyebrow = document.getElementById("eyebrow");
 const heroTitle = document.getElementById("page-title");
 const heroLead = document.getElementById("hero-lead");
 const formTitle = document.getElementById("form-title");
@@ -158,7 +157,6 @@ function applyHomePageLocale(nextLocale) {
 
   updateTextContent(localeTriggerValue, localeOptionLabels[nextLocale] ?? nextLocale);
   updateLocaleOptionState(nextLocale, localeOptionLabels);
-  updateTextContent(eyebrow, homePageCopy.eyebrow);
   updateTextContent(heroTitle, homePageCopy.hero_title);
   updateTextContent(heroLead, homePageCopy.hero_lead);
   updateTextContent(formTitle, homePageCopy.form_title);

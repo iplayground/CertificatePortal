@@ -170,6 +170,10 @@ scripts/
 - 除非需求明確證明必要，否則不要預設引入關聯式資料庫。
 - 不要把二進位檔案放進 Cosmos DB。
 - 不要設計會洩漏敏感會員資料的公開驗證端點。
+- 本機運行 Azure Functions 時，預設使用 `7075` port。
+- 若發現 `7075` 已有服務在運行，先確認是否為本專案；若是本專案，且專案內已有尚未反映到執行中的修正，應重啟該服務，而不是改用其他 port。
+- 不得為了騰出 `7075` 而隨意停用本專案既有服務；只有在明確要以同一專案、同一 port 立即完成重啟時，才可停止既有行程。
+- 若 `7075` 的重啟失敗，後續修正問題時必須一併處理到服務可重新在 `7075` 成功啟動，不可只停留在程式碼修正。
 - 若未來任務與本文件衝突，必須在同一個變更中同步更新 `AGENTS.md`，或明確說明為何本文件不需變更。
 - 若需要執行 `git commit`，commit message 必須使用 Conventional Commits，格式為 `<type>: <summary>`。
 - `type` 必須使用英文，並遵循 Conventional Commits 慣例，例如 `build`、`chore`、`ci`、`docs`、`feat`、`fix`、`perf`、`refactor`、`revert`、`style`、`test` 等；應優先選擇最精確的 type。

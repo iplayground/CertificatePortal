@@ -259,21 +259,6 @@ body.is-locale-menu-open .hero-card > :not(.page-toolbar) {
   text-align: center;
 }
 
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 9px 16px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(81, 121, 254, 0.14) 0%, rgba(168, 138, 199, 0.22) 100%);
-  border: 1px solid rgba(81, 121, 254, 0.14);
-  color: var(--accent-deep);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
 h1 {
   margin: 18px 0 14px;
   font-size: clamp(2.4rem, 5vw, 4rem);
@@ -561,11 +546,6 @@ input:focus {
 
   .brand-row {
     margin-bottom: 22px;
-  }
-
-  .eyebrow {
-    width: 100%;
-    text-align: center;
   }
 
   h1 {

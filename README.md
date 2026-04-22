@@ -7,9 +7,10 @@ iPlayground 完訓證明系統。
 ## 目前範圍
 
 - 首頁 `/`
+- 管理平台登入入口 `/portal`
 - 公開驗證頁面 `/verify/{certId}`
 
-首頁目前為靜態 HTML GUI，公開驗證頁面仍為純文字；兩者都尚未包含業務邏輯、資料庫存取或檔案處理。
+首頁與管理平台目前為靜態 HTML GUI，公開驗證頁面仍為純文字；三者都尚未包含業務邏輯、資料庫存取或檔案處理。
 
 目前頁面已建立最小 i18n 基線：
 
@@ -19,6 +20,13 @@ iPlayground 完訓證明系統。
 - 語系切換器目前只出現在首頁 `/`
 - 首頁切換語系時，會由前端直接更新文案，不會整頁重新整理
 - locale JSON 字典檔集中於 `src/shared/locales/`，並由獨立測試驗證結構一致性
+
+管理平台目前不納入 i18n：
+
+- 入口固定為 `/portal`
+- 首頁 `/` 不提供管理平台入口按鈕
+- 文案固定使用繁體中文
+- 目前先只完成登入頁 GUI 與前端欄位檢查
 
 ## 技術基線
 
@@ -31,7 +39,8 @@ iPlayground 完訓證明系統。
 | Method | Path | 說明 | Content-Type |
 | --- | --- | --- | --- |
 | `GET` | `/` | 首頁，用於供會眾填寫基本資料並進入完訓證明流程 | `text/html; charset=utf-8` |
-| `GET` | `/assets/{assetName}` | 首頁所需的靜態樣式、互動腳本與品牌素材 | 依資產而定 |
+| `GET` | `/portal` | 管理平台登入入口 | `text/html; charset=utf-8` |
+| `GET` | `/assets/{assetName}` | 目前頁面所需的靜態樣式、互動腳本與品牌素材 | 依資產而定 |
 | `GET` | `/verify/{certId}` | 公開驗證頁面 | `text/plain; charset=utf-8` |
 
 詳細定義可參考 [docs/page-paths.md](docs/page-paths.md)。
@@ -50,6 +59,19 @@ iPlayground 完訓證明系統。
 - `email` 輸入欄位
 - 前端提示訊息，明確說明目前尚未串接資料庫與證明生成流程
 - 頁尾版權聲明
+
+### `/portal`
+
+管理平台登入頁目前提供：
+
+- 置中單卡式登入版型
+- 固定以 `/portal` 作為管理入口
+- `管理中心` 標題與 `管理者登入` 小標
+- 管理者帳號欄位，使用 `email` 輸入格式
+- 密碼欄位與顯示或隱藏密碼互動
+- 登入按鈕預設為 disabled，只有在帳號與密碼都已輸入且帳號符合 `email` 格式時才可點擊
+- 前端欄位檢查與尚未串接實際驗證流程的提示
+- 固定使用繁體中文，不提供 i18n 切換
 
 ### `/verify/{certId}`
 
@@ -100,6 +122,7 @@ func start --port 7075 --skip-azure-storage-check
 啟動後可打開：
 
 - [http://localhost:7075/](http://localhost:7075/)
+- [http://localhost:7075/portal](http://localhost:7075/portal)
 - [http://localhost:7075/verify/demo-cert](http://localhost:7075/verify/demo-cert)
 
 ### 測試
@@ -115,7 +138,8 @@ python3 -m pytest
 - `local.settings.json.example` 是可提交的模板；Azure 資源相關欄位預設留空，需由開發者自行填入。實際使用的 `local.settings.json` 仍維持忽略，不進 git。
 - `local.settings.json` 內已設定 `AzureWebJobsDisableHomepage=true`，避免根目錄顯示 Azure Functions 預設首頁。
 - 目前未接 Azurite 或實體 Storage Account，因此本機啟動時可能看到 `AzureWebJobsStorage` 的 unhealthy 訊息；在 `--skip-azure-storage-check` 下，這不影響目前首頁、靜態資產路由與公開驗證頁面。
-- 目前不保留其他 API、管理路由與下載流程。
+- 管理平台入口現已統一使用 `/portal`，避免與 Azure Functions runtime 內建保留的 `/admin` 路徑衝突。
+- 目前尚未保留其他管理子路由、下載流程與實際登入驗證邏輯。
 
 ## Azure 部署
 

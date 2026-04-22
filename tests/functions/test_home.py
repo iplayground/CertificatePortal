@@ -47,6 +47,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'data-locale="en-US"' in body
     assert "繁體中文" in body
     assert "English" in body
+    assert "完訓證明申請首頁" in body
     assert "本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有" in body
     assert "Azure Functions 線上頁面已啟用" not in body
     assert 'src="/assets/logo_b_alpha.png"' in body
@@ -75,6 +76,7 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert "Registrant name" in body
     assert "Submission flow not enabled yet" in body
     assert "Taipei Elite Software Developer Association (77212283)" in body
+    assert "protected portal or lookup flow" in body
     assert 'data-current-locale="en-US"' in body
     assert "繁體中文" in body
     assert "English" in body
@@ -94,7 +96,7 @@ def test_home_page_prefers_cookie_locale_over_accept_language() -> None:
 
     assert response.status_code == 200
     assert response.headers["Content-Language"] == "zh-TW"
-    assert "填好資料，就能往完訓證明流程前進。" in body
+    assert "完訓證明申請首頁" in body
     assert 'class="locale-menu-option is-current"' in body
 
 
@@ -126,7 +128,7 @@ def test_home_page_maps_simplified_chinese_to_traditional_chinese_locale() -> No
 
     assert response.status_code == 200
     assert response.headers["Content-Language"] == "zh-TW"
-    assert "填好資料，就能往完訓證明流程前進。" in body
+    assert "完訓證明申請首頁" in body
 
 
 def test_home_css_asset_returns_expected_content_type() -> None:
