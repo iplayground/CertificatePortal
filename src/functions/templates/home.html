@@ -1,37 +1,57 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="{{html_lang}}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>iPlayground 完訓證明</title>
+    <title>{{page_title}}</title>
     <link rel="stylesheet" href="/assets/home.css">
   </head>
-  <body>
+  <body
+    data-current-locale="{{current_locale}}"
+    data-empty-name-text="{{empty_name_text}}"
+    data-empty-email-text="{{empty_email_text}}"
+    data-preview-feedback-template="{{preview_feedback_template}}"
+    data-locale-cookie-name="{{locale_cookie_name}}"
+    data-locale-cookie-max-age="{{locale_cookie_max_age}}"
+  >
     <div class="shell">
       <main class="hero">
         <section class="panel hero-card" aria-labelledby="page-title">
+          <div class="page-toolbar">
+            <div class="locale-switcher" id="locale-switcher">
+              <button
+                class="locale-trigger"
+                id="locale-trigger"
+                type="button"
+                aria-label="{{locale_switcher_label}}"
+                aria-expanded="false"
+                aria-haspopup="listbox"
+                aria-controls="locale-options"
+              >
+                <span class="locale-trigger-icon" aria-hidden="true"></span>
+                <span class="locale-trigger-value">{{current_locale_label}}</span>
+              </button>
+              <div class="locale-menu" id="locale-options" role="listbox" hidden>{{{locale_options_html}}}</div>
+            </div>
+          </div>
+
           <div class="brand-row">
             <img class="brand-logo" src="/assets/logo_b_alpha.png" alt="iPlayground">
           </div>
 
           <div class="hero-copy">
-            <div class="eyebrow">完訓證明申請首頁</div>
-            <h1 id="page-title">填好資料，就能往完訓證明流程前進。</h1>
-            <p class="lead">
-              這個首頁先完成會眾輸入介面，讓活動名、報名人姓名與 email 的欄位先固定下來。
-              目前尚未串接資料庫與證明產生流程，因此送出後只會顯示前端提示，不會建立任何紀錄。
-            </p>
+            <div class="eyebrow" id="eyebrow">{{eyebrow}}</div>
+            <h1 id="page-title">{{hero_title}}</h1>
+            <p class="lead" id="hero-lead">{{hero_lead}}</p>
           </div>
 
           <div class="hero-form-shell">
-            <h2 class="form-title">會眾資料</h2>
-            <p class="form-subtitle">
-              請先填寫基本資訊。這一版只完成介面，不會送出到後端，也不會讀取 DB。
-            </p>
+            <h2 class="form-title" id="form-title">{{form_title}}</h2>
+            <p class="form-subtitle" id="form-subtitle">{{form_subtitle}}</p>
 
             <form id="document-request-form">
               <div class="field">
-                <span id="event-name-label" class="field-label">活動名</span>
+                <span id="event-name-label" class="field-label">{{event_name_label}}</span>
                 <div class="custom-select" id="event-name-select">
                   <input id="event-name" name="eventName" type="hidden" value="iPlayground 2026">
                   <button
@@ -58,23 +78,23 @@
                     </button>
                   </div>
                 </div>
-                <div id="event-name-hint" class="hint">目前先固定單一選項，未來會改由資料來源動態帶入。</div>
+                <div id="event-name-hint" class="hint">{{event_name_hint}}</div>
               </div>
 
               <div class="field">
-                <span id="attendee-name-label" class="field-label">報名人姓名</span>
+                <span id="attendee-name-label" class="field-label">{{attendee_name_label}}</span>
                 <input
                   id="attendee-name"
                   name="attendeeName"
                   type="text"
                   autocomplete="name"
                   aria-labelledby="attendee-name-label"
-                  placeholder="請輸入您的報名人姓名"
+                  placeholder="{{attendee_name_placeholder}}"
                 >
               </div>
 
               <div class="field">
-                <span id="email-label" class="field-label">email</span>
+                <span id="email-label" class="field-label">{{email_label}}</span>
                 <input
                   id="email"
                   name="email"
@@ -82,32 +102,29 @@
                   autocomplete="email"
                   inputmode="email"
                   aria-labelledby="email-label"
-                  placeholder="name@example.com"
+                  placeholder="{{email_placeholder}}"
                 >
               </div>
 
               <div class="form-actions">
-                <button class="primary-action" type="button" id="preview-action">確認欄位配置</button>
-                <div class="secondary-note">送出流程尚未啟用</div>
+                <button class="primary-action" type="button" id="preview-action">{{preview_action_label}}</button>
+                <div class="secondary-note" id="secondary-note">{{secondary_note}}</div>
               </div>
 
-              <div id="form-feedback" class="feedback" role="status" aria-live="polite">
-                目前為靜態 GUI 示意頁，按下按鈕後會顯示前端提示，方便先確認欄位與版面。
-              </div>
+              <div id="form-feedback" class="feedback" role="status" aria-live="polite">{{form_feedback_initial}}</div>
             </form>
 
-            <p class="footnote">
-              若後續要接上 DB，建議先由活動清單提供下拉選項，再將姓名與 email 送往受保護的管理或查詢流程。
-            </p>
+            <p class="footnote" id="footnote">{{footnote}}</p>
           </div>
         </section>
       </main>
 
       <footer class="site-footer">
-        <small>本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有，未經授權不得轉載、重製或作其他商業用途。</small>
+        <small id="copyright-notice">{{copyright_notice}}</small>
       </footer>
     </div>
 
+    <script id="home-page-i18n" type="application/json">{{{home_page_i18n_json}}}</script>
     <script src="/assets/home.js"></script>
   </body>
 </html>

@@ -1,0 +1,35 @@
+{
+  "locale_option_labels": {
+    "zh-TW": "繁體中文",
+    "en-US": "English"
+  },
+  "home_page": {
+    "page_title": "iPlayground Certificate",
+    "locale_switcher_label": "Language",
+    "eyebrow": "Certificate Request Home",
+    "hero_title": "Complete the fields and continue to the certificate flow.",
+    "hero_lead": "This home page currently focuses on the attendee input UI and keeps the event name, registrant name, and email fields fixed. The database and certificate generation flow are not connected yet, so submitting the form only shows a client-side message and does not create any records.",
+    "form_title": "Attendee Information",
+    "form_subtitle": "Fill in the basic information first. This version only implements the interface, so nothing is submitted to the backend or read from the DB.",
+    "event_name_label": "Event",
+    "event_name_hint": "The selector is currently a fixed static list and will later be populated from a data source.",
+    "attendee_name_label": "Registrant name",
+    "attendee_name_placeholder": "Enter the registrant name",
+    "email_label": "Email",
+    "email_placeholder": "name@example.com",
+    "preview_action_label": "Preview field layout",
+    "secondary_note": "Submission flow not enabled yet",
+    "form_feedback_initial": "This is currently a static GUI preview. Press the button to show a client-side message so you can confirm the fields and layout.",
+    "footnote": "When the DB is connected later, the event list should populate this dropdown first, then send the name and email into a protected admin or lookup flow.",
+    "copyright_notice": "All website content and related materials are owned by Taipei Elite Software Developer Association (77212283). Unauthorized reproduction, redistribution, or commercial use is prohibited.",
+    "empty_name_text": "Name not provided",
+    "empty_email_text": "Email not provided",
+    "preview_feedback_template": "The current home page field layout is confirmed. Event: {eventName}; registrant name: {attendeeName}; email: {email}. The database, verification flow, and certificate generation flow are not connected yet."
+  },
+  "verify_page": {
+    "title": "iPlayground Certificate Verification",
+    "cert_id_label": "certId",
+    "status_label": "status",
+    "status_value": "Verification data is not connected yet"
+  }
+}

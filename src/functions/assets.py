@@ -11,6 +11,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 ASSET_DEFINITIONS: dict[str, tuple[Path, str, bool]] = {
     "home.css": (STATIC_DIR / "home.css", "text/css", True),
     "home.js": (STATIC_DIR / "home.js", "application/javascript", True),
+    "language_icon.svg": (STATIC_DIR / "language_icon.svg", "image/svg+xml", True),
     "logo_b_alpha.png": (STATIC_DIR / "logo_b_alpha.png", "image/png", False),
 }
 

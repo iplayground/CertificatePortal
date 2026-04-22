@@ -11,6 +11,15 @@ iPlayground 完訓證明系統。
 
 首頁目前為靜態 HTML GUI，公開驗證頁面仍為純文字；兩者都尚未包含業務邏輯、資料庫存取或檔案處理。
 
+目前頁面已建立最小 i18n 基線：
+
+- 支援 `zh-TW` 與 `en-US`
+- 若使用者曾在首頁切換語系，後續頁面優先使用 `ipg_locale` cookie
+- 只有在沒有語系 cookie 時，才會依瀏覽器 `Accept-Language` 決定初始語系
+- 語系切換器目前只出現在首頁 `/`
+- 首頁切換語系時，會由前端直接更新文案，不會整頁重新整理
+- locale JSON 字典檔集中於 `src/shared/locales/`，並由獨立測試驗證結構一致性
+
 ## 技術基線
 
 - Python `3.13`
@@ -35,6 +44,7 @@ iPlayground 完訓證明系統。
 
 - 置中單卡式首頁版型
 - 套用 iPlayground 官方 logo 與品牌色
+- 首頁語系切換器，支援 `zh-TW` 與 `en-US`
 - 活動名自訂下拉元件，固定為 `iPlayground 2026`
 - 報名人姓名輸入欄位
 - `email` 輸入欄位
@@ -51,6 +61,8 @@ iPlayground 完訓證明驗證頁面
 certId: demo-cert
 status: 尚未串接實際驗證資料
 ```
+
+若首頁已切換語系，公開驗證頁面會沿用相同 cookie 語系；否則才回退到瀏覽器 `Accept-Language`。
 
 ## 本機開發
 
@@ -95,6 +107,8 @@ func start --port 7075 --skip-azure-storage-check
 ```bash
 python3 -m pytest
 ```
+
+其中 `tests/shared/test_i18n_catalog.py` 會獨立檢查所有 locale JSON 檔是否與 `SUPPORTED_LOCALES` 一致、結構完全對齊，且可被 i18n catalog 載入。
 
 ## 注意事項
 

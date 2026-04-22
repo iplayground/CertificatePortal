@@ -1,0 +1,35 @@
+{
+  "locale_option_labels": {
+    "zh-TW": "繁體中文",
+    "en-US": "English"
+  },
+  "home_page": {
+    "page_title": "iPlayground 完訓證明",
+    "locale_switcher_label": "語系",
+    "eyebrow": "完訓證明申請首頁",
+    "hero_title": "填好資料，就能往完訓證明流程前進。",
+    "hero_lead": "這個首頁先完成會眾輸入介面，讓活動名、報名人姓名與 email 的欄位先固定下來。目前尚未串接資料庫與證明產生流程，因此送出後只會顯示前端提示，不會建立任何紀錄。",
+    "form_title": "會眾資料",
+    "form_subtitle": "請先填寫基本資訊。這一版只完成介面，不會送出到後端，也不會讀取 DB。",
+    "event_name_label": "活動名",
+    "event_name_hint": "目前先固定為靜態清單，未來會改由資料來源動態帶入。",
+    "attendee_name_label": "報名人姓名",
+    "attendee_name_placeholder": "請輸入您的報名人姓名",
+    "email_label": "email",
+    "email_placeholder": "name@example.com",
+    "preview_action_label": "確認欄位配置",
+    "secondary_note": "送出流程尚未啟用",
+    "form_feedback_initial": "目前為靜態 GUI 示意頁，按下按鈕後會顯示前端提示，方便先確認欄位與版面。",
+    "footnote": "若後續要接上 DB，建議先由活動清單提供下拉選項，再將姓名與 email 送往受保護的管理或查詢流程。",
+    "copyright_notice": "本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有，未經授權不得轉載、重製或作其他商業用途。",
+    "empty_name_text": "未填寫姓名",
+    "empty_email_text": "未填寫 email",
+    "preview_feedback_template": "已確認目前首頁欄位配置。活動名：{eventName}；報名人姓名：{attendeeName}；email：{email}。目前尚未串接資料庫、驗證與證明生成流程。"
+  },
+  "verify_page": {
+    "title": "iPlayground 完訓證明驗證頁面",
+    "cert_id_label": "certId",
+    "status_label": "status",
+    "status_value": "尚未串接實際驗證資料"
+  }
+}

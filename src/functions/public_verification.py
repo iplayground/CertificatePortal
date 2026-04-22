@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import azure.functions as func
 
+from src.shared.i18n import get_verify_page_copy, localized_response_headers, resolve_locale
+
 blueprint = func.Blueprint()
 
 
@@ -12,13 +14,15 @@ blueprint = func.Blueprint()
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 def verify_cert_page(req: func.HttpRequest) -> func.HttpResponse:
+    locale = resolve_locale(req)
+    copy = get_verify_page_copy(locale)
     cert_id = req.route_params.get("certId", "")
 
     lines = [
-        "iPlayground 完訓證明驗證頁面",
+        copy["title"],
         "",
-        f"certId: {cert_id}",
-        "status: 尚未串接實際驗證資料",
+        f'{copy["cert_id_label"]}: {cert_id}',
+        f'{copy["status_label"]}: {copy["status_value"]}',
     ]
 
     return func.HttpResponse(
@@ -26,4 +30,5 @@ def verify_cert_page(req: func.HttpRequest) -> func.HttpResponse:
         status_code=200,
         mimetype="text/plain",
         charset="utf-8",
+        headers=localized_response_headers(locale),
     )
