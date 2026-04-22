@@ -13,8 +13,15 @@ ASSET_DEFINITIONS: dict[str, tuple[Path, str, bool]] = {
     "home.js": (STATIC_DIR / "home.js", "application/javascript", True),
     "language_icon.svg": (STATIC_DIR / "language_icon.svg", "image/svg+xml", True),
     "logo_b_alpha.png": (STATIC_DIR / "logo_b_alpha.png", "image/png", False),
+    "logo_sq_b.png": (STATIC_DIR / "logo_sq_b.png", "image/png", False),
     "portal.css": (STATIC_DIR / "portal.css", "text/css", True),
-    "portal.js": (STATIC_DIR / "portal.js", "application/javascript", True),
+    "portal-dashboard.js": (STATIC_DIR / "portal-dashboard.js", "application/javascript", True),
+    "portal-dashboard-welcome.js": (
+        STATIC_DIR / "portal-dashboard-welcome.js",
+        "application/javascript",
+        True,
+    ),
+    "portal-login.js": (STATIC_DIR / "portal-login.js", "application/javascript", True),
     "theme.css": (STATIC_DIR / "theme.css", "text/css", True),
 }
 

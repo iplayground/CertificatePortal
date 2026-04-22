@@ -7,14 +7,14 @@ const submitButton = document.getElementById("login-submit");
 const feedback = document.getElementById("form-feedback");
 
 const emptyAccountMessage = portalPage.dataset.emptyAccountMessage ?? "請輸入管理者帳號。";
-const invalidAccountMessage = portalPage.dataset.invalidAccountMessage ?? "請輸入有效的電子郵件地址。";
 const emptyPasswordMessage = portalPage.dataset.emptyPasswordMessage ?? "請輸入密碼。";
 const defaultFeedbackMessage =
   portalPage.dataset.defaultFeedbackMessage ?? "請輸入帳號與密碼後送出，先確認登入頁版型與欄位狀態。";
-const readyFeedbackMessage =
-  portalPage.dataset.readyFeedbackMessage ?? "前端欄位檢查已通過，實際驗證與授權流程尚未接入。";
 const showPasswordLabel = portalPage.dataset.showPasswordLabel ?? "顯示密碼";
 const hidePasswordLabel = portalPage.dataset.hidePasswordLabel ?? "隱藏密碼";
+const dashboardPagePath = portalPage.dataset.dashboardPagePath ?? "/portal/dashboard";
+const portalAccountStorageKey =
+  portalPage.dataset.portalAccountStorageKey ?? "portalSignedInAccount";
 
 function setFeedbackState(state, message) {
   feedback.textContent = message;
@@ -33,9 +33,6 @@ function validateLoginForm() {
   if (!accountInput.value.trim()) {
     setFieldErrorState(accountInput, true);
     errors.push(emptyAccountMessage);
-  } else if (!accountInput.checkValidity()) {
-    setFieldErrorState(accountInput, true);
-    errors.push(invalidAccountMessage);
   } else {
     setFieldErrorState(accountInput, false);
   }
@@ -53,13 +50,21 @@ function validateLoginForm() {
 function updateSubmitState() {
   const hasAccountValue = accountInput.value.trim().length > 0;
   const hasPasswordValue = passwordInput.value.trim().length > 0;
-  submitButton.disabled = !(hasAccountValue && hasPasswordValue && accountInput.checkValidity());
+  submitButton.disabled = !(hasAccountValue && hasPasswordValue);
 }
 
 function syncPasswordToggleLabel(isPasswordHidden) {
   const label = isPasswordHidden ? showPasswordLabel : hidePasswordLabel;
   togglePasswordButton.textContent = label === "顯示密碼" ? "顯示" : "隱藏";
   togglePasswordButton.setAttribute("aria-label", label);
+}
+
+function persistSignedInAccount(accountValue) {
+  try {
+    window.sessionStorage.setItem(portalAccountStorageKey, accountValue);
+  } catch (error) {
+    void error;
+  }
 }
 
 togglePasswordButton.addEventListener("click", () => {
@@ -72,10 +77,6 @@ togglePasswordButton.addEventListener("click", () => {
   field.addEventListener("input", () => {
     if (field.value.trim()) {
       setFieldErrorState(field, false);
-    }
-
-    if (field === accountInput && field.value.trim() && !field.checkValidity()) {
-      setFieldErrorState(field, true);
     }
 
     if (
@@ -105,7 +106,8 @@ loginForm.addEventListener("submit", (event) => {
     return;
   }
 
-  setFeedbackState("success", readyFeedbackMessage);
+  persistSignedInAccount(accountInput.value.trim());
+  window.location.assign(dashboardPagePath);
 });
 
 syncPasswordToggleLabel(true);

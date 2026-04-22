@@ -11,16 +11,16 @@
   </head>
   <body
     data-empty-account-message="請輸入管理者帳號。"
-    data-invalid-account-message="請輸入有效的電子郵件地址。"
     data-empty-password-message="請輸入密碼。"
     data-default-feedback-message=""
-    data-ready-feedback-message="前端欄位檢查已通過，實際驗證與授權流程尚未接入。"
     data-show-password-label="顯示密碼"
     data-hide-password-label="隱藏密碼"
+    data-dashboard-page-path="/portal/dashboard"
+    data-portal-account-storage-key="portalSignedInAccount"
   >
     <div class="page-shell">
       <main class="portal-stage">
-        <section class="panel portal-card" aria-labelledby="portal-title">
+        <section class="panel portal-card" id="portal-login-view" aria-labelledby="portal-title">
           <div class="brand-lockup">
             <img class="brand-logo" src="/assets/logo_b_alpha.png" alt="iPlayground">
           </div>
@@ -37,9 +37,8 @@
                 <input
                   id="portal-account"
                   name="account"
-                  type="email"
-                  autocomplete="email"
-                  inputmode="email"
+                  type="text"
+                  autocomplete="username"
                   autocapitalize="none"
                   aria-labelledby="portal-account-label"
                   spellcheck="false"
@@ -79,6 +78,6 @@
       </main>
     </div>
 
-    <script src="/assets/portal.js"></script>
+    <script src="/assets/portal-login.js"></script>
   </body>
 </html>

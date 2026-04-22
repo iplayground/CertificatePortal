@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="robots" content="noindex, nofollow">
+    <title>iPlayground 管理者中心</title>
+    <link rel="stylesheet" href="/assets/theme.css">
+    <link rel="stylesheet" href="/assets/portal.css">
+  </head>
+  <body
+    class="portal-dashboard-shell"
+    data-home-page-path="/"
+    data-portal-account-storage-key="portalSignedInAccount"
+    data-welcome-page-path="/portal/dashboard/welcome"
+  >
+    <div class="page-shell">
+      <main class="portal-stage">
+        <section
+          class="panel admin-workspace"
+          id="portal-dashboard"
+          aria-labelledby="portal-dashboard-title"
+        >
+          <aside class="admin-sidebar">
+            <button
+              class="sidebar-brand is-active"
+              id="sidebar-home"
+              type="button"
+              data-view-target="welcome"
+              data-view-path="/portal/dashboard/welcome"
+              aria-pressed="true"
+            >
+              <img
+                class="sidebar-brand-mark"
+                src="/assets/logo_sq_b.png"
+                alt=""
+                aria-hidden="true"
+              >
+              <span class="sidebar-brand-copy">
+                <strong id="portal-dashboard-title">完訓證明管理平台</strong>
+              </span>
+            </button>
+
+            <div class="sidebar-footer">
+              <div class="sidebar-account-panel">
+                <span class="admin-account-label">目前登入帳號</span>
+                <strong class="admin-account-value" id="admin-account-display">管理者</strong>
+                <button class="secondary-button" id="portal-logout" type="button">返回首頁</button>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <p class="sidebar-label">功能清單</p>
+              <nav class="admin-nav" aria-label="管理功能">
+                <button
+                  class="admin-nav-item"
+                  type="button"
+                  data-view-target="records"
+                  data-view-path="/portal/dashboard/records"
+                  aria-pressed="false"
+                >
+                  <span class="admin-nav-symbol" aria-hidden="true">01</span>
+                  <span class="admin-nav-copy">
+                    <strong>檢視清單</strong>
+                    <span>切換到獨立的清單工作頁</span>
+                  </span>
+                </button>
+                <button
+                  class="admin-nav-item"
+                  type="button"
+                  data-view-target="upload"
+                  data-view-path="/portal/dashboard/upload"
+                  aria-pressed="false"
+                >
+                  <span class="admin-nav-symbol" aria-hidden="true">02</span>
+                  <span class="admin-nav-copy">
+                    <strong>上傳清單</strong>
+                    <span>切換到獨立的上傳工作頁</span>
+                  </span>
+                </button>
+              </nav>
+            </div>
+          </aside>
+
+          <div class="admin-content-shell">
+            <iframe
+              class="admin-content-frame"
+              id="admin-content-frame"
+              title="管理者中心內容頁"
+              src="/portal/dashboard/welcome"
+            ></iframe>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/assets/portal-dashboard.js"></script>
+  </body>
+</html>
