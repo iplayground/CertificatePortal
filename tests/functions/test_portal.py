@@ -50,6 +50,8 @@ def test_portal_login_page_returns_html_with_expected_fields() -> None:
     assert 'class="panel portal-card"' in body
     assert 'class="portal-form-shell"' in body
     assert 'type="submit" disabled' in body
+    assert 'name="color-scheme"' in body
+    assert 'href="/assets/theme.css"' in body
     assert 'href="/assets/portal.css"' in body
     assert 'src="/assets/portal.js"' in body
     assert 'src="/assets/logo_b_alpha.png"' in body
@@ -78,7 +80,8 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".form-feedback.is-error" in body
     assert "color: #fff;" in body
     assert "margin: 0 auto;" in body
-    assert "repeating-linear-gradient" in body
+    assert "var(--theme-body-bg)" in body
+    assert "var(--theme-card-overlay)" in body
     assert "@media (max-width: 960px)" in body
 
 

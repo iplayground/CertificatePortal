@@ -29,9 +29,18 @@
 - 語系切換器只出現在首頁 `/`
 - 首頁切換語系時，由前端直接更新頁面文案，不會整頁重新整理
 
+目前公開首頁與管理平台共用下列主題規則：
+
+- 依使用者 `prefers-color-scheme` 自動切換日間與夜間模式
+- 日間模式沿用首頁既有淺色視覺
+- 夜間模式沿用管理平台既有深色視覺
+- `/assets/theme.css` 提供共用主題 token
+- 個別頁面 CSS 只負責版面與元件樣式
+
 - `/`
   - 顯示置中單卡式首頁版型
   - 顯示 iPlayground logo 與品牌色樣式
+  - logo 置中顯示
   - 顯示語系切換器，目前支援 `zh-TW` 與 `en-US`
   - 提供活動名自訂下拉元件，目前固定為 `iPlayground 2026`
   - 提供報名人姓名輸入欄位
@@ -46,6 +55,7 @@
 - `/portal`
   - 作為管理平台登入入口
   - 顯示 `管理中心` 標題與 `管理者登入` 小標
+  - 套用與首頁相同的日夜主題切換規則
   - 提供管理者帳號與密碼欄位
   - 管理者帳號欄位使用 `email` 輸入格式
   - 提供顯示或隱藏密碼的前端互動
@@ -63,6 +73,7 @@
 | `GET` | `/assets/portal.js` | 管理平台登入頁互動腳本 |
 | `GET` | `/assets/home.css` | 首頁樣式 |
 | `GET` | `/assets/home.js` | 首頁互動腳本 |
+| `GET` | `/assets/theme.css` | 首頁與管理平台共用的日夜主題 token |
 | `GET` | `/assets/language_icon.svg` | 首頁語系切換器使用的本地 SVG icon |
 | `GET` | `/assets/logo_b_alpha.png` | iPlayground 品牌 logo |
 

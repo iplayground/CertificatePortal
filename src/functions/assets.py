@@ -15,6 +15,7 @@ ASSET_DEFINITIONS: dict[str, tuple[Path, str, bool]] = {
     "logo_b_alpha.png": (STATIC_DIR / "logo_b_alpha.png", "image/png", False),
     "portal.css": (STATIC_DIR / "portal.css", "text/css", True),
     "portal.js": (STATIC_DIR / "portal.js", "application/javascript", True),
+    "theme.css": (STATIC_DIR / "theme.css", "text/css", True),
 }
 
 

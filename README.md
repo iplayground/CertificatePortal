@@ -21,6 +21,14 @@ iPlayground 完訓證明系統。
 - 首頁切換語系時，會由前端直接更新文案，不會整頁重新整理
 - locale JSON 字典檔集中於 `src/shared/locales/`，並由獨立測試驗證結構一致性
 
+目前首頁與管理平台已建立共用主題基線：
+
+- 預設依使用者 `prefers-color-scheme` 自動切換日間與夜間模式
+- 日間模式沿用首頁既有的淺色品牌視覺
+- 夜間模式沿用管理平台既有的深色品牌視覺
+- 首頁與管理平台共用 `/assets/theme.css` 主題 token，個別頁面樣式只處理版面與元件配置
+- 日間模式的主要 CTA 按鈕目前收斂為單一藍色系
+
 管理平台目前不納入 i18n：
 
 - 入口固定為 `/portal`
@@ -53,6 +61,7 @@ iPlayground 完訓證明系統。
 
 - 置中單卡式首頁版型
 - 套用 iPlayground 官方 logo 與品牌色
+- logo 置中顯示
 - 首頁語系切換器，支援 `zh-TW` 與 `en-US`
 - 活動名自訂下拉元件，固定為 `iPlayground 2026`
 - 報名人姓名輸入欄位
@@ -67,6 +76,7 @@ iPlayground 完訓證明系統。
 - 置中單卡式登入版型
 - 固定以 `/portal` 作為管理入口
 - `管理中心` 標題與 `管理者登入` 小標
+- 延用與首頁相同的日夜主題切換規則
 - 管理者帳號欄位，使用 `email` 輸入格式
 - 密碼欄位與顯示或隱藏密碼互動
 - 登入按鈕預設為 disabled，只有在帳號與密碼都已輸入且帳號符合 `email` 格式時才可點擊
@@ -129,6 +139,12 @@ func start --port 7075 --skip-azure-storage-check
 
 ```bash
 python3 -m pytest
+```
+
+若本機直接執行 `pytest` 時發生 `ModuleNotFoundError: No module named 'src'`，可改用：
+
+```bash
+PYTHONPATH=. pytest
 ```
 
 其中 `tests/shared/test_i18n_catalog.py` 會獨立檢查所有 locale JSON 檔是否與 `SUPPORTED_LOCALES` 一致、結構完全對齊，且可被 i18n catalog 載入。

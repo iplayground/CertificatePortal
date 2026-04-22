@@ -55,6 +55,8 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'class="custom-select-trigger"' in body
     assert 'data-value="iPlayground 2025"' not in body
     assert 'name="viewport"' in body
+    assert 'name="color-scheme"' in body
+    assert 'href="/assets/theme.css"' in body
     assert 'href="/assets/home.css"' in body
     assert 'src="/assets/home.js"' in body
 
@@ -152,6 +154,25 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert ".locale-trigger" in body
     assert ".locale-menu-option" in body
     assert 'url("/assets/language_icon.svg")' in body
+    assert "margin-inline: auto;" in body
+
+
+def test_theme_css_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/theme.css",
+            route_params={"asset_name": "theme.css"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/css"
+    assert "color-scheme: light dark;" in body
+    assert "@media (prefers-color-scheme: dark)" in body
+    assert "repeating-linear-gradient" in body
+    assert "--theme-primary-gradient" in body
+    assert "linear-gradient(135deg, #5179fe 0%, #7f9aff 100%)" in body
 
 
 def test_home_js_asset_returns_expected_content_type() -> None:
