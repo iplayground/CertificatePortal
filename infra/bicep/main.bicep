@@ -158,6 +158,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   tags: tags
   properties: {
     serverFarmId: hostingPlan.id
+    httpsOnly: true
     functionAppConfig: {
       deployment: {
         storage: {

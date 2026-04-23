@@ -133,6 +133,7 @@ gh workflow list -R iplayground/CertificatePortal
 - Hosting plan：Flex Consumption
 - Host storage：`AzureWebJobsStorage__accountName`，以 system-assigned managed identity 存取
 - Deployment storage：Blob container `function-releases`，以 system-assigned managed identity 存取
+- Function App `httpsOnly`：啟用，僅允許 HTTPS 存取
 
 ## 注意事項
 
@@ -141,3 +142,102 @@ gh workflow list -R iplayground/CertificatePortal
 - 目前 GitHub OIDC 身分只需要支援應用程式程式碼部署，不應為了日常 deploy 額外授與整個 resource group 的基礎設施管理權限。
 - 若變更 GitHub repo 名稱、組織或主要分支，必須同步更新 federated credential，否則 OIDC 會失效。
 - `functionAppName` 一旦上線後就不建議任意變更，否則會影響 DNS、監控命名與既有部署設定。
+
+## 自訂網域設定
+
+目前規劃的公開自訂子網域為：
+
+- `cert.iplayground.io`
+
+若要把 `cert.iplayground.io` 指到目前的 Function App，DNS 供應商端至少需建立下列記錄：
+
+- `CNAME`：`cert` -> `<azure-portal-shown-default-function-hostname>`
+- `TXT`：`asuid.cert` -> `<app-service-domain-verification-id>`
+
+說明：
+
+- `TXT asuid.cert` 用於 App Service 驗證網域所有權。
+- `CNAME cert` 用於把子網域流量導向 Azure 指定的預設 Function host。
+- 若 DNS 供應商支援 proxy 或 CDN 模式，驗證期間應先維持純 DNS 模式，避免 Azure 看不到正確記錄。
+
+DNS 完成並傳播後，可用下列指令完成 hostname binding：
+
+```bash
+az functionapp config hostname add \
+  --resource-group <resource-group-name> \
+  --name <function-app-name> \
+  --hostname cert.iplayground.io
+```
+
+### 目前限制
+
+截至 2026-04-23，Azure Functions Flex Consumption 在文件與實際產品行為之間仍有不一致：
+
+- `az functionapp config ssl create` 這條舊 CLI 路徑目前會直接回覆不支援 Flex Consumption。
+- Azure Portal 已可對符合條件的 hostname 顯示「可建立 App Service 受控憑證」。
+- 實測可透過 `Microsoft.Web/sites/certificates` endpoint 建立站台範圍的 App Service Managed Certificate，並再把 thumbprint 綁回 hostname binding。
+
+以 `cert.iplayground.io` 為例，實測可行流程如下：
+
+1. 先建立 hostname binding。
+2. 建立站台範圍受控憑證：
+
+```bash
+az resource create \
+  --resource-group <resource-group-name> \
+  --namespace Microsoft.Web \
+  --resource-type certificates \
+  --parent sites/<function-app-name> \
+  --name <managed-certificate-resource-name> \
+  --api-version <site-certificates-api-version> \
+  --is-full-object \
+  --properties '{
+    "location": "<azure-region>",
+    "properties": {
+      "canonicalName": "cert.iplayground.io",
+      "domainValidationMethod": "http-token",
+      "hostNames": [
+        "cert.iplayground.io"
+      ]
+    }
+  }'
+```
+
+3. 再把受控憑證 thumbprint 綁到 hostname binding：
+
+```bash
+az rest \
+  --method put \
+  --url "https://management.azure.com/subscriptions/<subscription-id>/resourceGroups/<resource-group-name>/providers/Microsoft.Web/sites/<function-app-name>/hostNameBindings/cert.iplayground.io?api-version=<host-name-bindings-api-version>" \
+  --body '{
+    "properties": {
+      "siteName": "<function-app-name>",
+      "hostNameType": "Verified",
+      "sslState": "SniEnabled",
+      "thumbprint": "<certificate-thumbprint>"
+    }
+  }'
+```
+
+4. 可用下列指令驗證目前站台已綁定哪張憑證：
+
+```bash
+az rest \
+  --method get \
+  --url "https://management.azure.com/subscriptions/<subscription-id>/resourceGroups/<resource-group-name>/providers/Microsoft.Web/sites/<function-app-name>?api-version=<sites-api-version>" \
+  --query "properties.hostNameSslStates"
+```
+
+### ASMC 政策更新
+
+依 2025-11 的 App Service Managed Certificates 政策更新，ASMC 驗證已改為由 App Service front end 回應 DigiCert 的 HTTP token 驗證請求。這表示：
+
+- 即使站台有限制公開存取，只要其他條件符合，ASMC 仍可簽發與續期。
+- 仍然需要 public DNS 記錄。
+- 不需要另外 allowlist DigiCert IP。
+- Traffic Manager `Nested` / `External` endpoint 與 `*.trafficmanager.net` 仍屬不支援情境。
+
+參考文件：
+
+- Microsoft Learn: `app-service-managed-certificate-changes-july-2025`
+- Tech Community: `Follow-Up to 'Important Changes to App Service Managed Certificates': November 2025 Update`
