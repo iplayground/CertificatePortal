@@ -32,5 +32,9 @@
     "cert_id_label": "certId",
     "status_label": "status",
     "status_value": "Verification data is not connected yet"
+  },
+  "page_alert": {
+    "dismiss_label": "Got it",
+    "dismiss_aria_label": "Dismiss alert"
   }
 }

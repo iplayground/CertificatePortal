@@ -106,18 +106,9 @@ def build_portal_logout_url(req: func.HttpRequest, post_logout_redirect_uri: str
 def resolve_portal_access(req: func.HttpRequest) -> PortalAccess:
     principal = resolve_portal_principal(req)
 
-    if not principal.is_authenticated:
-        return PortalAccess(
-            principal=principal,
-            is_authorized=False,
-        )
-
-    normalized_email = _normalize_email(principal.email)
-    is_authorized = bool(normalized_email)
-
     return PortalAccess(
         principal=principal,
-        is_authorized=is_authorized,
+        is_authorized=principal.is_authenticated,
     )
 
 
@@ -237,8 +228,9 @@ def build_portal_google_auth_start_response(req: func.HttpRequest) -> func.HttpR
 
 def build_portal_google_auth_callback_response(req: func.HttpRequest) -> func.HttpResponse:
     config = _get_portal_google_auth_config_or_raise()
-    if req.params.get("error"):
-        raise PortalGoogleAuthError(f"Google 登入失敗：{req.params.get('error')}")
+    oauth_error = req.params.get("error", "").strip()
+    if oauth_error:
+        raise PortalGoogleAuthError(oauth_error)
 
     authorization_code = req.params.get("code", "").strip()
     if not authorization_code:
@@ -645,4 +637,3 @@ def _normalize_email(value: str | None) -> str | None:
         return None
 
     return normalized_value
-

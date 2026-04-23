@@ -16,15 +16,15 @@ iPlayground 完訓證明系統。
 
 - `/portal` 會依應用程式內建的 Google OAuth 流程與 session cookie 判斷目前狀態
 - 未登入時顯示 Google SSO 登入入口與返回首頁連結
-- 已登入但缺少可用 email claim 時顯示權限不足畫面
-- 已登入且具有可用 email 的帳號可進入 `/portal/dashboard`
-- `/portal/dashboard` 與其子頁都會在伺服器端再次檢查 session cookie 與 email claim，不依賴前端暫存
+- 已登入帳號可進入 `/portal/dashboard`
+- `/portal/dashboard` 與其子頁都會在伺服器端再次檢查 session cookie，不依賴前端暫存
 
 ## 目前頁面基線
 
 - 首頁與公開驗證頁支援 `zh-TW` 與 `en-US`，並以 `ipg_locale` cookie 搭配 `Accept-Language` 決定語系
 - 語系切換器只出現在首頁 `/`，切換時由前端直接更新文案，不會整頁重新整理
 - 管理平台固定使用繁體中文，入口與子路徑統一收斂在 `/portal...`，不納入 i18n 範圍
+- 共用 alert 元件已支援 i18n；若頁面本身未接入 i18n，alert 文案預設使用 `zh-TW`
 - 首頁與管理平台共用 `/assets/theme.css` 主題 token，並依 `prefers-color-scheme` 切換日夜模式
 - 所有 HTML 頁面都載入共用 favicon 與標題格式，`/portal/dashboard` 會同步 iframe 內容頁 title
 - 首頁只保留 `twitter:card`，其餘社群分享資訊以 Open Graph metadata 為主
@@ -118,7 +118,7 @@ python3 -m pytest
 PYTHONPATH=. pytest
 ```
 
-其中 `tests/shared/test_i18n_catalog.py` 會獨立檢查所有 locale JSON 檔是否與 `SUPPORTED_LOCALES` 一致、結構完全對齊，且可被 i18n catalog 載入。
+其中 `tests/shared/test_i18n_catalog.py` 會獨立檢查所有 locale JSON 檔是否與 `SUPPORTED_LOCALES` 一致、結構完全對齊，且可被 i18n catalog 載入；`tests/shared/test_page_alerts.py` 則會驗證 shared alert 的預設 `zh-TW` fallback 與 i18n 文案切換。
 
 ## 注意事項
 

@@ -212,6 +212,10 @@ def test_theme_css_asset_returns_expected_content_type() -> None:
     assert "repeating-linear-gradient" in body
     assert "--theme-primary-gradient" in body
     assert "linear-gradient(135deg, #5179fe 0%, #7f9aff 100%)" in body
+    assert ".page-alert" in body
+    assert ".page-alert-frame" in body
+    assert ".page-alert-close" in body
+    assert "@keyframes page-alert-dissolve" in body
 
 
 def test_home_js_asset_returns_expected_content_type() -> None:

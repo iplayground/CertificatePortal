@@ -87,6 +87,10 @@ def parse_set_cookie_value(set_cookie_header: str, cookie_name: str) -> str:
     return cookie[cookie_name].value
 
 
+def build_cookie_header(**cookie_values: str) -> str:
+    return "; ".join(f"{cookie_name}={cookie_value}" for cookie_name, cookie_value in cookie_values.items())
+
+
 def test_portal_login_page_shows_local_google_setup_message_when_not_authenticated_on_localhost(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -119,6 +123,7 @@ def test_portal_login_page_shows_local_google_setup_message_when_not_authenticat
     assert 'type="password"' not in body
     assert 'href="/assets/theme.css"' in body
     assert 'href="/assets/portal.css"' in body
+    assert 'src="/assets/page-alert.js"' in body
     assert 'src="/assets/portal-login.js"' in body
     assert 'src="/assets/logo_b_alpha.png"' in body
 
@@ -141,6 +146,39 @@ def test_portal_login_page_uses_portal_google_auth_entry_when_configured(
     assert "返回首頁" in body
     assert "請使用 Google Workspace 管理者帳號登入以繼續操作。" not in body
     assert "目前僅開放 iplayground.io 網域帳號登入。" not in body
+
+
+def test_portal_login_page_shows_google_login_cancelled_alert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+
+    response = portal_login_page(
+        build_request(
+            "http://localhost:7075/portal",
+            headers={"Cookie": build_cookie_header(portal_flash="google-login-cancelled")},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'class="page-alert"' in body
+    assert "data-page-alert" in body
+    assert 'data-page-alert-tone="error"' in body
+    assert 'data-page-alert-dismiss-delay="6000"' in body
+    assert 'class="page-alert-frame"' in body
+    assert 'class="page-alert-content"' in body
+    assert "Google 登入未完成" in body
+    assert "已取消 Google 登入。若仍需進入管理平台，請再試一次。" in body
+    assert 'data-page-alert-dismiss' in body
+    assert 'id="form-feedback"' not in body
+    assert '/portal/auth/google/login?post_login_redirect_uri=/portal' in body
+    assert "返回首頁" in body
+    assert 'class="portal-toast"' not in body
+    assert "portal_error" not in body
+    assert response.headers["Set-Cookie"].startswith("portal_flash=;")
 
 
 def test_portal_login_page_redirects_to_dashboard_when_user_is_authenticated_with_email(
@@ -180,7 +218,7 @@ def test_portal_login_page_redirects_to_dashboard_when_authenticated_email_is_no
     assert response.headers["Cache-Control"] == "no-store"
 
 
-def test_portal_login_page_shows_denied_state_when_authenticated_user_email_is_missing(
+def test_portal_login_page_redirects_to_dashboard_when_authenticated_user_email_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
@@ -194,19 +232,10 @@ def test_portal_login_page_shows_denied_state_when_authenticated_user_email_is_m
             ),
         )
     )
-    body = response.get_body().decode("utf-8")
 
-    assert response.status_code == 200
-    assert '<p class="panel-kicker">權限不足</p>' in body
-    assert "目前登入的帳號缺少可用的電子郵件資訊" in body
-    assert "請切換到其他 Google 帳號" in body
-    assert "需要可用的 email claim" in body
-    assert "陳小華" in body
-    assert "未提供電子郵件 claim" in body
-    assert "切換帳號" in body
-    assert 'href="/"' in body
-    assert "返回首頁" in body
-    assert '/.auth/logout?post_logout_redirect_uri=/portal' in body
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/portal/dashboard"
+    assert response.headers["Cache-Control"] == "no-store"
 
 
 def test_portal_dashboard_page_redirects_to_portal_when_not_authenticated(
@@ -220,7 +249,7 @@ def test_portal_dashboard_page_redirects_to_portal_when_not_authenticated(
     assert response.headers["Location"] == "/portal"
 
 
-def test_portal_dashboard_page_redirects_to_portal_when_authenticated_email_is_missing(
+def test_portal_dashboard_page_returns_html_when_authenticated_email_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
@@ -228,12 +257,15 @@ def test_portal_dashboard_page_redirects_to_portal_when_authenticated_email_is_m
     response = portal_dashboard_page(
         build_request(
             "http://localhost:7075/portal/dashboard",
-            headers=build_authenticated_headers(email=None),
+            headers=build_authenticated_headers(display_name="陳小華", email=None),
         )
     )
+    body = response.get_body().decode("utf-8")
 
-    assert response.status_code == 302
-    assert response.headers["Location"] == "/portal"
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert "陳小華" in body
+    assert "目前登入管理者" in body
 
 
 def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
@@ -354,6 +386,26 @@ def test_portal_google_auth_callback_sets_session_cookie_and_allows_dashboard_ac
     assert 'data-logout-url="/portal/auth/logout?post_logout_redirect_uri=/portal"' in dashboard_body
 
 
+def test_portal_google_auth_callback_redirects_to_portal_with_alert_when_access_is_denied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+
+    response = portal_google_callback_page(
+        build_request(
+            "http://localhost:7075/portal/auth/google/callback",
+            params={"error": "access_denied"},
+        )
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/portal"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert parse_set_cookie_value(response.headers["Set-Cookie"], "portal_flash") == "google-login-cancelled"
+
+
 def test_portal_google_logout_clears_session_cookie(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -471,6 +523,7 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".portal-sso-button-icon" in body
     assert ".portal-sso-button-copy" in body
     assert ".portal-sso-button-label" in body
+    assert ".page-alert" not in body
     assert ".panel.admin-workspace" in body
     assert ".portal-dashboard-shell .page-shell" in body
     assert ".portal-dashboard-shell .panel.admin-workspace" in body
@@ -493,7 +546,6 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert "var(--theme-body-bg)" in body
     assert "var(--theme-card-overlay)" in body
     assert "@media (max-width: 960px)" in body
-    assert "grid-template-columns: 1fr;" not in body
 
 
 def test_portal_login_js_asset_returns_expected_content_type() -> None:
@@ -511,8 +563,29 @@ def test_portal_login_js_asset_returns_expected_content_type() -> None:
     assert 'link.dataset.loadingLabel?.trim()' in body
     assert 'link.setAttribute("aria-disabled", "true")' in body
     assert 'link.classList.add("is-busy")' in body
+    assert "pageAlert" not in body
     assert "validateLoginForm" not in body
     assert "sessionStorage" not in body
+
+
+def test_page_alert_js_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/page-alert.js",
+            route_params={"asset_name": "page-alert.js"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert 'document.querySelectorAll("[data-page-alert]")' in body
+    assert 'pageAlert.querySelector("[data-page-alert-dismiss]")' in body
+    assert 'pageAlert.classList.add("is-closing")' in body
+    assert 'pageAlert.addEventListener("animationend"' in body
+    assert 'event.animationName !== "page-alert-dissolve"' in body
+    assert 'pageAlert.classList.add("is-hidden")' in body
+    assert "pageAlert.dataset.pageAlertDismissDelay" in body
 
 
 def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:

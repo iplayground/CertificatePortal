@@ -15,7 +15,7 @@
 
 同時，本專案仍希望保留：
 
-- `/portal` 可匿名進入，由應用程式自行決定顯示登入入口或權限不足頁
+- `/portal` 可匿名進入，由應用程式自行決定顯示登入入口或設定提示
 - `/portal/dashboard` 與其子頁一律由伺服器端重新檢查授權
 - 本機與 Azure 使用同一套登入路徑與 session 模型
 
@@ -26,7 +26,7 @@
 1. 管理平台登入採用應用程式內建的 Google OAuth / OIDC code flow。
 2. 管理平台授權主要依賴 Google OAuth client 本身的 `Internal` 設定，不再額外維護額外授權 app setting。
 3. Google OAuth client 設定以 `PORTAL_GOOGLE_CLIENT_ID`、`PORTAL_GOOGLE_CLIENT_SECRET` 與可選的 `PORTAL_GOOGLE_REDIRECT_URI` 表示，local 與 Azure 共用同一組命名。
-4. Google callback 成功後，由應用程式建立 HttpOnly session cookie；`/portal/dashboard` 與其子頁一律在伺服器端重新檢查這個 cookie 與 email claim，不信任前端狀態。
+4. Google callback 成功後，由應用程式建立 HttpOnly session cookie；`/portal/dashboard` 與其子頁一律在伺服器端重新檢查這個 cookie，不信任前端狀態。
 5. 若只需要檢視 UI，才使用 `PORTAL_AUTH_BYPASS_ENABLED` 做本機 bypass，不把假的帳號密碼表單留在產品路徑。
 
 ## 影響
@@ -43,7 +43,7 @@
 - 正式環境仍需設定 Google OAuth client 與對應 app settings
 - 應用程式需要自行維護 OAuth callback、session cookie 與基本錯誤處理
 - 授權正確性更依賴 Google OAuth client 的 `Internal` 設定與 Workspace 管理端配置
-- 若登入流程未提供可用 email claim，使用者仍不能進入管理平台
+- Google callback 成功與否仍取決於 Google 回傳的有效登入資訊
 
 ## 後續
 

@@ -28,7 +28,7 @@
 
 ### 呈現方式
 
-目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace Internal SSO 與 email claim 授權檢查，但尚未串接實際業務資料。
+目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace Internal SSO 與 session cookie 授權檢查，但尚未串接實際業務資料。
 
 - 首頁與管理平台目前為靜態 HTML GUI
 - 公開驗證頁面目前為靜態純文字輸出
@@ -42,6 +42,8 @@
 - 語系切換器只出現在首頁 `/`
 - 首頁切換語系時，由前端直接更新頁面文案，不會整頁重新整理
 - 管理平台固定使用繁體中文，不納入 i18n 範圍
+- 共用 alert 元件支援 `zh-TW` 與 `en-US`
+- 若頁面本身未接入 i18n，alert 文案預設使用 `zh-TW`
 
 ### 管理平台規則
 
@@ -50,7 +52,7 @@
 - 首頁 `/` 不提供管理平台按鈕入口
 - `/portal` 目前採 Google 單一登入入口，不再接受本地帳號密碼表單
 - Google 登入與登出統一走 `/portal/auth/google/login`、`/portal/auth/google/callback`、`/portal/auth/logout`
-- 管理平台授權主要依賴 Google OAuth client 的 `Internal` 設定，以及登入後可取得的 email claim，而不是前端暫存狀態
+- 管理平台授權主要依賴 Google OAuth client 的 `Internal` 設定與伺服器端 session cookie，而不是前端暫存狀態
 - 登入後的完訓證明管理平台目前位於 `/portal/dashboard`
 - 完訓證明管理平台以 iframe 載入歡迎頁、`檢視清單` 與 `上傳清單` 三個獨立頁面
 - 左側功能清單固定顯示 `檢視清單` 與 `上傳清單`
@@ -107,9 +109,11 @@ status: 尚未串接實際驗證資料
 - 顯示 `完訓證明管理平台` 標題與 `管理者登入` 小標
 - 套用與首頁相同的日夜主題切換規則
 - 未登入時顯示 Google 登入按鈕與 `返回首頁` 連結
+- 若使用者在 Google OAuth 流程中取消授權，會返回 `/portal`
+- OAuth callback 會以一次性 flash cookie 傳遞錯誤狀態，不使用 URL query
+- `/portal` 讀取這個一次性 flash cookie 後，會顯示浮動錯誤 alert，並立即清除 cookie
 - 本機若缺少 Google OAuth 設定時，顯示設定未完成提示、停用中的登入按鈕與 `返回首頁` 連結
-- 已登入但缺少可用 email claim 時顯示權限不足訊息、切換帳號按鈕與 `返回首頁` 連結
-- 已登入且具有可用 email 時，伺服器端直接導向 `/portal/dashboard`
+- 已登入時，伺服器端直接導向 `/portal/dashboard`
 - 不提供語系切換器
 
 ### `/portal/dashboard`
@@ -151,10 +155,11 @@ status: 尚未串接實際驗證資料
 | `GET` | `/assets/portal-login.js` | 管理平台登入入口的連結互動腳本 |
 | `GET` | `/assets/portal-dashboard.js` | 管理中心頁面互動腳本 |
 | `GET` | `/assets/portal-dashboard-welcome.js` | 管理中心歡迎頁互動腳本 |
+| `GET` | `/assets/page-alert.js` | 共用 alert 元件的關閉與自動消失腳本 |
 | `GET` | `/assets/favicon.png` | 所有 HTML 頁面共用 favicon |
 | `GET` | `/assets/home.css` | 首頁樣式 |
 | `GET` | `/assets/home.js` | 首頁互動腳本 |
-| `GET` | `/assets/theme.css` | 首頁與管理平台共用的日夜主題 token |
+| `GET` | `/assets/theme.css` | 首頁與管理平台共用的日夜主題 token 與 shared alert 樣式 |
 | `GET` | `/assets/google-g-icon.svg` | 管理平台 Google 登入按鈕使用的本地 SVG icon |
 | `GET` | `/assets/language_icon.svg` | 首頁語系切換器使用的本地 SVG icon |
 | `GET` | `/assets/logo_b_alpha.png` | iPlayground 品牌 logo |

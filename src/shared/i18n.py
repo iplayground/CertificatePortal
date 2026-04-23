@@ -77,6 +77,12 @@ VERIFY_PAGE_COPY_KEYS = frozenset(
         "status_value",
     }
 )
+PAGE_ALERT_COPY_KEYS = frozenset(
+    {
+        "dismiss_label",
+        "dismiss_aria_label",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,7 @@ class LocaleCatalog:
     locale_option_labels: dict[Locale, str]
     home_page: dict[str, str]
     verify_page: dict[str, str]
+    page_alert: dict[str, str]
 
 
 def get_home_page_context(locale: Locale) -> dict[str, str]:
@@ -104,6 +111,10 @@ def get_home_page_context(locale: Locale) -> dict[str, str]:
 
 def get_verify_page_copy(locale: Locale) -> dict[str, str]:
     return load_locale_catalog(locale).verify_page.copy()
+
+
+def get_page_alert_copy(locale: Locale) -> dict[str, str]:
+    return load_locale_catalog(locale).page_alert.copy()
 
 
 def localized_response_headers(locale: Locale) -> dict[str, str]:
@@ -247,6 +258,7 @@ def load_locale_catalog(locale: Locale) -> LocaleCatalog:
         locale_option_labels=_validate_locale_option_labels(locale, raw_catalog.get("locale_option_labels")),
         home_page=_validate_string_map(locale, "home_page", raw_catalog.get("home_page"), HOME_PAGE_COPY_KEYS),
         verify_page=_validate_string_map(locale, "verify_page", raw_catalog.get("verify_page"), VERIFY_PAGE_COPY_KEYS),
+        page_alert=_validate_string_map(locale, "page_alert", raw_catalog.get("page_alert"), PAGE_ALERT_COPY_KEYS),
     )
 
 

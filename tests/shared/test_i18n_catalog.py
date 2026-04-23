@@ -48,3 +48,4 @@ def test_all_supported_locales_can_load_through_catalog() -> None:
         assert catalog.locale_option_labels
         assert catalog.home_page
         assert catalog.verify_page
+        assert catalog.page_alert

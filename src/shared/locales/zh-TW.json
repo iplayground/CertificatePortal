@@ -32,5 +32,9 @@
     "cert_id_label": "certId",
     "status_label": "status",
     "status_value": "尚未串接實際驗證資料"
+  },
+  "page_alert": {
+    "dismiss_label": "知道了",
+    "dismiss_aria_label": "關閉提示"
   }
 }

@@ -15,6 +15,7 @@ ASSET_DEFINITIONS: dict[str, tuple[Path, str, bool]] = {
     "language_icon.svg": (STATIC_DIR / "language_icon.svg", "image/svg+xml", True),
     "logo_b_alpha.png": (STATIC_DIR / "logo_b_alpha.png", "image/png", False),
     "logo_sq_b.png": (STATIC_DIR / "logo_sq_b.png", "image/png", False),
+    "page-alert.js": (STATIC_DIR / "page-alert.js", "application/javascript", True),
     "google-g-icon.svg": (STATIC_DIR / "google-g-icon.svg", "image/svg+xml", True),
     "portal.css": (STATIC_DIR / "portal.css", "text/css", True),
     "portal-dashboard.js": (STATIC_DIR / "portal-dashboard.js", "application/javascript", True),
