@@ -118,7 +118,7 @@ scripts/
 
 建議職責如下：
 
-- `infra/`：基礎設施即程式碼
+- `infra/`：基礎設施即程式碼，供 Azure CLI 或其他 IaC 流程套用
 - `src/functions/`：Azure Functions 進入點與 trigger/binding 定義
 - `src/shared/`：共用領域邏輯、服務、模型與介接層
 - `tests/`：單元測試與整合測試

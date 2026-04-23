@@ -2,24 +2,21 @@
 
 本文件說明本專案目前採用的 Azure Functions Flex Consumption + GitHub Actions 部署流程。
 
-## 目前部署方式
+## 流程總覽
 
-- 基礎設施：`infra/bicep/main.bicep`
-- CI/CD：`.github/workflows/deploy-function-app.yml`
-- Azure 驗證：GitHub Actions OIDC + Azure user-assigned managed identity
-- 程式碼部署：`Azure/functions-action@v1` + `remote-build: true`
-- 例行 workflow 只部署 Function App 程式碼，不在每次 push 時重跑整份 Bicep
+1. `infra/bicep/main.bicep` 定義 Azure 資源應該長成什麼樣子。
+2. Azure CLI 透過 `az deployment group create` 套用 `infra/` 內的 Bicep，實際建立或更新 Azure 資源。
+3. Azure Portal 目前只保留給 GitHub 來源綁定流程使用。
+4. `.github/workflows/deploy-function-app.yml` 假設上述資源已存在，之後只負責把應用程式程式碼部署到既有 Function App。
 
-## 目前 production 基線
+## 相關檔案
 
-- 目前只維護 production，一切 IaC 與 workflow 都以這套設定為準
-- Resource Group、Region 與 Function App 名稱由 GitHub Actions variables 或部署命令參數提供
+- 基礎設施定義：`infra/bicep/main.bicep`
+- 程式碼部署 workflow：`.github/workflows/deploy-function-app.yml`
 
-實際的 Function App 名稱必須保持 Azure 全域唯一，並會同時影響：
+Resource Group、Region 與 Function App 名稱由 Bicep 參數或 GitHub Actions variables 提供。
 
-- Azure Function App 名稱
-- 預設公開網址 `https://<functionAppName>.azurewebsites.net`
-- 由 Bicep 衍生出的 Storage Account、Application Insights、Log Analytics 與 GitHub 部署身分命名
+`functionAppName` 必須保持 Azure 全域唯一，並會同時影響 Function App 名稱、預設公開網址，以及衍生出的 Storage Account、Application Insights、Log Analytics 與 GitHub 部署身分命名。
 
 ## 第一次手動佈署基礎設施
 
@@ -82,12 +79,15 @@ az deployment group create \
 
 目前 workflow 直接使用下列 GitHub Actions variables：
 
-- `AZURE_RESOURCE_GROUP`
-  說明：production 使用的 Resource Group 名稱
-- `AZURE_LOCATION`
-  說明：production 使用的 Azure region
 - `AZURE_FUNCTIONAPP_NAME`
-  說明：production 使用的 Function App 名稱
+  說明：部署使用的 Function App 名稱
+
+若希望把部署基本資訊一併保留在 GitHub repository variables，也可另外保存：
+
+- `AZURE_RESOURCE_GROUP`
+  說明：部署使用的 Resource Group 名稱
+- `AZURE_LOCATION`
+  說明：部署使用的 Azure region
 
 若已完成 `gh auth login`，可直接用 GitHub CLI 設定：
 
@@ -108,13 +108,16 @@ gh variable list -R iplayground/CertificatePortal
 gh workflow list -R iplayground/CertificatePortal
 ```
 
-## GitHub Actions 觸發條件
+## GitHub Actions workflow
+
+目前 workflow 使用 GitHub Actions OIDC + `Azure/functions-action@v1`，只負責既有 Function App 的程式碼部署，不會重跑整份 Bicep。
+
+### 觸發條件
 
 - push 到 `main`
 - 手動執行 `workflow_dispatch`
-- 目前 workflow 不綁定 GitHub Actions `environment`
 
-流程順序如下：
+### 執行順序
 
 1. checkout 原始碼
 2. 設定 Python 3.13
@@ -134,9 +137,7 @@ gh workflow list -R iplayground/CertificatePortal
 ## 注意事項
 
 - Flex Consumption 只支援 One Deploy 路徑，不應混用舊式 Zip Deploy 設定。
-- 目前 workflow 與 IaC 已收斂為單一 production 基線。
 - `workflow_dispatch` 應從 `main` 分支觸發；目前 OIDC federated credential 明確綁定 `repo:iplayground/CertificatePortal:ref:refs/heads/main`。
-- 若在 workflow 內加入 GitHub Actions `environment`，OIDC subject 會改成 `repo:iplayground/CertificatePortal:environment:<name>`；除非同步調整 Azure federated credential，否則 `azure/login` 會失敗。
 - 目前 GitHub OIDC 身分只需要支援應用程式程式碼部署，不應為了日常 deploy 額外授與整個 resource group 的基礎設施管理權限。
 - 若變更 GitHub repo 名稱、組織或主要分支，必須同步更新 federated credential，否則 OIDC 會失效。
 - `functionAppName` 一旦上線後就不建議任意變更，否則會影響 DNS、監控命名與既有部署設定。
