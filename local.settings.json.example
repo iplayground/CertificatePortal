@@ -10,6 +10,12 @@
     "COSMOS_UPLOAD_BATCHES_CONTAINER": "",
     "BLOB_SOURCE_CONTAINER": "",
     "BLOB_CERT_TEMPLATE_CONTAINER": "",
-    "BLOB_ISSUED_CERT_CONTAINER": ""
+    "BLOB_ISSUED_CERT_CONTAINER": "",
+    "PORTAL_GOOGLE_CLIENT_ID": "",
+    "PORTAL_GOOGLE_CLIENT_SECRET": "",
+    "PORTAL_GOOGLE_REDIRECT_URI": "http://localhost:7075/portal/auth/google/callback",
+    "PORTAL_AUTH_BYPASS_ENABLED": "false",
+    "PORTAL_AUTH_BYPASS_DISPLAY_NAME": "本機管理者",
+    "PORTAL_AUTH_BYPASS_EMAIL": "local-admin@iplayground.io"
   }
 }

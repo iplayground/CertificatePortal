@@ -12,7 +12,6 @@
   </head>
   <body
     class="portal-embedded-body"
-    data-portal-account-storage-key="portalSignedInAccount"
   >
     <main class="embedded-page-shell">
       <header class="admin-header">
@@ -28,7 +27,7 @@
         <div class="welcome-copy">
           <h2>
             歡迎回來，
-            <span id="welcome-account-display">管理者</span>
+            <span id="welcome-account-display">{{portal_user_display_name}}</span>
           </h2>
           <p>
             你可以在這裡上傳完訓名單、追蹤批次處理結果，並管理完訓證明的發行與下載狀態。

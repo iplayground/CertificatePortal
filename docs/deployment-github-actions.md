@@ -6,12 +6,14 @@
 
 1. `infra/bicep/main.bicep` 定義 Azure 資源應該長成什麼樣子。
 2. Azure CLI 透過 `az deployment group create` 套用 `infra/` 內的 Bicep，實際建立或更新 Azure 資源。
-3. Azure Portal 目前只保留給 GitHub 來源綁定流程使用。
-4. `.github/workflows/deploy-function-app.yml` 假設上述資源已存在，之後只負責把應用程式程式碼部署到既有 Function App。
+3. 若要啟用 `/portal` 的 Google Workspace SSO，需另依 `docs/portal-authentication.md` 完成 local / production 分離的 Google OAuth client 與對應 app settings 設定。
+4. Azure Portal 目前只保留給 GitHub 來源綁定流程使用。
+5. `.github/workflows/deploy-function-app.yml` 假設上述資源已存在，並以 GitHub Actions OIDC + `Azure/functions-action@v1` 進行 remote build 與程式碼部署，不在每次 push 時重跑整份 Bicep。
 
 ## 相關檔案
 
 - 基礎設施定義：`infra/bicep/main.bicep`
+- 管理平台登入授權文件：`docs/portal-authentication.md`
 - 程式碼部署 workflow：`.github/workflows/deploy-function-app.yml`
 
 Resource Group、Region 與 Function App 名稱由 Bicep 參數或 GitHub Actions variables 提供。
@@ -32,6 +34,20 @@ az deployment group create \
 ```
 
 之後若有基礎設施變更，請另外以人工執行或獨立的高權限流程套用 Bicep，而不要直接放進日常程式碼部署 workflow。這樣可避免為一般 code deploy 身分開過大的 Azure 權限。
+
+若要啟用管理平台 `/portal` 的 Google Workspace SSO，請另外依 `docs/portal-authentication.md` 完成 Google OAuth client 與對應 app settings 設定。
+
+production 的 portal 登入設定目前建議用 Azure CLI 寫入，不在 Azure Portal 手動輸入：
+
+```bash
+az functionapp config appsettings set \
+  --resource-group <resource-group-name> \
+  --name <function-app-name> \
+  --settings \
+    PORTAL_GOOGLE_CLIENT_ID=<production-google-client-id> \
+    PORTAL_GOOGLE_CLIENT_SECRET=<production-google-client-secret> \
+    PORTAL_GOOGLE_REDIRECT_URI=https://cert.iplayground.io/portal/auth/google/callback
+```
 
 ## Azure Portal 與 GitHub 連線流程
 
@@ -64,7 +80,7 @@ az deployment group create \
 - 1 個 Application Insights
 - 1 個 GitHub Actions 專用 user-assigned managed identity
 - 1 個綁定到 `main` 分支的 federated credential
-- 4 個必要 RBAC role assignments
+- 4 個 Function App 執行所需的存取設定
 
 ## 部署後需要設定的 GitHub Actions Secrets 與 Variables
 

@@ -12,8 +12,8 @@
   </head>
   <body
     class="portal-dashboard-shell"
-    data-home-page-path="/"
-    data-portal-account-storage-key="portalSignedInAccount"
+    data-portal-entry-path="{{portal_entry_path}}"
+    data-logout-url="{{portal_logout_url}}"
     data-welcome-page-path="/portal/dashboard/welcome"
   >
     <div class="page-shell">
@@ -45,9 +45,9 @@
 
             <div class="sidebar-footer">
               <div class="sidebar-account-panel">
-                <span class="admin-account-label">目前登入帳號</span>
-                <strong class="admin-account-value" id="admin-account-display">管理者</strong>
-                <button class="secondary-button" id="portal-logout" type="button">返回首頁</button>
+                <span class="admin-account-label">目前登入管理者</span>
+                <strong class="admin-account-value" id="admin-account-display">{{portal_user_display_name}}</strong>
+                <button class="secondary-button" id="portal-logout" type="button">登出</button>
               </div>
             </div>
 

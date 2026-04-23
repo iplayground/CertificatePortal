@@ -1,21 +1,13 @@
-const welcomePage = document.body;
 const welcomeAccountDisplay = document.getElementById("welcome-account-display");
 
-const portalAccountStorageKey =
-  welcomePage.dataset.portalAccountStorageKey ?? "portalSignedInAccount";
+function ensureWelcomeAccountDisplay() {
+  if (!welcomeAccountDisplay) {
+    return;
+  }
 
-function readSignedInAccount() {
-  try {
-    return window.sessionStorage.getItem(portalAccountStorageKey)?.trim() ?? "";
-  } catch (error) {
-    void error;
-    return "";
+  if (!welcomeAccountDisplay.textContent?.trim()) {
+    welcomeAccountDisplay.textContent = "管理者";
   }
 }
 
-function syncSignedInAccount() {
-  const displayValue = readSignedInAccount() || "管理者";
-  welcomeAccountDisplay.textContent = displayValue;
-}
-
-syncSignedInAccount();
+ensureWelcomeAccountDisplay();

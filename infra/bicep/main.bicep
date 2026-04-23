@@ -17,6 +17,16 @@ param githubBranch string = 'main'
 @description('Python runtime version for the Flex Consumption app.')
 param pythonVersion string = '3.13'
 
+@description('Google OAuth client ID for the portal login flow.')
+param portalGoogleClientId string = ''
+
+@description('Google OAuth client secret for the portal login flow.')
+@secure()
+param portalGoogleClientSecret string = ''
+
+@description('Optional absolute redirect URI override for the portal Google OAuth callback.')
+param portalGoogleRedirectUri string = ''
+
 @description('Maximum Flex Consumption instances.')
 @minValue(1)
 @maxValue(1000)
@@ -192,6 +202,18 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'AzureWebJobsDisableHomepage'
           value: 'true'
+        }
+        {
+          name: 'PORTAL_GOOGLE_CLIENT_ID'
+          value: portalGoogleClientId
+        }
+        {
+          name: 'PORTAL_GOOGLE_CLIENT_SECRET'
+          value: portalGoogleClientSecret
+        }
+        {
+          name: 'PORTAL_GOOGLE_REDIRECT_URI'
+          value: portalGoogleRedirectUri
         }
       ]
     }

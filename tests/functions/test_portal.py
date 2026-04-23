@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import base64
+import json
+from http.cookies import SimpleCookie
+
 import azure.functions as func
+import pytest
 
 from src.functions.assets import static_asset
 from src.functions.portal import (
@@ -8,6 +13,9 @@ from src.functions.portal import (
     portal_dashboard_records_page,
     portal_dashboard_upload_page,
     portal_dashboard_welcome_page,
+    portal_google_callback_page,
+    portal_google_login_page,
+    portal_google_logout_page,
     portal_login_page,
 )
 
@@ -15,19 +23,75 @@ from src.functions.portal import (
 def build_request(
     url: str,
     *,
+    headers: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
     route_params: dict[str, str] | None = None,
 ) -> func.HttpRequest:
     return func.HttpRequest(
         method="GET",
         url=url,
-        headers={},
-        params={},
+        headers=headers or {},
+        params=params or {},
         route_params=route_params or {},
         body=b"",
     )
 
 
-def test_portal_login_page_returns_html_with_expected_fields() -> None:
+def build_client_principal_header(
+    *,
+    display_name: str = "王小明",
+    email: str | None = "admin@iplayground.io",
+) -> str:
+    claims = [
+        {"typ": "name", "val": display_name},
+        {"typ": "sub", "val": "google-subject-demo"},
+    ]
+    if email is not None:
+        claims.insert(1, {"typ": "preferred_username", "val": email})
+
+    payload = {
+        "auth_typ": "google",
+        "name_typ": "name",
+        "claims": claims,
+    }
+    serialized_payload = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return base64.b64encode(serialized_payload).decode("utf-8")
+
+
+def build_authenticated_headers(
+    *,
+    display_name: str = "王小明",
+    email: str | None = "admin@iplayground.io",
+) -> dict[str, str]:
+    return {
+        "X-MS-CLIENT-PRINCIPAL": build_client_principal_header(
+            display_name=display_name,
+            email=email,
+        )
+    }
+
+
+def reset_portal_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PORTAL_GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("PORTAL_GOOGLE_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("PORTAL_GOOGLE_REDIRECT_URI", raising=False)
+    monkeypatch.delenv("WEBSITE_INSTANCE_ID", raising=False)
+    monkeypatch.delenv("PORTAL_AUTH_BYPASS_ENABLED", raising=False)
+    monkeypatch.delenv("PORTAL_AUTH_BYPASS_DISPLAY_NAME", raising=False)
+    monkeypatch.delenv("PORTAL_AUTH_BYPASS_EMAIL", raising=False)
+
+
+def parse_set_cookie_value(set_cookie_header: str, cookie_name: str) -> str:
+    cookie = SimpleCookie()
+    cookie.load(set_cookie_header)
+    return cookie[cookie_name].value
+
+
+def test_portal_login_page_shows_local_google_setup_message_when_not_authenticated_on_localhost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
     response = portal_login_page(build_request("http://localhost:7075/portal"))
     body = response.get_body().decode("utf-8")
 
@@ -40,36 +104,149 @@ def test_portal_login_page_returns_html_with_expected_fields() -> None:
     assert "<title>完訓證明管理平台 - iPlayground</title>" in body
     assert '<h1 id="portal-title">完訓證明管理平台</h1>' in body
     assert '<p class="panel-kicker">管理者登入</p>' in body
-    assert 'id="portal-login-view"' in body
-    assert 'id="portal-dashboard"' not in body
-    assert 'data-dashboard-page-path="/portal/dashboard"' in body
-    assert 'data-portal-account-storage-key="portalSignedInAccount"' in body
-    assert 'data-default-feedback-message=""' in body
-    assert 'id="portal-login-form"' in body
-    assert 'type="text"' in body
-    assert 'autocomplete="username"' in body
-    assert 'aria-labelledby="portal-account-label"' in body
-    assert 'autocomplete="current-password"' in body
-    assert 'aria-labelledby="portal-password-label"' in body
-    assert 'id="toggle-password"' in body
-    assert 'class="panel portal-card"' in body
-    assert 'class="panel admin-workspace"' not in body
-    assert 'class="portal-form-shell"' in body
-    assert 'type="submit" disabled' in body
-    assert 'name="color-scheme"' in body
-    assert 'href="/assets/favicon.png"' in body
-    assert 'sizes="32x32"' in body
+    assert "本機 Google 登入尚未設定完成" in body
+    assert "PORTAL_GOOGLE_CLIENT_ID" in body
+    assert "PORTAL_GOOGLE_CLIENT_SECRET" in body
+    assert "Google 登入尚未設定" in body
+    assert "http://localhost:7075/portal/auth/google/callback" in body
+    assert 'href="/"' in body
+    assert "返回首頁" in body
+    assert 'class="portal-sso-button portal-action-link"' not in body
+    assert '/.auth/login/google?post_login_redirect_uri=/portal' not in body
+    assert 'class="portal-identity-card"' not in body
+    assert 'id="form-feedback"' in body
+    assert 'id="portal-login-form"' not in body
+    assert 'type="password"' not in body
     assert 'href="/assets/theme.css"' in body
     assert 'href="/assets/portal.css"' in body
     assert 'src="/assets/portal-login.js"' in body
     assert 'src="/assets/logo_b_alpha.png"' in body
-    assert "iPlayground Certify" not in body
-    assert '<label class="field-label" for="portal-account">' not in body
-    assert 'data-empty-account-message="請輸入管理者帳號。"' in body
 
 
-def test_portal_dashboard_page_returns_html_with_expected_fields() -> None:
+def test_portal_login_page_uses_portal_google_auth_entry_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+
+    response = portal_login_page(build_request("http://localhost:7075/portal"))
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '/portal/auth/google/login?post_login_redirect_uri=/portal' in body
+    assert '/.auth/login/google?post_login_redirect_uri=/portal' not in body
+    assert 'class="secondary-button portal-action-link"' in body
+    assert 'href="/"' in body
+    assert "返回首頁" in body
+    assert "請使用 Google Workspace 管理者帳號登入以繼續操作。" not in body
+    assert "目前僅開放 iplayground.io 網域帳號登入。" not in body
+
+
+def test_portal_login_page_redirects_to_dashboard_when_user_is_authenticated_with_email(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
+    response = portal_login_page(
+        build_request(
+            "http://localhost:7075/portal",
+            headers=build_authenticated_headers(),
+        )
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/portal/dashboard"
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_portal_login_page_redirects_to_dashboard_when_authenticated_email_is_not_iplayground_domain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
+    response = portal_login_page(
+        build_request(
+            "http://localhost:7075/portal",
+            headers=build_authenticated_headers(
+                display_name="網域管理者",
+                email="viewer@example.com",
+            ),
+        )
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/portal/dashboard"
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_portal_login_page_shows_denied_state_when_authenticated_user_email_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
+    response = portal_login_page(
+        build_request(
+            "http://localhost:7075/portal",
+            headers=build_authenticated_headers(
+                display_name="陳小華",
+                email=None,
+            ),
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '<p class="panel-kicker">權限不足</p>' in body
+    assert "目前登入的帳號缺少可用的電子郵件資訊" in body
+    assert "請切換到其他 Google 帳號" in body
+    assert "需要可用的 email claim" in body
+    assert "陳小華" in body
+    assert "未提供電子郵件 claim" in body
+    assert "切換帳號" in body
+    assert 'href="/"' in body
+    assert "返回首頁" in body
+    assert '/.auth/logout?post_logout_redirect_uri=/portal' in body
+
+
+def test_portal_dashboard_page_redirects_to_portal_when_not_authenticated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
     response = portal_dashboard_page(build_request("http://localhost:7075/portal/dashboard"))
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/portal"
+
+
+def test_portal_dashboard_page_redirects_to_portal_when_authenticated_email_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
+    response = portal_dashboard_page(
+        build_request(
+            "http://localhost:7075/portal/dashboard",
+            headers=build_authenticated_headers(email=None),
+        )
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/portal"
+
+
+def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
+    response = portal_dashboard_page(
+        build_request(
+            "http://localhost:7075/portal/dashboard",
+            headers=build_authenticated_headers(display_name="系統管理者"),
+        )
+    )
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
@@ -81,8 +258,8 @@ def test_portal_dashboard_page_returns_html_with_expected_fields() -> None:
     assert "<title>完訓證明管理平台 - iPlayground</title>" in body
     assert 'id="portal-dashboard"' in body
     assert 'class="portal-dashboard-shell"' in body
-    assert 'data-home-page-path="/"' in body
-    assert 'data-portal-account-storage-key="portalSignedInAccount"' in body
+    assert 'data-portal-entry-path="/portal"' in body
+    assert 'data-logout-url="/.auth/logout?post_logout_redirect_uri=/portal"' in body
     assert 'data-welcome-page-path="/portal/dashboard/welcome"' in body
     assert 'id="portal-dashboard-title"' in body
     assert 'data-view-target="welcome"' in body
@@ -96,24 +273,116 @@ def test_portal_dashboard_page_returns_html_with_expected_fields() -> None:
     assert 'src="/assets/logo_sq_b.png"' in body
     assert 'class="panel admin-workspace"' in body
     assert 'class="sidebar-account-panel"' in body
-    assert 'id="admin-account-display"' in body
+    assert 'id="admin-account-display">系統管理者<' in body
     assert 'id="portal-logout"' in body
-    assert "返回首頁" in body
+    assert "登出" in body
     assert 'class="admin-content-frame"' in body
     assert 'src="/portal/dashboard/welcome"' in body
     assert 'href="/assets/theme.css"' in body
     assert 'href="/assets/portal.css"' in body
     assert 'href="/assets/favicon.png"' in body
     assert 'src="/assets/portal-dashboard.js"' in body
-    assert "完訓證明管理平台" in body
-    assert "iPlayground Certify" not in body
+    assert 'data-portal-account-storage-key="portalSignedInAccount"' not in body
     assert 'id="portal-login-form"' not in body
-    assert "首頁總覽" not in body
 
 
-def test_portal_dashboard_welcome_page_returns_html_with_expected_fields() -> None:
+def test_portal_google_auth_callback_sets_session_cookie_and_allows_dashboard_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+
+    monkeypatch.setattr(
+        "src.shared.portal_auth._load_google_oidc_configuration",
+        lambda: {
+            "authorization_endpoint": "https://accounts.google.com/o/oauth2/v2/auth",
+            "userinfo_endpoint": "https://openidconnect.googleapis.com/v1/userinfo",
+        },
+    )
+    monkeypatch.setattr(
+        "src.shared.portal_auth._exchange_portal_google_authorization_code",
+        lambda **_: {
+            "access_token": "google-access-token",
+        },
+    )
+    monkeypatch.setattr(
+        "src.shared.portal_auth._fetch_portal_google_userinfo",
+        lambda _: {
+            "sub": "google-user-id",
+            "name": "本機 Google 管理者",
+            "email": "admin@iplayground.io",
+            "email_verified": True,
+        },
+    )
+
+    login_response = portal_google_login_page(
+        build_request(
+            "http://localhost:7075/portal/auth/google/login",
+            params={"post_login_redirect_uri": "/portal"},
+        )
+    )
+    state_cookie_header = login_response.headers["Set-Cookie"]
+    state_token = parse_set_cookie_value(state_cookie_header, "portal_google_oauth_state")
+
+    callback_response = portal_google_callback_page(
+        build_request(
+            "http://localhost:7075/portal/auth/google/callback",
+            headers={"Cookie": f"portal_google_oauth_state={state_token}"},
+            params={
+                "code": "google-auth-code",
+                "state": state_token,
+            },
+        )
+    )
+
+    assert callback_response.status_code == 302
+    assert callback_response.headers["Location"] == "/portal"
+    session_cookie_header = callback_response.headers["Set-Cookie"]
+    session_token = parse_set_cookie_value(session_cookie_header, "portal_google_session")
+
+    dashboard_response = portal_dashboard_page(
+        build_request(
+            "http://localhost:7075/portal/dashboard",
+            headers={"Cookie": f"portal_google_session={session_token}"},
+        )
+    )
+    dashboard_body = dashboard_response.get_body().decode("utf-8")
+
+    assert dashboard_response.status_code == 200
+    assert 'id="admin-account-display">本機 Google 管理者<' in dashboard_body
+    assert 'data-logout-url="/portal/auth/logout?post_logout_redirect_uri=/portal"' in dashboard_body
+
+
+def test_portal_google_logout_clears_session_cookie(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+
+    response = portal_google_logout_page(
+        build_request(
+            "http://localhost:7075/portal/auth/logout",
+            params={"post_logout_redirect_uri": "/portal"},
+        )
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/portal"
+    assert "portal_google_session=;" in response.headers["Set-Cookie"]
+
+
+def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
     response = portal_dashboard_welcome_page(
-        build_request("http://localhost:7075/portal/dashboard/welcome")
+        build_request(
+            "http://localhost:7075/portal/dashboard/welcome",
+            headers=build_authenticated_headers(display_name="系統管理者"),
+        )
     )
     body = response.get_body().decode("utf-8")
 
@@ -124,39 +393,30 @@ def test_portal_dashboard_welcome_page_returns_html_with_expected_fields() -> No
     assert response.headers["X-Robots-Tag"] == "noindex, nofollow"
     assert "<title>完訓證明管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
-    assert 'data-portal-account-storage-key="portalSignedInAccount"' in body
     assert 'class="embedded-page-shell"' in body
-    assert 'id="welcome-account-display"' in body
+    assert 'id="welcome-account-display">系統管理者<' in body
     assert 'id="portal-logout"' not in body
     assert 'src="/assets/logo_b_alpha.png"' in body
-    assert "內部頁面" not in body
-    assert "首頁總覽" not in body
-    assert "完訓證明管理平台" in body
-    assert "歡迎使用完訓證明管理平台" not in body
-    assert "管理首頁總覽" not in body
-    assert "左側為功能清單，右側為對應頁面內容。" not in body
-    assert "目前尚未串接實際登入驗證、清單資料與上傳處理流程" not in body
     assert "歡迎回來" in body
     assert "你可以在這裡上傳完訓名單、追蹤批次處理結果" in body
     assert "系統可下載數" in body
     assert "下載人數" in body
     assert "驗證次數" in body
     assert "待處理案件數量" in body
-    assert "今日驗證查詢" not in body
-    assert "總批次數" not in body
-    assert "可下載證書" not in body
-    assert "今日下載次數" not in body
-    assert "平台概況" not in body
-    assert "最近更新" not in body
-    assert "檢視清單" not in body
-    assert "上傳清單" not in body
     assert 'href="/assets/favicon.png"' in body
     assert 'src="/assets/portal-dashboard-welcome.js"' in body
 
 
-def test_portal_dashboard_records_page_returns_html_with_expected_fields() -> None:
+def test_portal_dashboard_records_page_returns_html_when_user_is_authorized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
     response = portal_dashboard_records_page(
-        build_request("http://localhost:7075/portal/dashboard/records")
+        build_request(
+            "http://localhost:7075/portal/dashboard/records",
+            headers=build_authenticated_headers(),
+        )
     )
     body = response.get_body().decode("utf-8")
 
@@ -167,12 +427,18 @@ def test_portal_dashboard_records_page_returns_html_with_expected_fields() -> No
     assert "embedded-page-card" in body
     assert "檢視清單" in body
     assert "獨立工作頁" in body
-    assert 'href="/assets/favicon.png"' in body
 
 
-def test_portal_dashboard_upload_page_returns_html_with_expected_fields() -> None:
+def test_portal_dashboard_upload_page_returns_html_when_user_is_authorized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
     response = portal_dashboard_upload_page(
-        build_request("http://localhost:7075/portal/dashboard/upload")
+        build_request(
+            "http://localhost:7075/portal/dashboard/upload",
+            headers=build_authenticated_headers(),
+        )
     )
     body = response.get_body().decode("utf-8")
 
@@ -183,7 +449,6 @@ def test_portal_dashboard_upload_page_returns_html_with_expected_fields() -> Non
     assert "embedded-page-card" in body
     assert "上傳清單" in body
     assert "獨立工作頁" in body
-    assert 'href="/assets/favicon.png"' in body
 
 
 def test_portal_css_asset_returns_expected_content_type() -> None:
@@ -198,6 +463,14 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert response.status_code == 200
     assert response.mimetype == "text/css"
     assert ".portal-card" in body
+    assert ".portal-auth-actions" in body
+    assert ".portal-auth-lead" in body
+    assert ".portal-identity-card" in body
+    assert ".portal-action-link" in body
+    assert ".portal-sso-button" in body
+    assert ".portal-sso-button-icon" in body
+    assert ".portal-sso-button-copy" in body
+    assert ".portal-sso-button-label" in body
     assert ".panel.admin-workspace" in body
     assert ".portal-dashboard-shell .page-shell" in body
     assert ".portal-dashboard-shell .panel.admin-workspace" in body
@@ -211,10 +484,8 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".sidebar-account-panel" in body
     assert ".sidebar-account-panel .secondary-button" in body
     assert ".welcome-brand-row" in body
-    assert ".admin-banner" in body
     assert ".admin-nav-item.is-active" in body
     assert ".metric-grid" in body
-    assert ".content-section-heading-minimal" in body
     assert ".sidebar-brand" in body
     assert "object-fit: cover;" in body
     assert "color: #fff;" in body
@@ -236,15 +507,12 @@ def test_portal_login_js_asset_returns_expected_content_type() -> None:
 
     assert response.status_code == 200
     assert response.mimetype == "application/javascript"
-    assert "validateLoginForm" in body
-    assert "updateSubmitState" in body
-    assert "submitButton.disabled" in body
-    assert "persistSignedInAccount" in body
-    assert 'window.sessionStorage.setItem(portalAccountStorageKey, accountValue)' in body
-    assert "window.location.assign(dashboardPagePath)" in body
-    assert 'passwordInput.type = isPasswordHidden ? "text" : "password"' in body
-    assert "togglePasswordButton.addEventListener" in body
-    assert "accountInput.focus()" in body
+    assert 'document.querySelectorAll(".portal-action-link")' in body
+    assert 'link.dataset.loadingLabel?.trim()' in body
+    assert 'link.setAttribute("aria-disabled", "true")' in body
+    assert 'link.classList.add("is-busy")' in body
+    assert "validateLoginForm" not in body
+    assert "sessionStorage" not in body
 
 
 def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
@@ -258,20 +526,19 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
 
     assert response.status_code == 200
     assert response.mimetype == "application/javascript"
-    assert "syncSignedInAccount" in body
-    assert "clearSignedInAccount" in body
-    assert 'window.sessionStorage.getItem(portalAccountStorageKey)?.trim() ?? ""' in body
-    assert 'window.sessionStorage.removeItem(portalAccountStorageKey)' in body
-    assert "logoutButton.addEventListener" in body
-    assert "window.location.assign(homePagePath)" in body
+    assert 'const portalEntryPath = portalPage.dataset.portalEntryPath ?? "/portal";' in body
+    assert 'const logoutUrl =' in body
     assert "syncPageTitleFromFrame" in body
     assert "document.title = nextTitle" in body
     assert "activateView" in body
     assert "syncViewFromFrame" in body
-    assert "contentFrame.src = targetButton.dataset.viewPath ?? welcomePagePath" in body
+    assert 'contentFrame.src = targetButton.dataset.viewPath ?? welcomePagePath' in body
     assert "contentFrame.addEventListener" in body
     assert "button.dataset.viewTarget" in body
     assert "button.dataset.viewPath" in body
+    assert 'window.location.assign(logoutUrl)' in body
+    assert 'window.location.assign(portalEntryPath)' in body
+    assert "sessionStorage" not in body
 
 
 def test_favicon_asset_returns_expected_content_type_for_portal_pages() -> None:
@@ -288,6 +555,21 @@ def test_favicon_asset_returns_expected_content_type_for_portal_pages() -> None:
     assert body.startswith(b"\x89PNG")
 
 
+def test_google_g_icon_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/google-g-icon.svg",
+            route_params={"asset_name": "google-g-icon.svg"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/svg+xml"
+    assert 'viewBox="0 0 20 20"' in body
+    assert 'fill="#4285F4"' in body
+
+
 def test_portal_dashboard_welcome_js_asset_returns_expected_content_type() -> None:
     response = static_asset(
         build_request(
@@ -299,10 +581,9 @@ def test_portal_dashboard_welcome_js_asset_returns_expected_content_type() -> No
 
     assert response.status_code == 200
     assert response.mimetype == "application/javascript"
-    assert "syncSignedInAccount" in body
-    assert 'window.sessionStorage.getItem(portalAccountStorageKey)?.trim() ?? ""' in body
-    assert 'welcomeAccountDisplay.textContent = displayValue' in body
-    assert "clearSignedInAccount" not in body
+    assert "ensureWelcomeAccountDisplay" in body
+    assert 'welcomeAccountDisplay.textContent = "管理者"' in body
+    assert "sessionStorage" not in body
     assert "logoutButton.addEventListener" not in body
 
 
@@ -317,3 +598,16 @@ def test_portal_sidebar_logo_asset_returns_expected_content_type() -> None:
     assert response.status_code == 200
     assert response.mimetype == "image/png"
     assert len(response.get_body()) > 0
+def test_portal_login_page_uses_easy_auth_entry_on_azure_when_portal_google_auth_is_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("WEBSITE_INSTANCE_ID", "azure-instance")
+
+    response = portal_login_page(build_request("https://cert.iplayground.io/portal"))
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'class="portal-sso-button portal-action-link"' in body
+    assert '/.auth/login/google?post_login_redirect_uri=/portal' in body
+    assert "本機 Google 登入尚未設定完成" not in body

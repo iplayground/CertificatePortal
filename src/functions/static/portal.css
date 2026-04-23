@@ -157,6 +157,109 @@ h1 {
   text-transform: uppercase;
 }
 
+.portal-auth-lead,
+.portal-auth-note {
+  margin: 0;
+  color: var(--theme-content-text);
+  line-height: 1.75;
+}
+
+.portal-auth-actions {
+  display: grid;
+  gap: 14px;
+}
+
+.portal-action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.portal-action-link[aria-disabled="true"] {
+  pointer-events: none;
+  opacity: 0.78;
+}
+
+.portal-sso-button {
+  justify-content: flex-start;
+  gap: 16px;
+  min-height: 64px;
+  padding: 14px 18px;
+  border: 1px solid rgba(21, 21, 21, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #1f1f1f;
+  box-shadow:
+    0 16px 34px rgba(16, 24, 40, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.portal-sso-button:hover,
+.portal-sso-button:focus-visible {
+  outline: none;
+  transform: translateY(-1px);
+  border-color: rgba(21, 21, 21, 0.22);
+  background: #fff;
+  box-shadow:
+    0 18px 42px rgba(16, 24, 40, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.portal-sso-button.is-busy {
+  justify-content: center;
+}
+
+.portal-sso-button-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.portal-sso-button-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.portal-sso-button-label {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.portal-identity-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid var(--theme-feedback-border);
+  border-radius: 18px;
+  background: var(--theme-feedback-bg);
+}
+
+.portal-identity-label {
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--theme-accent-deep);
+}
+
+.portal-identity-value {
+  font-size: 1.05rem;
+}
+
+.portal-identity-meta {
+  color: var(--theme-feedback-color);
+  line-height: 1.7;
+  word-break: break-word;
+}
+
 form {
   display: grid;
   gap: 18px;
