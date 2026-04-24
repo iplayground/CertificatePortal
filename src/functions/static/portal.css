@@ -823,11 +823,75 @@ form {
   gap: 18px;
 }
 
+.metric-overview {
+  display: grid;
+  gap: 18px;
+}
+
+.metric-overview-heading h2 {
+  margin: 0;
+  font-size: 1.6rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.metric-section {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 18px;
+}
+
+.metric-panel {
+  padding: 26px;
+  border: 1px solid rgba(81, 121, 254, 0.12);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 14px 32px rgba(49, 80, 203, 0.08);
+}
+
+.metric-panel::before {
+  content: "";
+  position: absolute;
+  inset: auto auto 0 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(81, 121, 254, 0.5), rgba(242, 134, 94, 0.5));
+}
+
+.metric-section-heading {
+  display: grid;
+  gap: 8px;
+}
+
+.metric-section-heading .panel-kicker,
+.metric-section-heading h2,
+.metric-section-heading h3,
+.metric-section-heading p {
+  margin: 0;
+}
+
+.metric-section-heading h2,
+.metric-section-heading h3 {
+  font-size: 1.4rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.metric-section-heading p {
+  color: var(--theme-content-muted);
+  line-height: 1.7;
+}
+
 .metric-card {
   min-height: 180px;
   display: grid;
   align-content: start;
   gap: 10px;
+  padding: 18px;
+  border: 1px solid rgba(81, 121, 254, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
 }
 
 .metric-value {
@@ -1112,6 +1176,21 @@ form {
   padding-inline: 14px;
 }
 
+.document-row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.document-delete-button {
+  color: #b42318;
+}
+
+.document-upload-continue-option[hidden] {
+  display: none;
+}
+
 .document-empty-row td {
   color: var(--theme-content-muted);
   line-height: 1.7;
@@ -1193,6 +1272,28 @@ form {
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.document-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.document-file-name {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(81, 121, 254, 0.08);
+  color: var(--theme-accent-deep);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .event-management-card {
@@ -1460,7 +1561,7 @@ form {
   font-weight: 800;
 }
 
-.document-type-option {
+.form-checkbox-option {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
   gap: 12px;
@@ -1471,7 +1572,7 @@ form {
   background: rgba(255, 255, 255, 0.64);
 }
 
-.document-type-option input {
+.form-checkbox-option input {
   width: 18px;
   height: 18px;
   margin: 3px 0 0;
@@ -1479,27 +1580,44 @@ form {
   cursor: pointer;
 }
 
-.document-type-option input:focus-visible {
+.form-checkbox-option input:focus-visible {
   outline: 3px solid rgba(242, 134, 94, 0.28);
   outline-offset: 2px;
 }
 
 @media (prefers-color-scheme: dark) {
-  .document-type-option input {
+  .form-checkbox-option input {
     appearance: auto;
     color-scheme: light;
     accent-color: #ea6e1e;
   }
 }
 
-.document-type-option span {
+.form-checkbox-option span {
   display: grid;
   gap: 4px;
 }
 
-.document-type-option small {
+.form-checkbox-option small {
   color: var(--theme-content-muted);
   line-height: 1.5;
+}
+
+.form-checkbox-option.document-upload-continue-option {
+  align-items: center;
+  min-height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.form-checkbox-option.document-upload-continue-option span {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .event-form-actions {
@@ -1556,6 +1674,14 @@ form {
     grid-template-columns: 1fr;
   }
 
+  .document-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .event-management-header,
   .event-dialog-header,
   .event-form-actions {
@@ -1594,5 +1720,9 @@ form {
   .password-toggle {
     right: 8px;
     padding-inline: 12px;
+  }
+
+  .metric-grid {
+    grid-template-columns: 1fr;
   }
 }

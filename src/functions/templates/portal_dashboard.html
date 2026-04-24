@@ -92,7 +92,7 @@
                   <span class="admin-nav-symbol" aria-hidden="true">03</span>
                   <span class="admin-nav-copy">
                     <strong>營業稅繳稅證明</strong>
-                    <span>內容規劃中</span>
+                    <span>PDF/圖檔上傳與管理</span>
                   </span>
                 </button>
               </nav>
@@ -165,7 +165,7 @@
 
           <fieldset class="document-type-fieldset">
             <legend>可申請文件類型</legend>
-            <label class="document-type-option">
+            <label class="form-checkbox-option document-type-option">
               <input
                 name="documentTypes"
                 type="checkbox"
@@ -178,7 +178,7 @@
                 <small>完成指定活動後開放申請</small>
               </span>
             </label>
-            <label class="document-type-option">
+            <label class="form-checkbox-option document-type-option">
               <input
                 name="documentTypes"
                 type="checkbox"
@@ -270,6 +270,140 @@
           <div class="event-form-actions">
             <button class="secondary-button event-cancel-button" id="portal-completion-upload-cancel" type="button">取消</button>
             <button class="submit-button" id="portal-completion-upload-submit" type="button">上傳完訓證明資料</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div
+      class="event-dialog-backdrop portal-event-dialog-backdrop"
+      id="portal-tax-upload-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="portal-tax-upload-title"
+      hidden
+    >
+      <section class="event-dialog portal-event-dialog">
+        <header class="event-dialog-header">
+          <h2 id="portal-tax-upload-title">新增繳稅證明</h2>
+        </header>
+
+        <form class="document-upload-form" aria-label="新增營業稅繳稅證明">
+          <div class="field">
+            <span class="field-label" id="portal-tax-upload-event-label">活動</span>
+            <div class="custom-select" id="portal-tax-upload-event-select">
+              <input
+                id="portal-tax-upload-event"
+                name="eventName"
+                type="hidden"
+                value="iPlayground 2026"
+              >
+              <button
+                class="custom-select-trigger"
+                id="portal-tax-upload-event-trigger"
+                type="button"
+                aria-expanded="false"
+                aria-haspopup="listbox"
+                aria-controls="portal-tax-upload-event-options"
+                aria-labelledby="portal-tax-upload-event-label portal-tax-upload-event-value"
+              >
+                <span id="portal-tax-upload-event-value" class="custom-select-value">iPlayground 2026</span>
+                <span class="select-caret" aria-hidden="true"></span>
+              </button>
+              <div class="custom-select-menu" id="portal-tax-upload-event-options" role="listbox" hidden>
+                <button
+                  class="custom-select-option is-selected"
+                  type="button"
+                  role="option"
+                  aria-selected="true"
+                  data-value="iPlayground 2026"
+                >
+                  iPlayground 2026
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="document-detail-grid">
+            <div class="field">
+              <label class="field-label" for="portal-tax-upload-tax-id">統編</label>
+              <input
+                id="portal-tax-upload-tax-id"
+                name="taxId"
+                type="text"
+                autocomplete="off"
+                data-1p-ignore="true"
+                data-op-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
+                data-protonpass-ignore="true"
+                data-form-type="other"
+              >
+            </div>
+            <div class="field">
+              <label class="field-label" for="portal-tax-upload-amount">金額</label>
+              <input
+                id="portal-tax-upload-amount"
+                name="amount"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
+                data-1p-ignore="true"
+                data-op-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
+                data-protonpass-ignore="true"
+                data-form-type="other"
+              >
+            </div>
+            <div class="field">
+              <label class="field-label" for="portal-tax-upload-generated-at">產製時間</label>
+              <input
+                id="portal-tax-upload-generated-at"
+                name="generatedAt"
+                type="datetime-local"
+                autocomplete="off"
+                data-1p-ignore="true"
+                data-op-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
+                data-protonpass-ignore="true"
+                data-form-type="other"
+              >
+            </div>
+          </div>
+
+          <label class="document-upload-dropzone" for="portal-tax-upload-file">
+            <span class="document-upload-icon" aria-hidden="true">PDF</span>
+            <span class="document-upload-copy">
+              <strong>選擇 PDF 或圖檔</strong>
+                  <small>每次新增一筆資料，支援 PDF、PNG 與 JPG。</small>
+              <span class="document-upload-file-name" id="portal-tax-upload-file-name">
+                尚未選擇 PDF 或圖檔
+              </span>
+            </span>
+            <input
+              class="document-upload-input"
+              id="portal-tax-upload-file"
+              name="taxReceiptUploadFile"
+              type="file"
+              accept=".pdf,application/pdf,image/png,image/jpeg,.png,.jpg,.jpeg"
+            >
+          </label>
+
+          <div class="event-form-actions">
+            <button class="secondary-button event-cancel-button" id="portal-tax-upload-cancel" type="button">取消</button>
+            <button class="submit-button" id="portal-tax-upload-submit" type="button">新增繳稅證明</button>
+            <label class="form-checkbox-option document-upload-continue-option" id="portal-tax-upload-continue-option">
+              <input
+                id="portal-tax-upload-continue"
+                name="continueUploading"
+                type="checkbox"
+              >
+              <span>
+                <strong>還有其他檔案要上傳</strong>
+              </span>
+            </label>
           </div>
         </form>
       </section>

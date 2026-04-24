@@ -10,5 +10,219 @@
     <link rel="stylesheet" href="/assets/theme.css">
     <link rel="stylesheet" href="/assets/portal.css">
   </head>
-  <body class="portal-embedded-body"></body>
+  <body class="portal-embedded-body">
+    <main class="embedded-page-shell">
+      <section class="content-card embedded-page-card document-workspace-card">
+        <div class="event-management-header">
+          <div class="content-section-heading">
+            <h1 class="embedded-page-title">營業稅繳稅證明</h1>
+            <p class="embedded-page-lead">檢視已新增的營業稅繳稅證明，並逐筆上傳 PDF 或圖檔。</p>
+          </div>
+          <button class="submit-button event-create-button" id="tax-upload-open" type="button">
+            新增繳稅證明
+          </button>
+        </div>
+
+        <form class="document-filter-form" aria-label="營業稅繳稅證明篩選">
+          <div class="field">
+            <span class="field-label" id="tax-event-filter-label">活動</span>
+            <div class="custom-select" id="tax-event-filter-select">
+              <input id="tax-event-filter" name="eventName" type="hidden" value="iPlayground 2026">
+              <button
+                class="custom-select-trigger"
+                id="tax-event-filter-trigger"
+                type="button"
+                aria-expanded="false"
+                aria-haspopup="listbox"
+                aria-controls="tax-event-filter-options"
+                aria-labelledby="tax-event-filter-label tax-event-filter-value"
+                aria-required="true"
+              >
+                <span id="tax-event-filter-value" class="custom-select-value">iPlayground 2026</span>
+                <span class="select-caret" aria-hidden="true"></span>
+              </button>
+              <div class="custom-select-menu" id="tax-event-filter-options" role="listbox" hidden>
+                <button
+                  class="custom-select-option is-selected"
+                  type="button"
+                  role="option"
+                  aria-selected="true"
+                  data-value="iPlayground 2026"
+                >
+                  iPlayground 2026
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div class="document-table-wrap">
+          <table class="document-list-table" aria-label="營業稅繳稅證明清單">
+            <thead>
+              <tr>
+                <th scope="col">統編</th>
+                <th scope="col">產製時間</th>
+                <th scope="col">金額</th>
+                <th scope="col">收據聯檔案</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody id="tax-receipt-table-body">
+              <tr class="document-empty-row" id="tax-receipt-empty-row">
+                <td colspan="5">尚未新增營業稅繳稅證明。</td>
+              </tr>
+            </tbody>
+          </table>
+          <template id="tax-receipt-row-template">
+            <tr class="tax-receipt-row">
+              <td data-field="taxId"></td>
+              <td data-field="generatedAt"></td>
+              <td data-field="amount"></td>
+              <td>
+                <span class="document-file-name" data-field="fileName"></span>
+              </td>
+              <td>
+                <div class="document-row-actions">
+                  <button class="secondary-button document-download-button" type="button">下載</button>
+                  <button class="secondary-button document-edit-button" type="button">修改</button>
+                  <button class="secondary-button document-delete-button" type="button">刪除</button>
+                </div>
+              </td>
+            </tr>
+          </template>
+        </div>
+
+        <div
+          class="event-dialog-backdrop"
+          id="tax-upload-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tax-upload-title"
+          hidden
+        >
+          <section class="event-dialog">
+            <header class="event-dialog-header">
+              <h2 id="tax-upload-title">新增繳稅證明</h2>
+            </header>
+
+            <form class="document-upload-form" aria-label="新增營業稅繳稅證明">
+              <div class="field">
+                <span class="field-label" id="tax-upload-event-label">活動</span>
+                <div class="custom-select" id="tax-upload-event-select">
+                  <input id="tax-upload-event" name="eventName" type="hidden" value="iPlayground 2026">
+                  <button
+                    class="custom-select-trigger"
+                    id="tax-upload-event-trigger"
+                    type="button"
+                    aria-expanded="false"
+                    aria-haspopup="listbox"
+                    aria-controls="tax-upload-event-options"
+                    aria-labelledby="tax-upload-event-label tax-upload-event-value"
+                  >
+                    <span id="tax-upload-event-value" class="custom-select-value">iPlayground 2026</span>
+                    <span class="select-caret" aria-hidden="true"></span>
+                  </button>
+                  <div class="custom-select-menu" id="tax-upload-event-options" role="listbox" hidden>
+                    <button
+                      class="custom-select-option is-selected"
+                      type="button"
+                      role="option"
+                      aria-selected="true"
+                      data-value="iPlayground 2026"
+                    >
+                      iPlayground 2026
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="document-detail-grid">
+                <div class="field">
+                  <label class="field-label" for="tax-upload-tax-id">統編</label>
+                  <input
+                    id="tax-upload-tax-id"
+                    name="taxId"
+                    type="text"
+                    autocomplete="off"
+                    data-1p-ignore="true"
+                    data-op-ignore="true"
+                    data-lpignore="true"
+                    data-bwignore="true"
+                    data-protonpass-ignore="true"
+                    data-form-type="other"
+                  >
+                </div>
+                <div class="field">
+                  <label class="field-label" for="tax-upload-amount">金額</label>
+                  <input
+                    id="tax-upload-amount"
+                    name="amount"
+                    type="text"
+                    inputmode="decimal"
+                    autocomplete="off"
+                    data-1p-ignore="true"
+                    data-op-ignore="true"
+                    data-lpignore="true"
+                    data-bwignore="true"
+                    data-protonpass-ignore="true"
+                    data-form-type="other"
+                  >
+                </div>
+                <div class="field">
+                  <label class="field-label" for="tax-upload-generated-at">產製時間</label>
+                  <input
+                    id="tax-upload-generated-at"
+                    name="generatedAt"
+                    type="datetime-local"
+                    autocomplete="off"
+                    data-1p-ignore="true"
+                    data-op-ignore="true"
+                    data-lpignore="true"
+                    data-bwignore="true"
+                    data-protonpass-ignore="true"
+                    data-form-type="other"
+                  >
+                </div>
+              </div>
+
+              <label class="document-upload-dropzone" for="tax-upload-file">
+                <span class="document-upload-icon" aria-hidden="true">PDF</span>
+                <span class="document-upload-copy">
+                  <strong>選擇 PDF 或圖檔</strong>
+                  <small>每次新增一筆資料，支援 PDF、PNG 與 JPG。</small>
+                  <span class="document-upload-file-name" id="tax-upload-file-name">
+                    尚未選擇 PDF 或圖檔
+                  </span>
+                </span>
+                <input
+                  class="document-upload-input"
+                  id="tax-upload-file"
+                  name="taxReceiptUploadFile"
+                  type="file"
+                  accept=".pdf,application/pdf,image/png,image/jpeg,.png,.jpg,.jpeg"
+                >
+              </label>
+
+              <div class="event-form-actions">
+                <button class="secondary-button event-cancel-button" id="tax-upload-cancel" type="button">取消</button>
+                <button class="submit-button" id="tax-upload-submit" type="button">新增繳稅證明</button>
+                <label class="form-checkbox-option document-upload-continue-option" id="tax-upload-continue-option">
+                  <input
+                    id="tax-upload-continue"
+                    name="continueUploading"
+                    type="checkbox"
+                  >
+                  <span>
+                    <strong>還有其他檔案要上傳</strong>
+                  </span>
+                </label>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="/assets/portal-dashboard-tax-receipts.js"></script>
+  </body>
 </html>

@@ -412,21 +412,23 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert "活動管理" in body
     assert "活動與文件設定" in body
     assert "清單與資料上傳" in body
-    assert "內容規劃中" in body
+    assert "PDF/圖檔上傳與管理" in body
+    assert "單筆文件上傳" not in body
     assert "管理活動與可申請文件" not in body
     assert "清單檢視與上傳完訓證明資料" not in body
     assert "清單檢視與上傳 407 收據聯" not in body
     assert 'id="portal-event-create-dialog"' in body
     assert 'id="portal-completion-upload-dialog"' in body
+    assert 'id="portal-tax-upload-dialog"' in body
     assert 'class="event-dialog-backdrop portal-event-dialog-backdrop"' in body
     assert 'id="portal-event-name-input"' in body
-    assert body.count('autocomplete="off"') == 1
-    assert body.count('data-1p-ignore="true"') == 1
-    assert body.count('data-op-ignore="true"') == 1
-    assert body.count('data-lpignore="true"') == 1
-    assert body.count('data-bwignore="true"') == 1
-    assert body.count('data-protonpass-ignore="true"') == 1
-    assert body.count('data-form-type="other"') == 1
+    assert body.count('autocomplete="off"') == 4
+    assert body.count('data-1p-ignore="true"') == 4
+    assert body.count('data-op-ignore="true"') == 4
+    assert body.count('data-lpignore="true"') == 4
+    assert body.count('data-bwignore="true"') == 4
+    assert body.count('data-protonpass-ignore="true"') == 4
+    assert body.count('data-form-type="other"') == 4
     assert 'id="portal-completion-upload-file"' in body
     assert 'id="portal-completion-upload-file-name"' in body
     assert 'id="portal-completion-upload-submit"' in body
@@ -446,6 +448,32 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert ".xls" not in body
     assert "Excel" not in body
     assert 'id="portal-completion-upload-cancel"' in body
+    assert 'id="portal-tax-upload-file"' in body
+    assert 'id="portal-tax-upload-file-name"' in body
+    assert 'id="portal-tax-upload-submit"' in body
+    assert 'id="portal-tax-upload-event"' in body
+    assert 'id="portal-tax-upload-event-select"' in body
+    assert 'id="portal-tax-upload-event-trigger"' in body
+    assert 'id="portal-tax-upload-event-options"' in body
+    assert 'id="portal-tax-upload-event-value"' in body
+    assert 'id="portal-tax-upload-tax-id"' in body
+    assert 'id="portal-tax-upload-amount"' in body
+    assert 'id="portal-tax-upload-generated-at"' in body
+    assert 'id="portal-tax-upload-continue"' in body
+    assert 'id="portal-tax-upload-continue-option"' in body
+    assert 'class="form-checkbox-option document-upload-continue-option"' in body
+    assert 'class="event-status-switch-option document-upload-continue-option"' not in body
+    assert 'id="portal-tax-upload-continue-label"' not in body
+    assert 'id="portal-tax-upload-continue-text"' not in body
+    assert body.index('id="portal-tax-upload-submit"') < body.index('id="portal-tax-upload-continue-option"')
+    assert 'aria-labelledby="portal-tax-upload-event-label portal-tax-upload-event-value"' in body
+    assert 'accept=".pdf,application/pdf,image/png,image/jpeg,.png,.jpg,.jpeg"' in body
+    assert "新增營業稅繳稅證明" in body
+    assert "選擇 PDF 或圖檔" in body
+    assert "尚未選擇 PDF 或圖檔" in body
+    assert "每次新增一筆資料" in body
+    assert "還有其他檔案要上傳" in body
+    assert 'id="portal-tax-upload-cancel"' in body
     assert 'id="portal-event-create-close"' not in body
     assert "關閉建立活動畫面" not in body
     assert 'class="event-status-switch-option"' in body
@@ -458,6 +486,7 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert "開放" in body
     assert "完訓證明" in body
     assert "營業稅繳稅證明" in body
+    assert 'class="form-checkbox-option document-type-option"' in body
     assert "開放協會 407 收據聯影本供下載" in body
     assert "適用營業稅繳稅資料" not in body
     assert "參與證明" not in body
@@ -764,10 +793,33 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert 'src="/assets/logo_b_alpha.png"' in body
     assert "歡迎回來" in body
     assert "你可以在這裡上傳文件申請清單、追蹤批次處理結果" in body
+    assert 'class="metric-overview"' in body
+    assert 'id="recent-activity-metrics-title"' in body
+    assert 'class="metric-section metric-panel"' in body
+    assert 'class="content-card metric-card"' not in body
+    assert 'class="metric-card"' in body
+    assert 'id="completion-metrics-title"' in body
+    assert 'id="tax-receipt-metrics-title"' in body
+    assert "完訓證明" in body
+    assert "營業稅繳稅證明" in body
+    assert "最近一期活動資料" in body
+    assert body.count("最近一期活動資料") == 1
+    assert "下列是最近一期活動的資料" not in body
     assert "系統可下載數" in body
     assert "下載人數" in body
     assert "驗證次數" in body
     assert "待處理案件數量" in body
+    assert "收據張數" in body
+    assert "已查詢公司數" in body
+    assert "已下載次數" in body
+    assert "收據總金額" in body
+    assert "$186,000" in body
+    assert "NT$ 186K" not in body
+    assert "上傳檔案數" not in body
+    assert "尚未下載公司數" not in body
+    assert "待確認筆數" not in body
+    assert "目前已完成完訓證明檔案建立" in body
+    assert "最近一期活動已新增營業稅繳稅證明的金額合計" in body
     assert 'href="/assets/favicon.png"' in body
     assert 'src="/assets/portal-dashboard-welcome.js"' in body
 
@@ -898,12 +950,89 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert response.mimetype == "text/html"
     assert "<title>營業稅繳稅證明 - 文件管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
-    assert "embedded-page-card" not in body
-    assert "清單檢視" not in body
-    assert "營業稅繳稅證明清單" not in body
-    assert "上傳 407 收據聯" not in body
-    assert "tax-upload-file" not in body
-    assert "尚未串接 407 收據聯資料來源" not in body
+    assert "embedded-page-card" in body
+    assert "document-workspace-card" in body
+    assert "營業稅繳稅證明" in body
+    assert "營業稅繳稅證明清單" in body
+    assert "新增繳稅證明" in body
+    assert "檢視已新增的營業稅繳稅證明" in body
+    assert "PDF 或圖檔" in body
+    assert 'aria-label="營業稅繳稅證明篩選"' in body
+    assert 'id="tax-event-filter"' in body
+    assert 'id="tax-event-filter-select"' in body
+    assert 'id="tax-event-filter-trigger"' in body
+    assert 'id="tax-event-filter-options"' in body
+    assert 'id="tax-event-filter-value"' in body
+    assert "套用至目前活動全部資料" not in body
+    assert "設為可下載" not in body
+    assert "設為停用" not in body
+    assert 'id="tax-bulk-toolbar"' not in body
+    assert 'id="tax-bulk-downloadable"' not in body
+    assert 'id="tax-bulk-blocked"' not in body
+    assert "統編" in body
+    assert "金額" in body
+    assert "產製時間" in body
+    assert body.index("<th scope=\"col\">產製時間</th>") < body.index("<th scope=\"col\">金額</th>")
+    assert body.index('data-field="generatedAt"') < body.index('data-field="amount"')
+    assert "報名序號" not in body
+    assert "姓名" not in body
+    assert "Email" not in body
+    assert "收據聯檔案" in body
+    assert "下載狀態" not in body
+    assert "操作" in body
+    assert "下載" in body
+    assert "修改" in body
+    assert "刪除" in body
+    assert 'id="tax-receipt-row-template"' in body
+    assert 'id="tax-receipt-table-body"' in body
+    assert 'id="tax-receipt-empty-row"' in body
+    assert 'class="document-file-name"' in body
+    assert 'class="document-row-actions"' in body
+    assert 'data-field="fileName"' in body
+    assert 'class="secondary-button document-download-button"' in body
+    assert 'class="secondary-button document-edit-button"' in body
+    assert 'class="secondary-button document-delete-button"' in body
+    assert 'class="event-status-switch-option document-row-status-switch"' not in body
+    assert 'class="event-status-switch-input document-download-switch-input"' not in body
+    assert 'data-action="toggle-downloadable"' not in body
+    assert 'data-field="downloadStatus"' not in body
+    assert 'aria-label="切換下載狀態"' not in body
+    assert 'colspan="5"' in body
+    assert "尚未新增營業稅繳稅證明" in body
+    assert 'id="tax-upload-open"' in body
+    assert 'id="tax-upload-dialog"' in body
+    assert 'aria-modal="true"' in body
+    assert 'id="tax-upload-cancel"' in body
+    assert 'id="tax-upload-file"' in body
+    assert 'id="tax-upload-file-name"' in body
+    assert 'id="tax-upload-submit"' in body
+    assert 'id="tax-upload-event"' in body
+    assert 'id="tax-upload-event-select"' in body
+    assert 'id="tax-upload-event-trigger"' in body
+    assert 'id="tax-upload-event-options"' in body
+    assert 'id="tax-upload-event-value"' in body
+    assert 'id="tax-upload-tax-id"' in body
+    assert 'id="tax-upload-amount"' in body
+    assert 'id="tax-upload-generated-at"' in body
+    assert 'id="tax-upload-continue"' in body
+    assert 'id="tax-upload-continue-option"' in body
+    assert 'inputmode="decimal"' in body
+    assert 'type="datetime-local"' in body
+    assert 'class="document-detail-grid"' in body
+    assert 'class="document-upload-input"' in body
+    assert 'class="document-upload-copy"' in body
+    assert 'class="document-upload-file-name"' in body
+    assert 'class="form-checkbox-option document-upload-continue-option"' in body
+    assert 'class="event-status-switch-option document-upload-continue-option"' not in body
+    assert 'id="tax-upload-continue-label"' not in body
+    assert 'id="tax-upload-continue-text"' not in body
+    assert body.index('id="tax-upload-submit"') < body.index('id="tax-upload-continue-option"')
+    assert 'accept=".pdf,application/pdf,image/png,image/jpeg,.png,.jpg,.jpeg"' in body
+    assert "每次新增一筆資料" in body
+    assert "還有其他檔案要上傳" in body
+    assert "尚未選擇 PDF 或圖檔" in body
+    assert 'src="/assets/portal-dashboard-tax-receipts.js"' in body
+    assert "CSV" not in body
     assert "獨立工作頁" not in body
 
 
@@ -1021,6 +1150,9 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".welcome-brand-row" in body
     assert ".admin-nav-item.is-active" in body
     assert ".metric-grid" in body
+    assert ".metric-section" in body
+    assert ".metric-panel" in body
+    assert ".metric-section-heading" in body
     assert ".event-management-card" in body
     assert ".custom-select-trigger" in body
     assert ".custom-select-menu" in body
@@ -1044,11 +1176,18 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".document-list-table" in body
     assert ".document-download-button" in body
     assert ".document-download-button:disabled" in body
+    assert ".document-row-actions" in body
+    assert ".document-delete-button" in body
+    assert ".document-upload-continue-option" in body
+    assert ".form-checkbox-option.document-upload-continue-option" in body
+    assert "-webkit-user-select: none;" in body
     assert ".document-upload-form" in body
     assert ".document-upload-dropzone" in body
     assert ".document-upload-input" in body
     assert ".document-upload-copy" in body
     assert ".document-upload-file-name" in body
+    assert ".document-detail-grid" in body
+    assert ".document-file-name" in body
     assert ".document-upload-form input[type=\"file\"]" not in body
     assert ".event-management-header" in body
     assert ".event-management-panel" not in body
@@ -1075,7 +1214,7 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".event-status-badge.is-draft" not in body
     assert ".event-status-badge.is-unlisted" in body
     assert ".event-status-badge.is-open" in body
-    assert ".document-type-option" in body
+    assert ".form-checkbox-option" in body
     assert "background-image: none;" in body
     assert ".event-cancel-button" in body
     assert "border-radius: 14px;" not in body
@@ -1170,6 +1309,38 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "selectedFile.text()" in body
     assert "contentFrame.contentWindow?.postMessage" in body
     assert '.endsWith(".csv")' in body
+    assert "openDashboardTaxUploadDialog" in body
+    assert "portal-tax-upload-title" in body
+    assert "portal-tax-upload-continue" in body
+    assert "portal-tax-upload-file-name" in body
+    assert "portal-tax-upload-submit" in body
+    assert "portal-tax-upload-event" in body
+    assert "portal-tax-upload-event-trigger" in body
+    assert "portal-tax-upload-tax-id" in body
+    assert "portal-tax-upload-amount" in body
+    assert "portal-tax-upload-generated-at" in body
+    assert "updateDashboardTaxUploadFileName" in body
+    assert "isDashboardTaxReceiptUploadFile" in body
+    assert "getTaxEventNameFromFrame" in body
+    assert "applyDashboardTaxUploadEventValue" in body
+    assert "getDashboardTaxUploadEventName" in body
+    assert "openDashboardTaxUploadEventSelect" in body
+    assert "closeDashboardTaxUploadEventSelect" in body
+    assert "sendDashboardTaxUploadFileToFrame" in body
+    assert "shouldContinueDashboardTaxUpload" in body
+    assert "resetDashboardTaxUploadFieldsForNextFile" in body
+    assert "setDashboardTaxUploadDialogMode" in body
+    assert "taxReceiptUploadImportMessageType" in body
+    assert "ipg:tax-receipt-upload:import" in body
+    assert "ipg:tax-receipt-upload:open" in body
+    assert "eventName: getDashboardTaxUploadEventName()" in body
+    assert "file: selectedFile ?? null" in body
+    assert "generatedAt: getDashboardTaxUploadTextValue(dashboardTaxUploadGeneratedAtInput)" in body
+    assert "rowId: dashboardTaxUploadEditingRowId" in body
+    assert "taxId: getDashboardTaxUploadTextValue(dashboardTaxUploadTaxIdInput)" in body
+    assert "儲存變更" in body
+    assert "image/png" in body
+    assert ".webp" not in body
     assert "setDashboardEventDialogMode" in body
     assert "applyDashboardEventStatusValue" in body
     assert "dashboardEventStatusCheckbox" in body
@@ -1253,6 +1424,64 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "confirmCompletionUploadDialogClose" in body
     assert "資料尚未存檔，確定要取消嗎？" in body
     assert 'event.key === "Escape"' in body
+    assert "sessionStorage" not in body
+
+
+def test_portal_dashboard_tax_receipts_js_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/portal-dashboard-tax-receipts.js",
+            route_params={"asset_name": "portal-dashboard-tax-receipts.js"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert 'document.getElementById("tax-upload-open")' in body
+    assert 'document.getElementById("tax-upload-title")' in body
+    assert 'document.getElementById("tax-upload-continue")' in body
+    assert 'document.getElementById("tax-upload-file-name")' in body
+    assert 'document.getElementById("tax-upload-submit")' in body
+    assert 'document.getElementById("tax-upload-tax-id")' in body
+    assert 'document.getElementById("tax-upload-amount")' in body
+    assert 'document.getElementById("tax-upload-generated-at")' in body
+    assert 'document.getElementById("tax-upload-event")' in body
+    assert '"tax-upload-event-trigger"' in body
+    assert 'document.getElementById("tax-bulk-downloadable")' not in body
+    assert 'document.getElementById("tax-bulk-blocked")' not in body
+    assert "updateTaxUploadFileName" in body
+    assert "isTaxReceiptUploadFile" in body
+    assert "taxReceiptUploadImportMessageType" in body
+    assert "ipg:tax-receipt-upload:import" in body
+    assert "ipg:tax-receipt-upload:open" in body
+    assert "setTaxUploadDialogMode" in body
+    assert "shouldContinueTaxUpload" in body
+    assert "resetTaxUploadFieldsForNextFile" in body
+    assert "getTaxUploadEventName" in body
+    assert "applyTaxUploadEventValue" in body
+    assert "openTaxUploadEventSelect" in body
+    assert "closeTaxUploadEventSelect" in body
+    assert "getVisibleTaxReceiptRows" in body
+    assert "message.eventName" in body
+    assert "message.taxId" in body
+    assert "message.amount" in body
+    assert "message.generatedAt" in body
+    assert "renderTaxReceiptRows" in body
+    assert "upsertTaxReceiptFile" in body
+    assert "deleteTaxReceiptRow" in body
+    assert "openTaxEditDialog" in body
+    assert "setTaxReceiptRowDownloadState" not in body
+    assert "applyTaxDownloadableStateToCurrentActivity" not in body
+    assert "URL.createObjectURL(file)" in body
+    assert "URL.revokeObjectURL" in body
+    assert "確定要刪除此筆繳稅證明嗎？" in body
+    assert "儲存變更" in body
+    assert "formatTaxGeneratedAt" in body
+    assert "可下載" not in body
+    assert "停用" not in body
+    assert "CSV" not in body
+    assert ".csv" not in body
     assert "sessionStorage" not in body
 
 
