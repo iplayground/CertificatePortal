@@ -367,7 +367,7 @@ input:focus {
 .custom-select.is-open .select-caret,
 .custom-select-trigger:focus-visible .select-caret {
   transform: translateY(-50%) rotate(180deg);
-  border-top-color: var(--theme-accent-deep);
+  border-top-color: var(--theme-caret-focus-color);
 }
 
 .select-caret {

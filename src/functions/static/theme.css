@@ -93,6 +93,7 @@
   --theme-disabled-gradient: linear-gradient(135deg, rgba(132, 147, 176, 0.9) 0%, rgba(174, 184, 201, 0.92) 100%);
   --theme-disabled-text: rgba(255, 255, 255, 0.88);
   --theme-caret-color: rgba(81, 121, 254, 0.72);
+  --theme-caret-focus-color: var(--theme-accent-deep);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -207,7 +208,8 @@
     --theme-feedback-error-color: #b42318;
     --theme-disabled-gradient: linear-gradient(135deg, rgba(132, 147, 176, 0.9) 0%, rgba(174, 184, 201, 0.92) 100%);
     --theme-disabled-text: rgba(255, 255, 255, 0.88);
-    --theme-caret-color: rgba(93, 187, 255, 0.72);
+    --theme-caret-color: rgba(255, 176, 99, 0.86);
+    --theme-caret-focus-color: #ea6e1e;
   }
 }
 

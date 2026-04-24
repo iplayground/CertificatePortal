@@ -95,8 +95,8 @@ def test_portal_login_page_shows_google_setup_message_when_not_authenticated(
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["X-Robots-Tag"] == "noindex, nofollow"
     assert "<html lang=\"zh-TW\">" in body
-    assert "<title>完訓證明管理平台 - iPlayground</title>" in body
-    assert '<h1 id="portal-title">完訓證明管理平台</h1>' in body
+    assert "<title>文件管理平台 - iPlayground</title>" in body
+    assert '<h1 id="portal-title">文件管理平台</h1>' in body
     assert '<p class="panel-kicker">管理者登入</p>' in body
     assert "Google 登入尚未設定完成" in body
     assert "PORTAL_GOOGLE_CLIENT_ID" in body
@@ -216,7 +216,7 @@ def test_portal_login_page_shows_google_login_not_authorized_alert(
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
-    assert "沒有管理平台權限" in body
+    assert "沒有文件管理平台權限" in body
     assert "此帳號不在允許群組中，請聯絡管理員。" in body
     assert "資料授權未完成" not in body
     assert "請完成資料授權後再登入。" not in body
@@ -242,7 +242,7 @@ def test_portal_login_page_shows_google_login_data_authorization_required_alert(
     assert response.status_code == 200
     assert "資料授權未完成" in body
     assert "請完成資料授權後再登入。" in body
-    assert "沒有管理平台權限" not in body
+    assert "沒有文件管理平台權限" not in body
     assert "此帳號不在允許群組中" not in body
     assert "email" not in body
     assert "群組資訊" not in body
@@ -385,7 +385,7 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["X-Robots-Tag"] == "noindex, nofollow"
     assert "<html lang=\"zh-TW\">" in body
-    assert "<title>完訓證明管理平台 - iPlayground</title>" in body
+    assert "<title>文件管理平台 - iPlayground</title>" in body
     assert 'id="portal-dashboard"' in body
     assert 'class="portal-dashboard-shell"' in body
     assert 'data-portal-entry-path="/portal"' in body
@@ -694,14 +694,14 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert response.headers["Content-Language"] == "zh-TW"
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["X-Robots-Tag"] == "noindex, nofollow"
-    assert "<title>完訓證明管理平台 - iPlayground</title>" in body
+    assert "<title>文件管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
     assert 'class="embedded-page-shell"' in body
     assert 'id="welcome-account-display">系統管理者<' in body
     assert 'id="portal-logout"' not in body
     assert 'src="/assets/logo_b_alpha.png"' in body
     assert "歡迎回來" in body
-    assert "你可以在這裡上傳完訓名單、追蹤批次處理結果" in body
+    assert "你可以在這裡上傳文件申請清單、追蹤批次處理結果" in body
     assert "系統可下載數" in body
     assert "下載人數" in body
     assert "驗證次數" in body
@@ -725,7 +725,7 @@ def test_portal_dashboard_records_page_returns_html_when_user_is_authorized(
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
-    assert "<title>檢視清單 - 完訓證明管理平台 - iPlayground</title>" in body
+    assert "<title>檢視清單 - 文件管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
     assert "embedded-page-card" in body
     assert "檢視清單" in body
@@ -747,7 +747,7 @@ def test_portal_dashboard_upload_page_returns_html_when_user_is_authorized(
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
-    assert "<title>上傳清單 - 完訓證明管理平台 - iPlayground</title>" in body
+    assert "<title>上傳清單 - 文件管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
     assert "embedded-page-card" in body
     assert "上傳清單" in body

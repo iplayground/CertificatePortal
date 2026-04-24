@@ -4,15 +4,17 @@
     "en-US": "English"
   },
   "home_page": {
-    "page_title": "Certificate Request - iPlayground",
-    "page_description": "iPlayground certificate request entry for confirming the event, registrant name, and email fields. This page is currently a UI preview before the full flow is connected.",
+    "page_title": "Document Request - iPlayground",
+    "page_description": "iPlayground document request entry for confirming the event, registrant name, and email fields. This page is currently a UI preview before the full flow is connected.",
     "locale_switcher_label": "Language",
-    "hero_title": "Certificate Request",
-    "hero_lead": "This home page currently focuses on the attendee input UI and keeps the event name, registrant name, and email fields fixed. The database and certificate generation flow are not connected yet, so submitting the form only shows a client-side message and does not create any records.",
+    "hero_title": "Document Request",
+    "hero_lead": "This home page currently focuses on the attendee input UI and keeps the event name, registrant name, and email fields fixed. The database and document generation flow are not connected yet, so submitting the form only shows a client-side message and does not create any records.",
     "form_title": "Attendee Information",
     "form_subtitle": "Fill in the basic information first. This version only implements the interface, so nothing is submitted to the backend or read from the DB.",
     "event_name_label": "Event",
     "event_name_hint": "The selector is currently a fixed static list and will later be populated from a data source.",
+    "document_type_label": "Document type",
+    "document_type_hint": "Completion certificates are available first. More document types can be opened later based on event and eligibility rules.",
     "attendee_name_label": "Registrant name",
     "attendee_name_placeholder": "Enter the registrant name",
     "email_label": "Email",
@@ -24,8 +26,8 @@
     "copyright_notice": "All website content and related materials are owned by Taipei Elite Software Developer Association (77212283). Unauthorized reproduction, redistribution, or commercial use is prohibited.",
     "empty_name_text": "Name not provided",
     "empty_email_text": "Email not provided",
-    "meta_image_alt": "iPlayground certificate identity mark",
-    "preview_feedback_template": "The current home page field layout is confirmed. Event: {eventName}; registrant name: {attendeeName}; email: {email}. The database, verification flow, and certificate generation flow are not connected yet."
+    "meta_image_alt": "iPlayground document request identity mark",
+    "preview_feedback_template": "The current home page field layout is confirmed. Event: {eventName}; document type: {documentType}; registrant name: {attendeeName}; email: {email}. The database, verification flow, and document generation flow are not connected yet."
   },
   "verify_page": {
     "title": "iPlayground Certificate Verification",

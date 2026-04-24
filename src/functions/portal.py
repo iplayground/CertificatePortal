@@ -155,7 +155,7 @@ def resolve_portal_login_error_title(error_code: str) -> str:
     if error_code == PORTAL_GOOGLE_LOGIN_AUTHORIZATION_CHECK_FAILED_ERROR:
         return "群組驗證未完成"
     if error_code == PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR:
-        return "沒有管理平台權限"
+        return "沒有文件管理平台權限"
 
     return "Google 登入未完成"
 

@@ -9,7 +9,12 @@ const eventNameInput = document.getElementById("event-name");
 const eventNameSelect = document.getElementById("event-name-select");
 const eventNameTrigger = document.getElementById("event-name-trigger");
 const eventNameValue = document.getElementById("event-name-value");
-const eventNameOptions = Array.from(document.querySelectorAll(".custom-select-option"));
+const eventNameOptions = Array.from(document.querySelectorAll("#event-name-options .custom-select-option"));
+const documentTypeInput = document.getElementById("document-type");
+const documentTypeSelect = document.getElementById("document-type-select");
+const documentTypeTrigger = document.getElementById("document-type-trigger");
+const documentTypeValue = document.getElementById("document-type-value");
+const documentTypeOptions = Array.from(document.querySelectorAll("#document-type-options .custom-select-option"));
 const localeSwitcher = document.getElementById("locale-switcher");
 const localeTrigger = document.getElementById("locale-trigger");
 const localeTriggerValue = localeTrigger?.querySelector(".locale-trigger-value") ?? null;
@@ -27,6 +32,8 @@ const metaOgDescription = document.getElementById("meta-og-description");
 const metaOgImageAlt = document.getElementById("meta-og-image-alt");
 const eventNameLabel = document.getElementById("event-name-label");
 const eventNameHint = document.getElementById("event-name-hint");
+const documentTypeLabel = document.getElementById("document-type-label");
+const documentTypeHint = document.getElementById("document-type-hint");
 const attendeeNameLabel = document.getElementById("attendee-name-label");
 const emailLabel = document.getElementById("email-label");
 const secondaryNote = document.getElementById("secondary-note");
@@ -104,6 +111,23 @@ function applyEventNameValue(nextValue) {
   });
 }
 
+function applyDocumentTypeValue(nextValue) {
+  const normalizedValue = nextValue?.trim();
+  if (!normalizedValue) {
+    return;
+  }
+
+  documentTypeInput.value = normalizedValue;
+  documentTypeValue.textContent = normalizedValue;
+
+  documentTypeOptions.forEach((item) => {
+    const optionValue = item.dataset.value ?? item.textContent?.trim() ?? "";
+    const isSelected = optionValue === normalizedValue;
+    item.classList.toggle("is-selected", isSelected);
+    item.setAttribute("aria-selected", String(isSelected));
+  });
+}
+
 function formatPreviewMessage(template, replacements) {
   return Object.entries(replacements).reduce((message, [key, value]) => {
     return message.split(`{${key}}`).join(value);
@@ -131,6 +155,7 @@ function updateFeedbackCopy(initialFeedbackText) {
   const emailValue = email.value.trim() || emptyEmailText;
   feedback.textContent = formatPreviewMessage(previewFeedbackTemplate, {
     eventName: eventNameInput.value,
+    documentType: documentTypeInput.value,
     attendeeName: name,
     email: emailValue,
   });
@@ -192,6 +217,8 @@ function applyHomePageLocale(nextLocale) {
   updateTextContent(formSubtitle, homePageCopy.form_subtitle);
   updateTextContent(eventNameLabel, homePageCopy.event_name_label);
   updateTextContent(eventNameHint, homePageCopy.event_name_hint);
+  updateTextContent(documentTypeLabel, homePageCopy.document_type_label);
+  updateTextContent(documentTypeHint, homePageCopy.document_type_hint);
   updateTextContent(attendeeNameLabel, homePageCopy.attendee_name_label);
   updateTextContent(emailLabel, homePageCopy.email_label);
   updateTextContent(previewAction, homePageCopy.preview_action_label);
@@ -248,6 +275,21 @@ function openEventNameSelect() {
   eventNameSelect.classList.add("is-open");
   eventNameTrigger.setAttribute("aria-expanded", "true");
   document.getElementById("event-name-options").hidden = false;
+}
+
+function closeDocumentTypeSelect({ blurTrigger = false } = {}) {
+  documentTypeSelect.classList.remove("is-open");
+  documentTypeTrigger.setAttribute("aria-expanded", "false");
+  document.getElementById("document-type-options").hidden = true;
+  if (blurTrigger) {
+    documentTypeTrigger.blur();
+  }
+}
+
+function openDocumentTypeSelect() {
+  documentTypeSelect.classList.add("is-open");
+  documentTypeTrigger.setAttribute("aria-expanded", "true");
+  document.getElementById("document-type-options").hidden = false;
 }
 
 function closeLocaleMenu({ blurTrigger = false } = {}) {
@@ -326,9 +368,65 @@ eventNameOptions.forEach((option, index) => {
   });
 });
 
+documentTypeTrigger.addEventListener("click", () => {
+  if (documentTypeSelect.classList.contains("is-open")) {
+    closeDocumentTypeSelect({ blurTrigger: true });
+    return;
+  }
+
+  openDocumentTypeSelect();
+});
+
+documentTypeTrigger.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    openDocumentTypeSelect();
+    documentTypeOptions[0]?.focus();
+  }
+
+  if (event.key === "Escape") {
+    closeDocumentTypeSelect({ blurTrigger: true });
+  }
+});
+
+documentTypeOptions.forEach((option, index) => {
+  option.addEventListener("click", () => {
+    applyDocumentTypeValue(option.dataset.value ?? option.textContent?.trim() ?? "");
+    closeDocumentTypeSelect({ blurTrigger: true });
+  });
+
+  option.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDocumentTypeSelect({ blurTrigger: true });
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      documentTypeOptions[(index + 1) % documentTypeOptions.length]?.focus();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      documentTypeOptions[(index - 1 + documentTypeOptions.length) % documentTypeOptions.length]?.focus();
+      return;
+    }
+
+    if (event.key === "Tab") {
+      closeDocumentTypeSelect();
+    }
+  });
+});
+
 document.addEventListener("click", (event) => {
   if (!eventNameSelect.contains(event.target)) {
     closeEventNameSelect();
+  }
+
+  if (!documentTypeSelect.contains(event.target)) {
+    closeDocumentTypeSelect();
   }
 });
 
@@ -421,6 +519,7 @@ previewAction.addEventListener("click", () => {
   feedback.classList.add("is-active");
   feedback.textContent = formatPreviewMessage(previewFeedbackTemplate, {
     eventName: eventNameInput.value,
+    documentType: documentTypeInput.value,
     attendeeName: name,
     email: emailValue,
   });

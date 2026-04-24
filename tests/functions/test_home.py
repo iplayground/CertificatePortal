@@ -32,8 +32,8 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert response.headers["Vary"] == "Cookie, Accept-Language"
     assert "iPlayground 2026" in body
     assert "iPlayground 2025" not in body
-    assert "iPlayground 完訓證明申請入口" in body
-    assert "完訓證明申請 - iPlayground" in body
+    assert "iPlayground 文件申請入口" in body
+    assert "文件申請 - iPlayground" in body
     assert "報名人姓名" in body
     assert "會眾姓名" not in body
     assert "email" in body
@@ -49,7 +49,12 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'data-locale="en-US"' in body
     assert "繁體中文" in body
     assert "English" in body
-    assert "完訓證明申請" in body
+    assert "文件申請" in body
+    assert "文件類型" in body
+    assert "完訓證明" in body
+    assert 'id="document-type-select"' in body
+    assert 'id="document-type" name="documentType" type="hidden" value="完訓證明"' in body
+    assert 'data-value="完訓證明"' in body
     assert "本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有" in body
     assert "Azure Functions 線上頁面已啟用" not in body
     assert 'src="/assets/logo_b_alpha.png"' in body
@@ -93,10 +98,12 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert response.status_code == 200
     assert response.headers["Content-Language"] == "en-US"
     assert "<html lang=\"en-US\">" in body
-    assert "Certificate Request - iPlayground" in body
+    assert "Document Request - iPlayground" in body
     assert "iPlayground 2025" not in body
     assert "This page is currently a UI preview before the full flow is connected." in body
     assert "Registrant name" in body
+    assert "Document type" in body
+    assert "完訓證明" in body
     assert "Submission flow not enabled yet" in body
     assert "Taipei Elite Software Developer Association (77212283)" in body
     assert "protected portal or lookup flow" in body
@@ -137,7 +144,7 @@ def test_home_page_prefers_cookie_locale_over_accept_language() -> None:
 
     assert response.status_code == 200
     assert response.headers["Content-Language"] == "zh-TW"
-    assert "完訓證明申請" in body
+    assert "文件申請" in body
     assert 'class="locale-menu-option is-current"' in body
 
 
@@ -169,7 +176,7 @@ def test_home_page_maps_simplified_chinese_to_traditional_chinese_locale() -> No
 
     assert response.status_code == 200
     assert response.headers["Content-Language"] == "zh-TW"
-    assert "完訓證明申請" in body
+    assert "文件申請" in body
 
 
 def test_home_css_asset_returns_expected_content_type() -> None:
@@ -233,9 +240,12 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "parseHomePageI18n" in body
     assert "applyHomePageLocale" in body
     assert "closeEventNameSelect" in body
+    assert "closeDocumentTypeSelect" in body
     assert "eventNameTrigger.blur()" in body
+    assert "documentTypeTrigger.blur()" in body
     assert 'JSON.parse(homePageI18nScript.textContent ?? "{}")' in body
     assert "applyEventNameValue" in body
+    assert "applyDocumentTypeValue" in body
     assert "setLocalePreference" in body
     assert "applyLocaleSelection" in body
     assert "localeOptions.forEach" in body

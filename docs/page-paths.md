@@ -6,7 +6,7 @@
 
 | Method | Path | 說明 | 輸出格式 |
 | --- | --- | --- | --- |
-| `GET` | `/` | 首頁，用於供會眾填寫基本資料並進入完訓證明流程 | `text/html` |
+| `GET` | `/` | 首頁，用於供會眾填寫基本資料、選擇文件類型並進入文件申請流程 | `text/html` |
 | `GET` | `/portal` | 管理平台登入入口 | `text/html` |
 | `GET` | `/portal/dashboard` | 管理者登入後的內部工作區頁面 | `text/html` |
 | `GET` | `/portal/dashboard/welcome` | dashboard iframe 預設載入的歡迎頁 | `text/html` |
@@ -53,8 +53,8 @@
 - `/portal` 目前採 Google 單一登入入口，不再接受本地帳號密碼表單
 - Google 登入與登出統一走 `/portal/auth/google/login`、`/portal/auth/google/callback`、`/portal/auth/logout`
 - 管理平台授權採雙層邊界：OAuth client 的 `Internal` 設定先排除非組織帳號，再由 Google Group 直接成員檢查與伺服器端 session cookie 控制 portal 存取
-- 登入後的完訓證明管理平台目前位於 `/portal/dashboard`
-- 完訓證明管理平台以 iframe 載入歡迎頁、`檢視清單` 與 `上傳清單` 三個獨立頁面
+- 登入後的文件管理平台目前位於 `/portal/dashboard`
+- 文件管理平台以 iframe 載入歡迎頁、`檢視清單` 與 `上傳清單` 三個獨立頁面
 - 左側功能清單固定顯示 `檢視清單` 與 `上傳清單`
 
 ### 主題與 head 規則
@@ -73,7 +73,7 @@
 - 管理平台入口固定為 `/portal`
 - 登入後頁面使用 `/portal/...` 子路徑
 - 首頁 `/` 不提供管理平台按鈕入口
-- 完訓證明管理平台目前位於 `/portal/dashboard`
+- 文件管理平台目前位於 `/portal/dashboard`
 - dashboard 以 iframe 載入 `welcome`、`records`、`upload` 三個獨立頁面
 - 左側功能清單固定顯示 `檢視清單` 與 `上傳清單`
 
@@ -86,8 +86,9 @@
 - logo 置中顯示
 - 提供語系切換器，目前支援 `zh-TW` 與 `en-US`
 - 提供活動名自訂下拉元件，目前固定為 `iPlayground 2026`
+- 提供文件類型自訂下拉元件，目前固定為 `完訓證明`
 - 提供報名人姓名與 `email` 輸入欄位
-- 顯示目前尚未串接資料庫與證明流程的提示
+- 顯示目前尚未串接資料庫與文件流程的提示
 - 顯示頁尾版權聲明
 
 ### `/verify/{certId}`
@@ -106,13 +107,13 @@ status: 尚未串接實際驗證資料
 ### `/portal`
 
 - 作為管理平台登入入口
-- 顯示 `完訓證明管理平台` 標題與 `管理者登入` 小標
+- 顯示 `文件管理平台` 標題與 `管理者登入` 小標
 - 套用與首頁相同的日夜主題切換規則
 - 未登入時顯示 Google 登入按鈕與 `返回首頁` 連結
 - 若使用者在 Google OAuth 流程中取消授權，會返回 `/portal`
 - 若使用者未完成資料授權，會顯示資料授權未完成 alert
 - 若群組驗證因 Cloud Identity API 或群組可見度設定未完成而無法判斷，會顯示群組驗證未完成 alert
-- 若登入帳號不是允許群組的直接成員，會顯示沒有管理平台權限 alert
+- 若登入帳號不是允許群組的直接成員，會顯示沒有文件管理平台權限 alert
 - OAuth callback 會以一次性 flash cookie 傳遞錯誤狀態，不使用 URL query
 - `/portal` 讀取這個一次性 flash cookie 後，會顯示浮動錯誤 alert，並立即清除 cookie
 - 共用 alert 元件預設 6 秒後自動關閉，並支援依頁面或情境覆寫；目前 `/portal` 登入錯誤 alert 不會自動關閉
@@ -122,12 +123,12 @@ status: 尚未串接實際驗證資料
 
 ### `/portal/dashboard`
 
-- 作為完訓證明管理平台登入後的桌面版工作區頁面
+- 作為文件管理平台登入後的桌面版工作區頁面
 - 以電腦版作業為前提，不特別提供 dashboard 的 RWD 版面切換
 - 左側保留固定導覽列
 - 左側品牌區塊下方、功能清單上方顯示目前登入管理者與登出按鈕
 - 右側工作區固定使用 iframe 呈現
-- 點擊左上方 `完訓證明管理平台` 品牌按鈕時，右側 iframe 載入 `/portal/dashboard/welcome`
+- 點擊左上方 `文件管理平台` 品牌按鈕時，右側 iframe 載入 `/portal/dashboard/welcome`
 - 點擊功能項目時，右側 iframe 會切換到對應的獨立頁面
 - 父頁 title 會同步成目前 iframe 顯示頁面的 title
 - `/portal/dashboard` 與其 iframe 子頁都會在伺服器端重新檢查 session cookie 與授權狀態

@@ -40,7 +40,7 @@ iPlayground 完訓證明系統。
 
 | Method | Path | 說明 | Content-Type |
 | --- | --- | --- | --- |
-| `GET` | `/` | 首頁，用於供會眾填寫基本資料並進入完訓證明流程 | `text/html; charset=utf-8` |
+| `GET` | `/` | 首頁，用於供會眾填寫基本資料、選擇文件類型並進入文件申請流程 | `text/html; charset=utf-8` |
 | `GET` | `/portal` | 管理平台登入入口 | `text/html; charset=utf-8` |
 | `GET` | `/assets/{assetName}` | 目前頁面所需的靜態樣式、互動腳本與品牌素材 | 依資產而定 |
 | `GET` | `/verify/{certId}` | 公開驗證頁面 | `text/plain; charset=utf-8` |

@@ -99,6 +99,37 @@
               </div>
 
               <div class="field">
+                <span id="document-type-label" class="field-label">{{document_type_label}}</span>
+                <div class="custom-select" id="document-type-select">
+                  <input id="document-type" name="documentType" type="hidden" value="完訓證明">
+                  <button
+                    class="custom-select-trigger"
+                    id="document-type-trigger"
+                    type="button"
+                    aria-expanded="false"
+                    aria-haspopup="listbox"
+                    aria-controls="document-type-options"
+                    aria-labelledby="document-type-label document-type-value"
+                  >
+                    <span id="document-type-value" class="custom-select-value">完訓證明</span>
+                    <span class="select-caret" aria-hidden="true"></span>
+                  </button>
+                  <div class="custom-select-menu" id="document-type-options" role="listbox" hidden>
+                    <button
+                      class="custom-select-option is-selected"
+                      type="button"
+                      role="option"
+                      aria-selected="true"
+                      data-value="完訓證明"
+                    >
+                      完訓證明
+                    </button>
+                  </div>
+                </div>
+                <div id="document-type-hint" class="hint">{{document_type_hint}}</div>
+              </div>
+
+              <div class="field">
                 <span id="attendee-name-label" class="field-label">{{attendee_name_label}}</span>
                 <input
                   id="attendee-name"

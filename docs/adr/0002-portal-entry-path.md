@@ -13,7 +13,7 @@ Accepted
 ## 決策
 
 - 管理平台登入入口統一改為 `/portal`
-- 登入後的完訓證明管理平台頁面使用 `/portal/...` 子路徑延伸，目前保留 `/portal/dashboard`
+- 登入後的文件管理平台頁面使用 `/portal/...` 子路徑延伸，目前保留 `/portal/dashboard`
 - 程式碼、文件與後續對外設計都以 `/portal` 作為入口命名空間
 - 不再保留 `/admin` 作為管理平台入口命名
 
