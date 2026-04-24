@@ -8,10 +8,10 @@ import pytest
 from src.functions.assets import static_asset
 from src.functions.portal import (
     PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR,
+    portal_dashboard_completion_certs_page,
     portal_dashboard_events_page,
     portal_dashboard_page,
-    portal_dashboard_records_page,
-    portal_dashboard_upload_page,
+    portal_dashboard_tax_receipts_page,
     portal_dashboard_welcome_page,
     portal_google_callback_page,
     portal_google_login_page,
@@ -394,22 +394,51 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'data-welcome-page-path="/portal/dashboard/welcome"' in body
     assert 'id="portal-dashboard-title"' in body
     assert 'data-view-target="welcome"' in body
-    assert body.index('data-view-target="events"') < body.index('data-view-target="records"')
-    assert body.index('data-view-target="events"') < body.index('data-view-target="upload"')
-    assert 'data-view-target="records"' in body
-    assert 'data-view-target="upload"' in body
+    assert body.index('data-view-target="events"') < body.index(
+        'data-view-target="completion-certs"'
+    )
+    assert body.index('data-view-target="events"') < body.index(
+        'data-view-target="tax-receipts"'
+    )
+    assert 'data-view-target="completion-certs"' in body
+    assert 'data-view-target="tax-receipts"' in body
     assert 'data-view-target="events"' in body
     assert 'data-view-path="/portal/dashboard/welcome"' in body
-    assert 'data-view-path="/portal/dashboard/records"' in body
-    assert 'data-view-path="/portal/dashboard/upload"' in body
+    assert 'data-view-path="/portal/dashboard/completion-certs"' in body
+    assert 'data-view-path="/portal/dashboard/tax-receipts"' in body
     assert 'data-view-path="/portal/dashboard/events"' in body
-    assert "檢視清單" in body
-    assert "上傳清單" in body
+    assert "檢視清單" not in body
+    assert "上傳清單" not in body
     assert "活動管理" in body
-    assert "管理活動與可申請文件" in body
+    assert "活動與文件設定" in body
+    assert "清單與資料上傳" in body
+    assert "內容規劃中" in body
+    assert "管理活動與可申請文件" not in body
+    assert "清單檢視與上傳完訓證明資料" not in body
+    assert "清單檢視與上傳 407 收據聯" not in body
     assert 'id="portal-event-create-dialog"' in body
+    assert 'id="portal-completion-upload-dialog"' in body
     assert 'class="event-dialog-backdrop portal-event-dialog-backdrop"' in body
     assert 'id="portal-event-name-input"' in body
+    assert 'id="portal-completion-upload-file"' in body
+    assert 'id="portal-completion-upload-file-name"' in body
+    assert 'id="portal-completion-upload-submit"' in body
+    assert 'id="portal-completion-upload-event"' in body
+    assert 'id="portal-completion-upload-event-select"' in body
+    assert 'id="portal-completion-upload-event-trigger"' in body
+    assert 'id="portal-completion-upload-event-options"' in body
+    assert 'id="portal-completion-upload-event-value"' in body
+    assert 'aria-labelledby="portal-completion-upload-event-label portal-completion-upload-event-value"' in body
+    assert 'class="document-upload-input"' in body
+    assert 'class="document-upload-copy"' in body
+    assert 'class="document-upload-file-name"' in body
+    assert 'accept=".csv,text/csv"' in body
+    assert "僅支援 CSV 檔案" in body
+    assert "尚未選擇 CSV 檔案" in body
+    assert ".xlsx" not in body
+    assert ".xls" not in body
+    assert "Excel" not in body
+    assert 'id="portal-completion-upload-cancel"' in body
     assert 'id="portal-event-create-close"' not in body
     assert "關閉建立活動畫面" not in body
     assert 'class="event-status-switch-option"' in body
@@ -736,48 +765,139 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert 'src="/assets/portal-dashboard-welcome.js"' in body
 
 
-def test_portal_dashboard_records_page_returns_html_when_user_is_authorized(
+def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_authorized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
     configure_portal_auth_bypass_env(monkeypatch)
 
-    response = portal_dashboard_records_page(
+    response = portal_dashboard_completion_certs_page(
         build_request(
-            "http://localhost:7075/portal/dashboard/records",
+            "http://localhost:7075/portal/dashboard/completion-certs",
         )
     )
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
-    assert "<title>檢視清單 - 文件管理平台 - iPlayground</title>" in body
+    assert "<title>完訓證明 - 文件管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
     assert "embedded-page-card" in body
-    assert "檢視清單" in body
-    assert "獨立工作頁" in body
+    assert "完訓證明" in body
+    assert "完訓證明資料清單" in body
+    assert "套用至目前活動全部資料" in body
+    assert "全選目前清單" not in body
+    assert "已選取 0 筆" not in body
+    assert "設為已簽到" in body
+    assert "設為未簽到" in body
+    assert "設為已簽到可下載" not in body
+    assert "設為未簽到不可下載" not in body
+    assert 'id="completion-bulk-toolbar"' in body
+    assert 'id="completion-select-all"' not in body
+    assert 'id="completion-selection-count"' not in body
+    assert 'id="completion-bulk-downloadable"' in body
+    assert 'id="completion-bulk-blocked"' in body
+    assert 'class="document-bulk-toolbar"' in body
+    assert 'class="document-bulk-scope"' in body
+    assert 'class="document-selection-option"' not in body
+    assert 'class="document-bulk-actions"' in body
+    assert 'class="secondary-button document-bulk-action"' in body
+    assert "簽到狀態" in body
+    assert "未簽到" in body
+    assert "已簽到" in body
+    assert "不可下載" not in body
+    assert "可下載" not in body
+    assert "報名序號" in body
+    assert "票種" in body
+    assert "操作" in body
+    assert "下載" in body
+    assert 'id="completion-cert-row-template"' in body
+    assert 'id="completion-cert-table-body"' in body
+    assert 'id="completion-cert-empty-row"' in body
+    assert 'class="secondary-button document-download-button"' in body
+    assert 'class="document-row-checkbox"' not in body
+    assert 'class="event-status-switch-option document-row-status-switch"' in body
+    assert 'class="event-status-switch-input document-download-switch-input"' in body
+    assert 'data-action="toggle-downloadable"' in body
+    assert 'data-field="downloadStatus"' in body
+    assert 'data-field="downloadState"' not in body
+    assert 'aria-label="切換簽到狀態"' in body
+    assert 'data-field="ticketType"' in body
+    assert 'colspan="6"' in body
+    assert "上傳完訓證明資料" in body
+    assert 'class="document-filter-form"' in body
+    assert 'aria-label="完訓證明資料篩選"' in body
+    assert '<th scope="col">活動</th>' not in body
+    assert 'data-field="eventName"' not in body
+    assert 'class="custom-select"' in body
+    assert 'class="custom-select-trigger"' in body
+    assert 'class="custom-select-menu"' in body
+    assert 'class="custom-select-option is-selected"' in body
+    assert 'role="listbox"' in body
+    assert 'role="option"' in body
+    assert 'id="completion-event-filter"' in body
+    assert 'type="hidden"' in body
+    assert 'name="eventName"' in body
+    assert 'aria-required="true"' in body
+    assert "<select" not in body
+    assert "iPlayground 2026" in body
+    assert "必填" not in body
+    assert "套用篩選" not in body
+    assert "completion-upload-file" in body
+    assert 'id="completion-upload-file-name"' in body
+    assert 'id="completion-upload-submit"' in body
+    assert 'id="completion-upload-event"' in body
+    assert 'id="completion-upload-event-select"' in body
+    assert 'id="completion-upload-event-trigger"' in body
+    assert 'id="completion-upload-event-options"' in body
+    assert 'id="completion-upload-event-value"' in body
+    assert 'aria-labelledby="completion-upload-event-label completion-upload-event-value"' in body
+    assert 'class="document-upload-input"' in body
+    assert 'class="document-upload-copy"' in body
+    assert 'class="document-upload-file-name"' in body
+    assert 'accept=".csv,text/csv"' in body
+    assert "僅支援 CSV 檔案" in body
+    assert "尚未選擇 CSV 檔案" in body
+    assert ".xlsx" not in body
+    assert ".xls" not in body
+    assert "Excel" not in body
+    assert 'id="completion-upload-open"' in body
+    assert 'id="completion-upload-dialog"' in body
+    assert 'aria-modal="true"' in body
+    assert 'id="completion-upload-cancel"' in body
+    assert 'src="/assets/portal-dashboard-completion-certs.js"' in body
+    assert "document-workspace-grid" not in body
+    assert "上傳資料" not in body
+    assert '<p class="panel-kicker">完訓證明</p>' not in body
+    assert "清單檢視" not in body
+    assert "尚未串接完訓證明資料來源" in body
+    assert "獨立工作頁" not in body
 
 
-def test_portal_dashboard_upload_page_returns_html_when_user_is_authorized(
+def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
     configure_portal_auth_bypass_env(monkeypatch)
 
-    response = portal_dashboard_upload_page(
+    response = portal_dashboard_tax_receipts_page(
         build_request(
-            "http://localhost:7075/portal/dashboard/upload",
+            "http://localhost:7075/portal/dashboard/tax-receipts",
         )
     )
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
-    assert "<title>上傳清單 - 文件管理平台 - iPlayground</title>" in body
+    assert "<title>營業稅繳稅證明 - 文件管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
-    assert "embedded-page-card" in body
-    assert "上傳清單" in body
-    assert "獨立工作頁" in body
+    assert "embedded-page-card" not in body
+    assert "清單檢視" not in body
+    assert "營業稅繳稅證明清單" not in body
+    assert "上傳 407 收據聯" not in body
+    assert "tax-upload-file" not in body
+    assert "尚未串接 407 收據聯資料來源" not in body
+    assert "獨立工作頁" not in body
 
 
 def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
@@ -888,6 +1008,34 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".admin-nav-item.is-active" in body
     assert ".metric-grid" in body
     assert ".event-management-card" in body
+    assert ".custom-select-trigger" in body
+    assert ".custom-select-menu" in body
+    assert ".custom-select-option" in body
+    assert ".document-workspace-card" in body
+    assert ".document-filter-form" in body
+    assert ".document-bulk-toolbar" in body
+    assert ".document-bulk-scope" in body
+    assert ".document-selection-option" not in body
+    assert ".document-selection-count" not in body
+    assert ".document-bulk-actions" in body
+    assert ".document-bulk-action:disabled" in body
+    assert ".document-list-select-col" not in body
+    assert ".document-selection-cell" not in body
+    assert ".document-row-checkbox" not in body
+    assert ".document-row-status-switch" in body
+    assert ".document-row-status-copy" in body
+    assert ".document-download-switch-input" in body
+    assert ".required-field-mark" not in body
+    assert ".document-filter-submit" not in body
+    assert ".document-list-table" in body
+    assert ".document-download-button" in body
+    assert ".document-download-button:disabled" in body
+    assert ".document-upload-form" in body
+    assert ".document-upload-dropzone" in body
+    assert ".document-upload-input" in body
+    assert ".document-upload-copy" in body
+    assert ".document-upload-file-name" in body
+    assert ".document-upload-form input[type=\"file\"]" not in body
     assert ".event-management-header" in body
     assert ".event-management-panel" not in body
     assert ".event-list-toolbar" not in body
@@ -909,7 +1057,7 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".event-status-switch-input:checked + .event-status-switch-track" in body
     assert ".event-status-switch-thumb" in body
     assert "transform: translateX(18px);" in body
-    assert "select-caret" not in body
+    assert "select-caret" in body
     assert ".event-status-badge.is-draft" not in body
     assert ".event-status-badge.is-unlisted" in body
     assert ".event-status-badge.is-open" in body
@@ -989,6 +1137,25 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "activateView" in body
     assert "syncViewFromFrame" in body
     assert "openDashboardEventDialog" in body
+    assert "openDashboardCompletionUploadDialog" in body
+    assert "portal-completion-upload-file-name" in body
+    assert "portal-completion-upload-submit" in body
+    assert "portal-completion-upload-event" in body
+    assert "portal-completion-upload-event-trigger" in body
+    assert "updateDashboardCompletionUploadFileName" in body
+    assert "isDashboardCompletionCsvFile" in body
+    assert "getCompletionEventNameFromFrame" in body
+    assert "applyDashboardCompletionUploadEventValue" in body
+    assert "getDashboardCompletionUploadEventName" in body
+    assert "openDashboardCompletionUploadEventSelect" in body
+    assert "closeDashboardCompletionUploadEventSelect" in body
+    assert "sendDashboardCompletionUploadFileToFrame" in body
+    assert "completionUploadImportMessageType" in body
+    assert "ipg:completion-upload:import" in body
+    assert "eventName: getDashboardCompletionUploadEventName()" in body
+    assert "selectedFile.text()" in body
+    assert "contentFrame.contentWindow?.postMessage" in body
+    assert '.endsWith(".csv")' in body
     assert "setDashboardEventDialogMode" in body
     assert "applyDashboardEventStatusValue" in body
     assert "dashboardEventStatusCheckbox" in body
@@ -999,6 +1166,7 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "資料尚未存檔，確定要取消嗎？" in body
     assert "closeDashboardEventCreateDialog" in body
     assert "ipg:event-form:open" in body
+    assert "ipg:completion-upload:open" in body
     assert "儲存變更" in body
     assert 'pageShell?.setAttribute("inert", "")' in body
     assert 'pageShell?.setAttribute("aria-hidden", "true")' in body
@@ -1008,6 +1176,69 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "button.dataset.viewPath" in body
     assert 'window.location.assign(logoutUrl)' in body
     assert 'window.location.assign(portalEntryPath)' in body
+    assert "sessionStorage" not in body
+
+
+def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/portal-dashboard-completion-certs.js",
+            route_params={"asset_name": "portal-dashboard-completion-certs.js"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert 'document.getElementById("completion-upload-open")' in body
+    assert 'document.getElementById("completion-upload-file-name")' in body
+    assert 'document.getElementById("completion-upload-submit")' in body
+    assert 'document.getElementById("completion-upload-event")' in body
+    assert '"completion-upload-event-trigger"' in body
+    assert 'document.getElementById("completion-select-all")' not in body
+    assert 'document.getElementById("completion-bulk-downloadable")' in body
+    assert 'document.getElementById("completion-bulk-blocked")' in body
+    assert "updateCompletionUploadFileName" in body
+    assert "isCompletionCsvFile" in body
+    assert "completionUploadImportMessageType" in body
+    assert "ipg:completion-upload:import" in body
+    assert "getCompletionUploadEventName" in body
+    assert "applyCompletionUploadEventValue" in body
+    assert "openCompletionUploadEventSelect" in body
+    assert "closeCompletionUploadEventSelect" in body
+    assert "getVisibleCompletionCertRows" in body
+    assert "message.eventName" in body
+    assert "parseCompletionCsv" in body
+    assert "buildCompletionCertRows" in body
+    assert "renderCompletionCertRows" in body
+    assert "importCompletionCsvText" in body
+    assert "setCompletionRowDownloadState" in body
+    assert "setCompletionSelectionForAllRows" not in body
+    assert "applyDownloadableStateToSelection" not in body
+    assert "applyDownloadableStateToCurrentActivity" in body
+    assert "未簽到" in body
+    assert "已簽到" in body
+    assert "不可下載" not in body
+    assert "可下載" not in body
+    assert '.endsWith(".csv")' in body
+    assert 'document.querySelector(".document-filter-form")' in body
+    assert 'document.getElementById("completion-event-filter")' in body
+    assert '"completion-event-filter-trigger"' in body
+    assert "completionEventFilterOptions.forEach" in body
+    assert "event.preventDefault()" in body
+    assert "applyCompletionFilters" in body
+    assert "applyCompletionEventFilterValue" in body
+    assert "openCompletionEventFilterSelect" in body
+    assert "closeCompletionEventFilterSelect" in body
+    assert "openCompletionUploadDialog" in body
+    assert "requestParentCompletionUploadDialog" in body
+    assert "window.parent.postMessage" in body
+    assert "window.parent !== window" in body
+    assert "ipg:completion-upload:open" in body
+    assert "completionUploadDialog.hidden = false" in body
+    assert "confirmCompletionUploadDialogClose" in body
+    assert "資料尚未存檔，確定要取消嗎？" in body
+    assert 'event.key === "Escape"' in body
     assert "sessionStorage" not in body
 
 

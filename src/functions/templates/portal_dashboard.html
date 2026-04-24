@@ -64,33 +64,33 @@
                   <span class="admin-nav-symbol" aria-hidden="true">01</span>
                   <span class="admin-nav-copy">
                     <strong>活動管理</strong>
-                    <span>管理活動與可申請文件</span>
+                    <span>活動與文件設定</span>
                   </span>
                 </button>
                 <button
                   class="admin-nav-item"
                   type="button"
-                  data-view-target="records"
-                  data-view-path="/portal/dashboard/records"
+                  data-view-target="completion-certs"
+                  data-view-path="/portal/dashboard/completion-certs"
                   aria-pressed="false"
                 >
                   <span class="admin-nav-symbol" aria-hidden="true">02</span>
                   <span class="admin-nav-copy">
-                    <strong>檢視清單</strong>
-                    <span>切換到獨立的清單工作頁</span>
+                    <strong>完訓證明</strong>
+                    <span>清單與資料上傳</span>
                   </span>
                 </button>
                 <button
                   class="admin-nav-item"
                   type="button"
-                  data-view-target="upload"
-                  data-view-path="/portal/dashboard/upload"
+                  data-view-target="tax-receipts"
+                  data-view-path="/portal/dashboard/tax-receipts"
                   aria-pressed="false"
                 >
                   <span class="admin-nav-symbol" aria-hidden="true">03</span>
                   <span class="admin-nav-copy">
-                    <strong>上傳清單</strong>
-                    <span>切換到獨立的上傳工作頁</span>
+                    <strong>營業稅繳稅證明</strong>
+                    <span>內容規劃中</span>
                   </span>
                 </button>
               </nav>
@@ -186,6 +186,81 @@
           <div class="event-form-actions">
             <button class="secondary-button event-cancel-button" id="portal-event-create-cancel" type="button">取消</button>
             <button class="submit-button" id="portal-event-form-submit" type="button">建立活動</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div
+      class="event-dialog-backdrop portal-event-dialog-backdrop"
+      id="portal-completion-upload-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="portal-completion-upload-title"
+      hidden
+    >
+      <section class="event-dialog portal-event-dialog">
+        <header class="event-dialog-header">
+          <h2 id="portal-completion-upload-title">上傳完訓證明資料</h2>
+        </header>
+
+        <form class="document-upload-form" aria-label="上傳完訓證明資料">
+          <div class="field">
+            <span class="field-label" id="portal-completion-upload-event-label">活動</span>
+            <div class="custom-select" id="portal-completion-upload-event-select">
+              <input
+                id="portal-completion-upload-event"
+                name="eventName"
+                type="hidden"
+                value="iPlayground 2026"
+              >
+              <button
+                class="custom-select-trigger"
+                id="portal-completion-upload-event-trigger"
+                type="button"
+                aria-expanded="false"
+                aria-haspopup="listbox"
+                aria-controls="portal-completion-upload-event-options"
+                aria-labelledby="portal-completion-upload-event-label portal-completion-upload-event-value"
+              >
+                <span id="portal-completion-upload-event-value" class="custom-select-value">iPlayground 2026</span>
+                <span class="select-caret" aria-hidden="true"></span>
+              </button>
+              <div class="custom-select-menu" id="portal-completion-upload-event-options" role="listbox" hidden>
+                <button
+                  class="custom-select-option is-selected"
+                  type="button"
+                  role="option"
+                  aria-selected="true"
+                  data-value="iPlayground 2026"
+                >
+                  iPlayground 2026
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <label class="document-upload-dropzone" for="portal-completion-upload-file">
+            <span class="document-upload-icon" aria-hidden="true">CSV</span>
+            <span class="document-upload-copy">
+              <strong>選擇完訓證明 CSV</strong>
+              <small>僅支援 CSV 檔案；實際匯入流程將在後續串接。</small>
+              <span class="document-upload-file-name" id="portal-completion-upload-file-name">
+                尚未選擇 CSV 檔案
+              </span>
+            </span>
+            <input
+              class="document-upload-input"
+              id="portal-completion-upload-file"
+              name="completionUploadFile"
+              type="file"
+              accept=".csv,text/csv"
+            >
+          </label>
+
+          <div class="event-form-actions">
+            <button class="secondary-button event-cancel-button" id="portal-completion-upload-cancel" type="button">取消</button>
+            <button class="submit-button" id="portal-completion-upload-submit" type="button">上傳完訓證明資料</button>
           </div>
         </form>
       </section>

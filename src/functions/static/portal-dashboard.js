@@ -12,18 +12,58 @@ const dashboardEventStatusText = document.getElementById("portal-event-status-te
 const dashboardEventDocumentTypeInputs = Array.from(
   document.querySelectorAll("#portal-event-create-dialog [data-document-type]")
 );
+const dashboardCompletionUploadDialog = document.getElementById(
+  "portal-completion-upload-dialog"
+);
+const dashboardCompletionUploadCancelButton = document.getElementById(
+  "portal-completion-upload-cancel"
+);
+const dashboardCompletionUploadSubmitButton = document.getElementById(
+  "portal-completion-upload-submit"
+);
+const dashboardCompletionUploadFileInput = document.getElementById(
+  "portal-completion-upload-file"
+);
+const dashboardCompletionUploadFileName = document.getElementById(
+  "portal-completion-upload-file-name"
+);
+const dashboardCompletionUploadEvent = document.getElementById(
+  "portal-completion-upload-event"
+);
+const dashboardCompletionUploadEventSelect = document.getElementById(
+  "portal-completion-upload-event-select"
+);
+const dashboardCompletionUploadEventTrigger = document.getElementById(
+  "portal-completion-upload-event-trigger"
+);
+const dashboardCompletionUploadEventValue = document.getElementById(
+  "portal-completion-upload-event-value"
+);
+const dashboardCompletionUploadEventMenu = document.getElementById(
+  "portal-completion-upload-event-options"
+);
+const dashboardCompletionUploadEventOptions = Array.from(
+  document.querySelectorAll("#portal-completion-upload-event-options .custom-select-option")
+);
 
 const portalEntryPath = portalPage.dataset.portalEntryPath ?? "/portal";
 const logoutUrl =
   portalPage.dataset.logoutUrl ?? "/portal/auth/logout?post_logout_redirect_uri=/portal";
 const welcomePagePath = portalPage.dataset.welcomePagePath ?? "/portal/dashboard/welcome";
 const eventFormOpenMessageType = "ipg:event-form:open";
+const completionUploadOpenMessageType = "ipg:completion-upload:open";
+const completionUploadImportMessageType = "ipg:completion-upload:import";
 const defaultPageTitle = document.title;
+const defaultDashboardCompletionUploadFileName = "尚未選擇 CSV 檔案";
+const invalidDashboardCompletionUploadFileName = "請選擇 CSV 檔案";
+const failedDashboardCompletionUploadFileName = "CSV 檔案讀取失敗";
+const defaultDashboardCompletionUploadEventName = "iPlayground 2026";
 
 const viewButtons = Array.from(document.querySelectorAll("[data-view-target]"));
 let dashboardEventCreatePreviousFocus = null;
 let dashboardEventDialogMode = "create";
 let dashboardEventInitialState = "";
+let dashboardCompletionUploadPreviousFocus = null;
 
 function setActiveView(targetView) {
   viewButtons.forEach((button) => {
@@ -201,6 +241,195 @@ function closeDashboardEventCreateDialog({ confirmUnsaved = false } = {}) {
   }
 }
 
+function getCompletionEventNameFromFrame() {
+  try {
+    const frameEventFilter = contentFrame.contentDocument?.getElementById("completion-event-filter");
+    if (frameEventFilter instanceof HTMLInputElement) {
+      return frameEventFilter.value || defaultDashboardCompletionUploadEventName;
+    }
+  } catch (error) {
+    void error;
+  }
+
+  return defaultDashboardCompletionUploadEventName;
+}
+
+function getDashboardCompletionUploadEventName() {
+  if (dashboardCompletionUploadEvent instanceof HTMLInputElement) {
+    return dashboardCompletionUploadEvent.value || defaultDashboardCompletionUploadEventName;
+  }
+
+  return defaultDashboardCompletionUploadEventName;
+}
+
+function applyDashboardCompletionUploadEventValue(nextValue) {
+  const normalizedValue = nextValue?.trim() || defaultDashboardCompletionUploadEventName;
+
+  if (dashboardCompletionUploadEvent instanceof HTMLInputElement) {
+    dashboardCompletionUploadEvent.value = normalizedValue;
+  }
+
+  if (dashboardCompletionUploadEventValue) {
+    dashboardCompletionUploadEventValue.textContent = normalizedValue;
+  }
+
+  dashboardCompletionUploadEventOptions.forEach((item) => {
+    const optionValue = item.dataset.value ?? item.textContent?.trim() ?? "";
+    const isSelected = optionValue === normalizedValue;
+    item.classList.toggle("is-selected", isSelected);
+    item.setAttribute("aria-selected", String(isSelected));
+  });
+}
+
+function resetDashboardCompletionUploadDialog() {
+  if (dashboardCompletionUploadFileInput instanceof HTMLInputElement) {
+    dashboardCompletionUploadFileInput.value = "";
+  }
+
+  applyDashboardCompletionUploadEventValue(getCompletionEventNameFromFrame());
+  updateDashboardCompletionUploadFileName();
+}
+
+function hasSelectedDashboardCompletionUploadFile() {
+  return (
+    dashboardCompletionUploadFileInput instanceof HTMLInputElement &&
+    dashboardCompletionUploadFileInput.files instanceof FileList &&
+    dashboardCompletionUploadFileInput.files.length > 0
+  );
+}
+
+function isDashboardCompletionCsvFile(file) {
+  return file.name.toLowerCase().endsWith(".csv");
+}
+
+function updateDashboardCompletionUploadFileName() {
+  if (!(dashboardCompletionUploadFileName instanceof HTMLElement)) {
+    return;
+  }
+
+  if (
+    !(dashboardCompletionUploadFileInput instanceof HTMLInputElement) ||
+    !(dashboardCompletionUploadFileInput.files instanceof FileList) ||
+    dashboardCompletionUploadFileInput.files.length === 0
+  ) {
+    dashboardCompletionUploadFileName.textContent = defaultDashboardCompletionUploadFileName;
+    return;
+  }
+
+  const selectedFile = dashboardCompletionUploadFileInput.files[0];
+  if (!isDashboardCompletionCsvFile(selectedFile)) {
+    dashboardCompletionUploadFileInput.value = "";
+    dashboardCompletionUploadFileName.textContent = invalidDashboardCompletionUploadFileName;
+    return;
+  }
+
+  dashboardCompletionUploadFileName.textContent = selectedFile.name;
+}
+
+function getSelectedDashboardCompletionUploadFile() {
+  if (
+    !(dashboardCompletionUploadFileInput instanceof HTMLInputElement) ||
+    !(dashboardCompletionUploadFileInput.files instanceof FileList) ||
+    dashboardCompletionUploadFileInput.files.length === 0
+  ) {
+    return null;
+  }
+
+  return dashboardCompletionUploadFileInput.files[0];
+}
+
+async function sendDashboardCompletionUploadFileToFrame() {
+  const selectedFile = getSelectedDashboardCompletionUploadFile();
+  if (!selectedFile || !isDashboardCompletionCsvFile(selectedFile)) {
+    updateDashboardCompletionUploadFileName();
+    dashboardCompletionUploadFileInput?.focus();
+    return;
+  }
+
+  try {
+    const csvText = await selectedFile.text();
+    contentFrame.contentWindow?.postMessage(
+      {
+        csvText,
+        eventName: getDashboardCompletionUploadEventName(),
+        fileName: selectedFile.name,
+        type: completionUploadImportMessageType,
+      },
+      window.location.origin
+    );
+    closeDashboardCompletionUploadDialog();
+  } catch (error) {
+    void error;
+    if (dashboardCompletionUploadFileName) {
+      dashboardCompletionUploadFileName.textContent = failedDashboardCompletionUploadFileName;
+    }
+  }
+}
+
+function confirmDashboardCompletionUploadDialogClose() {
+  if (!hasSelectedDashboardCompletionUploadFile()) {
+    return true;
+  }
+
+  return window.confirm("資料尚未存檔，確定要取消嗎？");
+}
+
+function openDashboardCompletionUploadDialog() {
+  if (!dashboardCompletionUploadDialog) {
+    return;
+  }
+
+  resetDashboardCompletionUploadDialog();
+  dashboardCompletionUploadPreviousFocus = document.activeElement;
+  dashboardCompletionUploadDialog.hidden = false;
+  portalPage.classList.add("has-event-dialog");
+  pageShell?.setAttribute("inert", "");
+  pageShell?.setAttribute("aria-hidden", "true");
+  dashboardCompletionUploadFileInput?.focus();
+}
+
+function closeDashboardCompletionUploadDialog({ confirmUnsaved = false } = {}) {
+  if (!dashboardCompletionUploadDialog) {
+    return;
+  }
+
+  if (confirmUnsaved && !confirmDashboardCompletionUploadDialogClose()) {
+    return;
+  }
+
+  dashboardCompletionUploadDialog.hidden = true;
+  closeDashboardCompletionUploadEventSelect();
+  portalPage.classList.remove("has-event-dialog");
+  pageShell?.removeAttribute("inert");
+  pageShell?.removeAttribute("aria-hidden");
+
+  if (dashboardCompletionUploadPreviousFocus instanceof HTMLElement) {
+    dashboardCompletionUploadPreviousFocus.focus();
+  }
+}
+
+function closeDashboardCompletionUploadEventSelect({ blurTrigger = false } = {}) {
+  dashboardCompletionUploadEventSelect?.classList.remove("is-open");
+  dashboardCompletionUploadEventTrigger?.setAttribute("aria-expanded", "false");
+
+  if (dashboardCompletionUploadEventMenu) {
+    dashboardCompletionUploadEventMenu.hidden = true;
+  }
+
+  if (blurTrigger) {
+    dashboardCompletionUploadEventTrigger?.blur();
+  }
+}
+
+function openDashboardCompletionUploadEventSelect() {
+  dashboardCompletionUploadEventSelect?.classList.add("is-open");
+  dashboardCompletionUploadEventTrigger?.setAttribute("aria-expanded", "true");
+
+  if (dashboardCompletionUploadEventMenu) {
+    dashboardCompletionUploadEventMenu.hidden = false;
+  }
+}
+
 viewButtons.forEach((button) => {
   button.addEventListener("click", () => {
     activateView(button.dataset.viewTarget ?? "welcome");
@@ -220,6 +449,76 @@ dashboardEventCreateCancelButton?.addEventListener("click", () => {
   closeDashboardEventCreateDialog({ confirmUnsaved: true });
 });
 
+dashboardCompletionUploadCancelButton?.addEventListener("click", () => {
+  closeDashboardCompletionUploadDialog({ confirmUnsaved: true });
+});
+
+dashboardCompletionUploadSubmitButton?.addEventListener("click", () => {
+  void sendDashboardCompletionUploadFileToFrame();
+});
+
+dashboardCompletionUploadEventTrigger?.addEventListener("click", () => {
+  if (dashboardCompletionUploadEventSelect?.classList.contains("is-open")) {
+    closeDashboardCompletionUploadEventSelect({ blurTrigger: true });
+    return;
+  }
+
+  openDashboardCompletionUploadEventSelect();
+});
+
+dashboardCompletionUploadEventTrigger?.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    openDashboardCompletionUploadEventSelect();
+    dashboardCompletionUploadEventOptions[0]?.focus();
+  }
+
+  if (event.key === "Escape") {
+    closeDashboardCompletionUploadEventSelect({ blurTrigger: true });
+  }
+});
+
+dashboardCompletionUploadFileInput?.addEventListener(
+  "change",
+  updateDashboardCompletionUploadFileName
+);
+
+dashboardCompletionUploadEventOptions.forEach((option, index) => {
+  option.addEventListener("click", () => {
+    applyDashboardCompletionUploadEventValue(option.dataset.value ?? option.textContent?.trim() ?? "");
+    closeDashboardCompletionUploadEventSelect({ blurTrigger: true });
+  });
+
+  option.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDashboardCompletionUploadEventSelect({ blurTrigger: true });
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      dashboardCompletionUploadEventOptions[
+        (index + 1) % dashboardCompletionUploadEventOptions.length
+      ]?.focus();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      dashboardCompletionUploadEventOptions[
+        (index - 1 + dashboardCompletionUploadEventOptions.length) %
+          dashboardCompletionUploadEventOptions.length
+      ]?.focus();
+      return;
+    }
+
+    if (event.key === "Tab") {
+      closeDashboardCompletionUploadEventSelect();
+    }
+  });
+});
+
 dashboardEventStatusCheckbox?.addEventListener("change", () => {
   applyDashboardEventStatusValue(dashboardEventStatusCheckbox.checked ? "open" : "unlisted");
 });
@@ -227,6 +526,12 @@ dashboardEventStatusCheckbox?.addEventListener("change", () => {
 dashboardEventCreateDialog?.addEventListener("click", (event) => {
   if (event.target === dashboardEventCreateDialog) {
     closeDashboardEventCreateDialog({ confirmUnsaved: true });
+  }
+});
+
+dashboardCompletionUploadDialog?.addEventListener("click", (event) => {
+  if (event.target === dashboardCompletionUploadDialog) {
+    closeDashboardCompletionUploadDialog({ confirmUnsaved: true });
   }
 });
 
@@ -241,12 +546,34 @@ window.addEventListener("message", (event) => {
       mode: message.mode === "edit" ? "edit" : "create",
       eventData: message.event ?? {},
     });
+    return;
+  }
+
+  if (message.type === completionUploadOpenMessageType) {
+    openDashboardCompletionUploadDialog();
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (
+    dashboardCompletionUploadEventSelect instanceof HTMLElement &&
+    !dashboardCompletionUploadEventSelect.contains(event.target)
+  ) {
+    closeDashboardCompletionUploadEventSelect();
   }
 });
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && dashboardEventCreateDialog && !dashboardEventCreateDialog.hidden) {
     closeDashboardEventCreateDialog({ confirmUnsaved: true });
+  }
+
+  if (
+    event.key === "Escape" &&
+    dashboardCompletionUploadDialog &&
+    !dashboardCompletionUploadDialog.hidden
+  ) {
+    closeDashboardCompletionUploadDialog({ confirmUnsaved: true });
   }
 });
 

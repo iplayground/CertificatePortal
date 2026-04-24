@@ -47,11 +47,15 @@ PORTAL_DASHBOARD_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" /
 PORTAL_DASHBOARD_WELCOME_TEMPLATE_PATH = (
     Path(__file__).resolve().parent / "templates" / "portal_dashboard_welcome.html"
 )
-PORTAL_DASHBOARD_RECORDS_TEMPLATE_PATH = (
-    Path(__file__).resolve().parent / "templates" / "portal_dashboard_records.html"
+PORTAL_DASHBOARD_COMPLETION_CERTS_TEMPLATE_PATH = (
+    Path(__file__).resolve().parent
+    / "templates"
+    / "portal_dashboard_completion_certs.html"
 )
-PORTAL_DASHBOARD_UPLOAD_TEMPLATE_PATH = (
-    Path(__file__).resolve().parent / "templates" / "portal_dashboard_upload.html"
+PORTAL_DASHBOARD_TAX_RECEIPTS_TEMPLATE_PATH = (
+    Path(__file__).resolve().parent
+    / "templates"
+    / "portal_dashboard_tax_receipts.html"
 )
 PORTAL_DASHBOARD_EVENTS_TEMPLATE_PATH = (
     Path(__file__).resolve().parent / "templates" / "portal_dashboard_events.html"
@@ -74,13 +78,17 @@ def load_portal_dashboard_welcome_template() -> str:
 
 
 @lru_cache(maxsize=1)
-def load_portal_dashboard_records_template() -> str:
-    return PORTAL_DASHBOARD_RECORDS_TEMPLATE_PATH.read_text(encoding="utf-8")
+def load_portal_dashboard_completion_certs_template() -> str:
+    return PORTAL_DASHBOARD_COMPLETION_CERTS_TEMPLATE_PATH.read_text(
+        encoding="utf-8"
+    )
 
 
 @lru_cache(maxsize=1)
-def load_portal_dashboard_upload_template() -> str:
-    return PORTAL_DASHBOARD_UPLOAD_TEMPLATE_PATH.read_text(encoding="utf-8")
+def load_portal_dashboard_tax_receipts_template() -> str:
+    return PORTAL_DASHBOARD_TAX_RECEIPTS_TEMPLATE_PATH.read_text(
+        encoding="utf-8"
+    )
 
 
 @lru_cache(maxsize=1)
@@ -459,32 +467,40 @@ def portal_dashboard_welcome_page(req: func.HttpRequest) -> func.HttpResponse:
     return build_portal_page_response(html)
 
 
-@blueprint.function_name(name="portal_dashboard_records_page")
+@blueprint.function_name(name="portal_dashboard_completion_certs_page")
 @blueprint.route(
-    route="portal/dashboard/records",
+    route="portal/dashboard/completion-certs",
     methods=["GET"],
     auth_level=func.AuthLevel.ANONYMOUS,
 )
-def portal_dashboard_records_page(req: func.HttpRequest) -> func.HttpResponse:
+def portal_dashboard_completion_certs_page(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
     access = require_portal_access(req)
     if isinstance(access, func.HttpResponse):
         return access
 
-    return build_portal_page_response(load_portal_dashboard_records_template())
+    return build_portal_page_response(
+        load_portal_dashboard_completion_certs_template()
+    )
 
 
-@blueprint.function_name(name="portal_dashboard_upload_page")
+@blueprint.function_name(name="portal_dashboard_tax_receipts_page")
 @blueprint.route(
-    route="portal/dashboard/upload",
+    route="portal/dashboard/tax-receipts",
     methods=["GET"],
     auth_level=func.AuthLevel.ANONYMOUS,
 )
-def portal_dashboard_upload_page(req: func.HttpRequest) -> func.HttpResponse:
+def portal_dashboard_tax_receipts_page(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
     access = require_portal_access(req)
     if isinstance(access, func.HttpResponse):
         return access
 
-    return build_portal_page_response(load_portal_dashboard_upload_template())
+    return build_portal_page_response(
+        load_portal_dashboard_tax_receipts_template()
+    )
 
 
 @blueprint.function_name(name="portal_dashboard_events_page")

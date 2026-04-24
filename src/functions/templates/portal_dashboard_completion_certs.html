@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="robots" content="noindex, nofollow">
+    <title>完訓證明 - 文件管理平台 - iPlayground</title>
+    <link rel="icon" href="/assets/favicon.png" type="image/png" sizes="32x32">
+    <link rel="stylesheet" href="/assets/theme.css">
+    <link rel="stylesheet" href="/assets/portal.css">
+  </head>
+  <body class="portal-embedded-body">
+    <main class="embedded-page-shell">
+      <section class="content-card embedded-page-card document-workspace-card">
+        <div class="event-management-header">
+          <div class="content-section-heading">
+            <h1 class="embedded-page-title">完訓證明</h1>
+            <p class="embedded-page-lead">檢視已匯入的完訓證明資料，並上傳新的完訓證明資料檔。</p>
+          </div>
+          <button class="submit-button event-create-button" id="completion-upload-open" type="button">
+            上傳完訓證明資料
+          </button>
+        </div>
+
+        <form class="document-filter-form" aria-label="完訓證明資料篩選">
+          <div class="field">
+            <span class="field-label" id="completion-event-filter-label">活動</span>
+            <div class="custom-select" id="completion-event-filter-select">
+              <input id="completion-event-filter" name="eventName" type="hidden" value="iPlayground 2026">
+              <button
+                class="custom-select-trigger"
+                id="completion-event-filter-trigger"
+                type="button"
+                aria-expanded="false"
+                aria-haspopup="listbox"
+                aria-controls="completion-event-filter-options"
+                aria-labelledby="completion-event-filter-label completion-event-filter-value"
+                aria-required="true"
+              >
+                <span id="completion-event-filter-value" class="custom-select-value">iPlayground 2026</span>
+                <span class="select-caret" aria-hidden="true"></span>
+              </button>
+              <div class="custom-select-menu" id="completion-event-filter-options" role="listbox" hidden>
+                <button
+                  class="custom-select-option is-selected"
+                  type="button"
+                  role="option"
+                  aria-selected="true"
+                  data-value="iPlayground 2026"
+                >
+                  iPlayground 2026
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div class="document-bulk-toolbar" id="completion-bulk-toolbar" aria-label="完訓證明批次操作">
+          <span class="document-bulk-scope">套用至目前活動全部資料</span>
+          <div class="document-bulk-actions">
+            <button class="secondary-button document-bulk-action" id="completion-bulk-downloadable" type="button" disabled>
+              設為已簽到
+            </button>
+            <button class="secondary-button document-bulk-action" id="completion-bulk-blocked" type="button" disabled>
+              設為未簽到
+            </button>
+          </div>
+        </div>
+
+        <div class="document-table-wrap">
+          <table class="document-list-table" aria-label="完訓證明資料清單">
+            <thead>
+              <tr>
+                <th scope="col">報名序號</th>
+                <th scope="col">票種</th>
+                <th scope="col">姓名</th>
+                <th scope="col">Email</th>
+                <th scope="col">簽到狀態</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody id="completion-cert-table-body">
+              <tr class="document-empty-row" id="completion-cert-empty-row">
+                <td colspan="6">尚未串接完訓證明資料來源。</td>
+              </tr>
+            </tbody>
+          </table>
+          <template id="completion-cert-row-template">
+            <tr class="completion-cert-row">
+              <td data-field="registrationNumber"></td>
+              <td data-field="ticketType"></td>
+              <td data-field="attendeeName"></td>
+              <td data-field="email"></td>
+              <td data-field="status">
+                <label class="event-status-switch-option document-row-status-switch">
+                  <span class="document-row-status-copy">
+                    <strong data-field="downloadStatus">未簽到</strong>
+                  </span>
+                  <input
+                    class="event-status-switch-input document-download-switch-input"
+                    type="checkbox"
+                    data-action="toggle-downloadable"
+                    aria-label="切換簽到狀態"
+                  >
+                  <span class="event-status-switch-track" aria-hidden="true">
+                    <span class="event-status-switch-thumb"></span>
+                  </span>
+                </label>
+              </td>
+              <td>
+                <button class="secondary-button document-download-button" type="button">下載</button>
+              </td>
+            </tr>
+          </template>
+        </div>
+
+        <div
+          class="event-dialog-backdrop"
+          id="completion-upload-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="completion-upload-title"
+          hidden
+        >
+          <section class="event-dialog">
+            <header class="event-dialog-header">
+              <h2 id="completion-upload-title">上傳完訓證明資料</h2>
+            </header>
+
+            <form class="document-upload-form" aria-label="上傳完訓證明資料">
+              <div class="field">
+                <span class="field-label" id="completion-upload-event-label">活動</span>
+                <div class="custom-select" id="completion-upload-event-select">
+                  <input id="completion-upload-event" name="eventName" type="hidden" value="iPlayground 2026">
+                  <button
+                    class="custom-select-trigger"
+                    id="completion-upload-event-trigger"
+                    type="button"
+                    aria-expanded="false"
+                    aria-haspopup="listbox"
+                    aria-controls="completion-upload-event-options"
+                    aria-labelledby="completion-upload-event-label completion-upload-event-value"
+                  >
+                    <span id="completion-upload-event-value" class="custom-select-value">iPlayground 2026</span>
+                    <span class="select-caret" aria-hidden="true"></span>
+                  </button>
+                  <div class="custom-select-menu" id="completion-upload-event-options" role="listbox" hidden>
+                    <button
+                      class="custom-select-option is-selected"
+                      type="button"
+                      role="option"
+                      aria-selected="true"
+                      data-value="iPlayground 2026"
+                    >
+                      iPlayground 2026
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <label class="document-upload-dropzone" for="completion-upload-file">
+                <span class="document-upload-icon" aria-hidden="true">CSV</span>
+                <span class="document-upload-copy">
+                  <strong>選擇完訓證明 CSV</strong>
+                  <small>僅支援 CSV 檔案；實際匯入流程將在後續串接。</small>
+                  <span class="document-upload-file-name" id="completion-upload-file-name">
+                    尚未選擇 CSV 檔案
+                  </span>
+                </span>
+                <input
+                  class="document-upload-input"
+                  id="completion-upload-file"
+                  name="completionUploadFile"
+                  type="file"
+                  accept=".csv,text/csv"
+                >
+              </label>
+
+              <div class="event-form-actions">
+                <button class="secondary-button event-cancel-button" id="completion-upload-cancel" type="button">取消</button>
+                <button class="submit-button" id="completion-upload-submit" type="button">上傳完訓證明資料</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="/assets/portal-dashboard-completion-certs.js"></script>
+  </body>
+</html>
