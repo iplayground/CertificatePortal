@@ -12,6 +12,7 @@
 | `GET` | `/portal/dashboard/welcome` | dashboard iframe 預設載入的歡迎頁 | `text/html` |
 | `GET` | `/portal/dashboard/records` | dashboard iframe 的檢視清單頁 | `text/html` |
 | `GET` | `/portal/dashboard/upload` | dashboard iframe 的上傳清單頁 | `text/html` |
+| `GET` | `/portal/dashboard/events` | dashboard iframe 的活動管理頁 | `text/html` |
 | `GET` | `/verify/{certId}` | 公開驗證頁面 | `text/plain` |
 
 ## 內部導向端點
@@ -54,8 +55,8 @@
 - Google 登入與登出統一走 `/portal/auth/google/login`、`/portal/auth/google/callback`、`/portal/auth/logout`
 - 管理平台授權採雙層邊界：OAuth client 的 `Internal` 設定先排除非組織帳號，再由 Google Group 直接成員檢查與伺服器端 session cookie 控制 portal 存取
 - 登入後的文件管理平台目前位於 `/portal/dashboard`
-- 文件管理平台以 iframe 載入歡迎頁、`檢視清單` 與 `上傳清單` 三個獨立頁面
-- 左側功能清單固定顯示 `檢視清單` 與 `上傳清單`
+- 文件管理平台以 iframe 載入歡迎頁、`活動管理`、`檢視清單` 與 `上傳清單` 四個獨立頁面
+- 左側功能清單固定依序顯示 `活動管理`、`檢視清單` 與 `上傳清單`
 
 ### 主題與 head 規則
 
@@ -74,8 +75,8 @@
 - 登入後頁面使用 `/portal/...` 子路徑
 - 首頁 `/` 不提供管理平台按鈕入口
 - 文件管理平台目前位於 `/portal/dashboard`
-- dashboard 以 iframe 載入 `welcome`、`records`、`upload` 三個獨立頁面
-- 左側功能清單固定顯示 `檢視清單` 與 `上傳清單`
+- dashboard 以 iframe 載入 `welcome`、`events`、`records`、`upload` 四個獨立頁面
+- 左側功能清單固定依序顯示 `活動管理`、`檢視清單` 與 `上傳清單`
 
 ## 各頁面定義
 
@@ -86,7 +87,8 @@
 - logo 置中顯示
 - 提供語系切換器，目前支援 `zh-TW` 與 `en-US`
 - 提供活動名自訂下拉元件，目前固定為 `iPlayground 2026`
-- 提供文件類型自訂下拉元件，目前固定為 `完訓證明`
+- 提供文件類型自訂下拉元件，目前固定為 `完訓證明`、`營業稅繳稅證明`
+- 首頁文件類型顯示文字納入 i18n，表單值使用穩定文件類型代碼：`completionCert`、`taxReceipt`
 - 提供報名人姓名與 `email` 輸入欄位
 - 顯示目前尚未串接資料庫與文件流程的提示
 - 顯示頁尾版權聲明
@@ -150,6 +152,30 @@ status: 尚未串接實際驗證資料
 - 作為 dashboard 右側 iframe 的上傳清單頁
 - 現階段只保留獨立工作頁骨架
 
+### `/portal/dashboard/events`
+
+- 作為 dashboard 右側 iframe 的活動管理頁
+- 預設顯示目前活動清單、活動狀態與各活動可申請文件類型；目前資料為靜態示意資料
+- 活動狀態固定為 `下架`、`開放`
+- 活動狀態在建立與編輯活動子畫面的右上角使用 switch，開啟代表 `開放`，關閉代表 `下架`
+- 活動管理畫面不顯示也不編輯活動代碼
+- 活動清單列可點擊，並可用鍵盤 Enter 或 Space 進入編輯活動子畫面
+- 活動管理標題列右上方提供 `建立活動` 按鈕
+- 活動清單表格直接顯示於活動管理主內容層，不另包一層清單區塊
+- 活動清單表格中，活動名稱與狀態欄依內容收斂，可申請文件欄保留延展空間
+- 在 dashboard iframe 內點擊 `建立活動` 後，父層 dashboard 顯示全頁中央建立活動子畫面，並讓左側功能清單暫時不可操作
+- 在 dashboard iframe 內點擊活動清單列後，父層 dashboard 顯示全頁中央編輯活動子畫面，並帶入該活動資料
+- 建立與編輯活動子畫面開啟時，背後頁面不可捲動，且視窗不顯示右上角關閉按鈕或左上角狀態小字
+- 建立與編輯活動子畫面使用不透明白色對話框背景，避免背後畫面穿透
+- 建立活動時點擊 `取消` 會提示資料尚未存檔；編輯活動時若有變更才提示資料尚未存檔
+- 若直接開啟活動管理子頁，點擊 `建立活動` 後會使用頁內中央建立活動子畫面作為 fallback
+- 若直接開啟活動管理子頁，點擊活動清單列後會使用頁內中央編輯活動子畫面作為 fallback
+- 中央活動子畫面提供活動名稱輸入欄、右上角活動狀態 switch，以及可申請文件類型的開通勾選版型
+- 可申請文件類型目前固定為 `完訓證明`、`營業稅繳稅證明`
+- `完訓證明` 的文件類型代碼為 `completionCert`
+- `營業稅繳稅證明` 的文件類型代碼為 `taxReceipt`，管理端說明文字為 `開放協會 407 收據聯影本供下載`
+- 現階段尚未串接資料庫、權威活動資料或文件類型設定寫入流程
+
 ## 靜態資產
 
 目前頁面透過下列路徑載入樣式、互動與品牌素材：
@@ -160,6 +186,7 @@ status: 尚未串接實際驗證資料
 | `GET` | `/assets/portal-login.js` | 管理平台登入入口的連結互動腳本 |
 | `GET` | `/assets/portal-dashboard.js` | 管理中心頁面互動腳本 |
 | `GET` | `/assets/portal-dashboard-welcome.js` | 管理中心歡迎頁互動腳本 |
+| `GET` | `/assets/portal-dashboard-events.js` | 活動管理頁清單列點擊、建立/編輯活動子畫面與 fallback modal 互動腳本 |
 | `GET` | `/assets/page-alert.js` | 共用 alert 元件的關閉與自動消失腳本 |
 | `GET` | `/assets/favicon.png` | 所有 HTML 頁面共用 favicon |
 | `GET` | `/assets/home.css` | 首頁樣式 |
@@ -172,4 +199,4 @@ status: 尚未串接實際驗證資料
 
 ## 暫時不保留
 
-除 `/`、`/portal`、`/portal/dashboard`、`/portal/dashboard/welcome`、`/portal/dashboard/records`、`/portal/dashboard/upload` 與 `/verify/{certId}` 外，其餘 API、管理子路由與相關實作暫時不保留。
+除 `/`、`/portal`、`/portal/dashboard`、`/portal/dashboard/welcome`、`/portal/dashboard/records`、`/portal/dashboard/upload`、`/portal/dashboard/events` 與 `/verify/{certId}` 外，其餘 API、管理子路由與相關實作暫時不保留。

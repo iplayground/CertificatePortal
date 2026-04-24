@@ -57,11 +57,24 @@
                 <button
                   class="admin-nav-item"
                   type="button"
+                  data-view-target="events"
+                  data-view-path="/portal/dashboard/events"
+                  aria-pressed="false"
+                >
+                  <span class="admin-nav-symbol" aria-hidden="true">01</span>
+                  <span class="admin-nav-copy">
+                    <strong>活動管理</strong>
+                    <span>管理活動與可申請文件</span>
+                  </span>
+                </button>
+                <button
+                  class="admin-nav-item"
+                  type="button"
                   data-view-target="records"
                   data-view-path="/portal/dashboard/records"
                   aria-pressed="false"
                 >
-                  <span class="admin-nav-symbol" aria-hidden="true">01</span>
+                  <span class="admin-nav-symbol" aria-hidden="true">02</span>
                   <span class="admin-nav-copy">
                     <strong>檢視清單</strong>
                     <span>切換到獨立的清單工作頁</span>
@@ -74,7 +87,7 @@
                   data-view-path="/portal/dashboard/upload"
                   aria-pressed="false"
                 >
-                  <span class="admin-nav-symbol" aria-hidden="true">02</span>
+                  <span class="admin-nav-symbol" aria-hidden="true">03</span>
                   <span class="admin-nav-copy">
                     <strong>上傳清單</strong>
                     <span>切換到獨立的上傳工作頁</span>
@@ -94,6 +107,88 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <div
+      class="event-dialog-backdrop portal-event-dialog-backdrop"
+      id="portal-event-create-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="portal-event-create-title"
+      hidden
+    >
+      <section class="event-dialog portal-event-dialog">
+        <header class="event-dialog-header">
+          <h2 id="portal-event-create-title">建立活動</h2>
+          <label class="event-status-switch-option" title="切換為下架">
+            <span class="event-status-switch-copy">
+              <span class="event-status-switch-label" id="portal-event-status-label">活動狀態</span>
+              <strong id="portal-event-status-text">開放</strong>
+            </span>
+            <input
+              class="event-status-switch-input"
+              id="portal-event-status-checkbox"
+              name="eventStatus"
+              type="checkbox"
+              value="open"
+              aria-labelledby="portal-event-status-label portal-event-status-text"
+              checked
+            >
+            <span class="event-status-switch-track" aria-hidden="true">
+              <span class="event-status-switch-thumb"></span>
+            </span>
+          </label>
+        </header>
+
+        <form class="event-management-form" aria-label="建立活動">
+          <div class="event-form-grid">
+            <div class="field">
+              <span class="field-label" id="portal-event-name-label">活動名稱</span>
+              <input
+                id="portal-event-name-input"
+                name="eventName"
+                type="text"
+                value="iPlayground 2026"
+                aria-labelledby="portal-event-name-label"
+              >
+            </div>
+          </div>
+
+          <fieldset class="document-type-fieldset">
+            <legend>可申請文件類型</legend>
+            <label class="document-type-option">
+              <input
+                name="documentTypes"
+                type="checkbox"
+                value="completionCert"
+                data-document-type="completionCert"
+                checked
+              >
+              <span>
+                <strong>完訓證明</strong>
+                <small>完成指定活動後開放申請</small>
+              </span>
+            </label>
+            <label class="document-type-option">
+              <input
+                name="documentTypes"
+                type="checkbox"
+                value="taxReceipt"
+                data-document-type="taxReceipt"
+              >
+              <span>
+                <strong>營業稅繳稅證明</strong>
+                <small>開放協會 407 收據聯影本供下載</small>
+              </span>
+            </label>
+          </fieldset>
+
+          <div class="event-form-actions">
+            <button class="secondary-button event-cancel-button" id="portal-event-create-cancel" type="button">取消</button>
+            <button class="submit-button" id="portal-event-form-submit" type="button">建立活動</button>
+          </div>
+        </form>
+      </section>
     </div>
 
     <script src="/assets/portal-dashboard.js"></script>

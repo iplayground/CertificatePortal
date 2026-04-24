@@ -101,7 +101,7 @@
               <div class="field">
                 <span id="document-type-label" class="field-label">{{document_type_label}}</span>
                 <div class="custom-select" id="document-type-select">
-                  <input id="document-type" name="documentType" type="hidden" value="完訓證明">
+                  <input id="document-type" name="documentType" type="hidden" value="completionCert">
                   <button
                     class="custom-select-trigger"
                     id="document-type-trigger"
@@ -111,7 +111,7 @@
                     aria-controls="document-type-options"
                     aria-labelledby="document-type-label document-type-value"
                   >
-                    <span id="document-type-value" class="custom-select-value">完訓證明</span>
+                    <span id="document-type-value" class="custom-select-value">{{document_type_completion_cert}}</span>
                     <span class="select-caret" aria-hidden="true"></span>
                   </button>
                   <div class="custom-select-menu" id="document-type-options" role="listbox" hidden>
@@ -120,9 +120,20 @@
                       type="button"
                       role="option"
                       aria-selected="true"
-                      data-value="完訓證明"
+                      data-value="completionCert"
+                      data-label-key="document_type_completion_cert"
                     >
-                      完訓證明
+                      {{document_type_completion_cert}}
+                    </button>
+                    <button
+                      class="custom-select-option"
+                      type="button"
+                      role="option"
+                      aria-selected="false"
+                      data-value="taxReceipt"
+                      data-label-key="document_type_tax_receipt"
+                    >
+                      {{document_type_tax_receipt}}
                     </button>
                   </div>
                 </div>

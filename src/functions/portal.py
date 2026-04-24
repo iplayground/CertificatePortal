@@ -53,6 +53,9 @@ PORTAL_DASHBOARD_RECORDS_TEMPLATE_PATH = (
 PORTAL_DASHBOARD_UPLOAD_TEMPLATE_PATH = (
     Path(__file__).resolve().parent / "templates" / "portal_dashboard_upload.html"
 )
+PORTAL_DASHBOARD_EVENTS_TEMPLATE_PATH = (
+    Path(__file__).resolve().parent / "templates" / "portal_dashboard_events.html"
+)
 
 
 @lru_cache(maxsize=1)
@@ -78,6 +81,11 @@ def load_portal_dashboard_records_template() -> str:
 @lru_cache(maxsize=1)
 def load_portal_dashboard_upload_template() -> str:
     return PORTAL_DASHBOARD_UPLOAD_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+
+@lru_cache(maxsize=1)
+def load_portal_dashboard_events_template() -> str:
+    return PORTAL_DASHBOARD_EVENTS_TEMPLATE_PATH.read_text(encoding="utf-8")
 
 
 def build_portal_page_response(body: str, *, cookie_header: str | None = None) -> func.HttpResponse:
@@ -477,3 +485,17 @@ def portal_dashboard_upload_page(req: func.HttpRequest) -> func.HttpResponse:
         return access
 
     return build_portal_page_response(load_portal_dashboard_upload_template())
+
+
+@blueprint.function_name(name="portal_dashboard_events_page")
+@blueprint.route(
+    route="portal/dashboard/events",
+    methods=["GET"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_dashboard_events_page(req: func.HttpRequest) -> func.HttpResponse:
+    access = require_portal_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    return build_portal_page_response(load_portal_dashboard_events_template())

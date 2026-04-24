@@ -94,6 +94,11 @@ function updateMetaContent(element, content) {
   element.content = content;
 }
 
+function resolveDocumentTypeLabel(documentTypeValueText) {
+  const selectedOption = documentTypeOptions.find((item) => item.dataset.value === documentTypeValueText);
+  return selectedOption?.textContent?.trim() || documentTypeValueText;
+}
+
 function applyEventNameValue(nextValue) {
   const normalizedValue = nextValue?.trim();
   if (!normalizedValue) {
@@ -118,7 +123,7 @@ function applyDocumentTypeValue(nextValue) {
   }
 
   documentTypeInput.value = normalizedValue;
-  documentTypeValue.textContent = normalizedValue;
+  documentTypeValue.textContent = resolveDocumentTypeLabel(normalizedValue);
 
   documentTypeOptions.forEach((item) => {
     const optionValue = item.dataset.value ?? item.textContent?.trim() ?? "";
@@ -126,6 +131,18 @@ function applyDocumentTypeValue(nextValue) {
     item.classList.toggle("is-selected", isSelected);
     item.setAttribute("aria-selected", String(isSelected));
   });
+}
+
+function updateDocumentTypeOptionLabels(homePageCopy) {
+  documentTypeOptions.forEach((item) => {
+    const labelKey = item.dataset.labelKey ?? "";
+    const label = homePageCopy[labelKey];
+    if (typeof label === "string") {
+      item.textContent = label;
+    }
+  });
+
+  applyDocumentTypeValue(documentTypeInput.value);
 }
 
 function formatPreviewMessage(template, replacements) {
@@ -155,7 +172,7 @@ function updateFeedbackCopy(initialFeedbackText) {
   const emailValue = email.value.trim() || emptyEmailText;
   feedback.textContent = formatPreviewMessage(previewFeedbackTemplate, {
     eventName: eventNameInput.value,
-    documentType: documentTypeInput.value,
+    documentType: resolveDocumentTypeLabel(documentTypeInput.value),
     attendeeName: name,
     email: emailValue,
   });
@@ -219,6 +236,7 @@ function applyHomePageLocale(nextLocale) {
   updateTextContent(eventNameHint, homePageCopy.event_name_hint);
   updateTextContent(documentTypeLabel, homePageCopy.document_type_label);
   updateTextContent(documentTypeHint, homePageCopy.document_type_hint);
+  updateDocumentTypeOptionLabels(homePageCopy);
   updateTextContent(attendeeNameLabel, homePageCopy.attendee_name_label);
   updateTextContent(emailLabel, homePageCopy.email_label);
   updateTextContent(previewAction, homePageCopy.preview_action_label);
@@ -519,7 +537,7 @@ previewAction.addEventListener("click", () => {
   feedback.classList.add("is-active");
   feedback.textContent = formatPreviewMessage(previewFeedbackTemplate, {
     eventName: eventNameInput.value,
-    documentType: documentTypeInput.value,
+    documentType: resolveDocumentTypeLabel(documentTypeInput.value),
     attendeeName: name,
     email: emailValue,
   });

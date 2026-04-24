@@ -52,9 +52,13 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "文件申請" in body
     assert "文件類型" in body
     assert "完訓證明" in body
+    assert "營業稅繳稅證明" in body
     assert 'id="document-type-select"' in body
-    assert 'id="document-type" name="documentType" type="hidden" value="完訓證明"' in body
-    assert 'data-value="完訓證明"' in body
+    assert 'id="document-type" name="documentType" type="hidden" value="completionCert"' in body
+    assert 'data-value="completionCert"' in body
+    assert 'data-label-key="document_type_completion_cert"' in body
+    assert 'data-value="taxReceipt"' in body
+    assert 'data-label-key="document_type_tax_receipt"' in body
     assert "本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有" in body
     assert "Azure Functions 線上頁面已啟用" not in body
     assert 'src="/assets/logo_b_alpha.png"' in body
@@ -103,7 +107,9 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert "This page is currently a UI preview before the full flow is connected." in body
     assert "Registrant name" in body
     assert "Document type" in body
-    assert "完訓證明" in body
+    assert "Completion Certificate" in body
+    assert "407 Tax Receipt" in body
+    assert '<span id="document-type-value" class="custom-select-value">Completion Certificate</span>' in body
     assert "Submission flow not enabled yet" in body
     assert "Taipei Elite Software Developer Association (77212283)" in body
     assert "protected portal or lookup flow" in body
@@ -246,6 +252,8 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert 'JSON.parse(homePageI18nScript.textContent ?? "{}")' in body
     assert "applyEventNameValue" in body
     assert "applyDocumentTypeValue" in body
+    assert "updateDocumentTypeOptionLabels" in body
+    assert "resolveDocumentTypeLabel" in body
     assert "setLocalePreference" in body
     assert "applyLocaleSelection" in body
     assert "localeOptions.forEach" in body

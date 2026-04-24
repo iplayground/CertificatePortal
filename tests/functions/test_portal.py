@@ -8,6 +8,7 @@ import pytest
 from src.functions.assets import static_asset
 from src.functions.portal import (
     PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR,
+    portal_dashboard_events_page,
     portal_dashboard_page,
     portal_dashboard_records_page,
     portal_dashboard_upload_page,
@@ -393,13 +394,38 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'data-welcome-page-path="/portal/dashboard/welcome"' in body
     assert 'id="portal-dashboard-title"' in body
     assert 'data-view-target="welcome"' in body
+    assert body.index('data-view-target="events"') < body.index('data-view-target="records"')
+    assert body.index('data-view-target="events"') < body.index('data-view-target="upload"')
     assert 'data-view-target="records"' in body
     assert 'data-view-target="upload"' in body
+    assert 'data-view-target="events"' in body
     assert 'data-view-path="/portal/dashboard/welcome"' in body
     assert 'data-view-path="/portal/dashboard/records"' in body
     assert 'data-view-path="/portal/dashboard/upload"' in body
+    assert 'data-view-path="/portal/dashboard/events"' in body
     assert "檢視清單" in body
     assert "上傳清單" in body
+    assert "活動管理" in body
+    assert "管理活動與可申請文件" in body
+    assert 'id="portal-event-create-dialog"' in body
+    assert 'class="event-dialog-backdrop portal-event-dialog-backdrop"' in body
+    assert 'id="portal-event-name-input"' in body
+    assert 'id="portal-event-create-close"' not in body
+    assert "關閉建立活動畫面" not in body
+    assert 'class="event-status-switch-option"' in body
+    assert 'class="event-status-switch-input"' in body
+    assert 'class="event-status-switch-track"' in body
+    assert 'id="portal-event-status-checkbox"' in body
+    assert 'value="open"' in body
+    assert "草稿" not in body
+    assert "下架" in body
+    assert "開放" in body
+    assert "完訓證明" in body
+    assert "營業稅繳稅證明" in body
+    assert "開放協會 407 收據聯影本供下載" in body
+    assert "適用營業稅繳稅資料" not in body
+    assert "參與證明" not in body
+    assert "志工服務證明" not in body
     assert 'src="/assets/logo_sq_b.png"' in body
     assert 'class="panel admin-workspace"' in body
     assert 'class="sidebar-account-panel"' in body
@@ -754,6 +780,77 @@ def test_portal_dashboard_upload_page_returns_html_when_user_is_authorized(
     assert "獨立工作頁" in body
 
 
+def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch)
+
+    response = portal_dashboard_events_page(
+        build_request(
+            "http://localhost:7075/portal/dashboard/events",
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert "<title>活動管理 - 文件管理平台 - iPlayground</title>" in body
+    assert 'class="portal-embedded-body"' in body
+    assert "event-management-card" in body
+    assert "event-management-panel" not in body
+    assert "event-panel-heading" not in body
+    assert 'id="event-list-title"' not in body
+    assert "活動管理" in body
+    assert "活動清單" in body
+    assert 'class="event-list-col-name"' in body
+    assert 'class="event-list-col-code"' not in body
+    assert 'class="event-list-col-documents"' in body
+    assert 'class="event-list-col-status"' in body
+    assert 'class="event-list-row"' in body
+    assert 'role="button"' in body
+    assert 'aria-label="編輯活動 iPlayground 2026"' in body
+    assert 'data-event-form-open="edit"' in body
+    assert 'data-event-name="iPlayground 2026"' in body
+    assert 'data-event-status="open"' in body
+    assert 'data-event-document-types="completionCert"' in body
+    assert "活動代碼" not in body
+    assert "ipg-2026" not in body
+    assert 'id="event-code-input"' not in body
+    assert "申請期間" not in body
+    assert "申請起始日" not in body
+    assert "申請截止日" not in body
+    assert 'id="event-create-open"' in body
+    assert "建立活動" in body
+    assert 'id="event-create-dialog"' in body
+    assert 'aria-modal="true"' in body
+    assert 'class="secondary-button event-cancel-button"' in body
+    assert 'id="event-create-close"' not in body
+    assert "關閉建立活動畫面" not in body
+    assert "活動狀態" in body
+    assert 'class="event-status-switch-option"' in body
+    assert 'class="event-status-switch-input"' in body
+    assert 'class="event-status-switch-track"' in body
+    assert 'id="event-status-checkbox"' in body
+    assert 'value="open"' in body
+    assert 'role="listbox"' not in body
+    assert 'role="option"' not in body
+    assert 'aria-expanded="false"' not in body
+    assert "草稿" not in body
+    assert "下架" in body
+    assert "開放" in body
+    assert "可申請文件類型" in body
+    assert "完訓證明" in body
+    assert "營業稅繳稅證明" in body
+    assert "開放協會 407 收據聯影本供下載" in body
+    assert 'value="taxReceipt"' in body
+    assert "適用營業稅繳稅資料" not in body
+    assert "參與證明" not in body
+    assert "志工服務證明" not in body
+    assert "已開通" not in body
+    assert 'src="/assets/portal-dashboard-events.js"' in body
+
+
 def test_portal_css_asset_returns_expected_content_type() -> None:
     response = static_asset(
         build_request(
@@ -790,6 +887,41 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".welcome-brand-row" in body
     assert ".admin-nav-item.is-active" in body
     assert ".metric-grid" in body
+    assert ".event-management-card" in body
+    assert ".event-management-header" in body
+    assert ".event-management-panel" not in body
+    assert ".event-list-toolbar" not in body
+    assert ".event-list-table" in body
+    assert ".event-list-col-documents" in body
+    assert ".event-list-col-code" not in body
+    assert ".event-list-row" in body
+    assert "white-space: nowrap;" in body
+    assert "text-align: center;" in body
+    assert ".portal-dashboard-shell.has-event-dialog" in body
+    assert ".portal-embedded-body.has-event-dialog" in body
+    assert ".event-dialog-backdrop" in body
+    assert "background: rgba(13, 21, 39, 0.68);" in body
+    assert "background: #fff;" in body
+    assert ".event-status-select" not in body
+    assert ".event-status-checkbox-option" not in body
+    assert ".event-status-inline-option" not in body
+    assert ".event-status-switch-option" in body
+    assert ".event-status-switch-input:checked + .event-status-switch-track" in body
+    assert ".event-status-switch-thumb" in body
+    assert "transform: translateX(18px);" in body
+    assert "select-caret" not in body
+    assert ".event-status-badge.is-draft" not in body
+    assert ".event-status-badge.is-unlisted" in body
+    assert ".event-status-badge.is-open" in body
+    assert ".document-type-option" in body
+    assert "background-image: none;" in body
+    assert ".event-cancel-button" in body
+    assert "border-radius: 14px;" not in body
+    assert "accent-color: var(--theme-accent-deep);" in body
+    assert "appearance: auto;" in body
+    assert "color-scheme: light;" in body
+    assert "accent-color: #ea6e1e;" in body
+    assert "border: 2px solid #f2865e;" not in body
     assert ".sidebar-brand" in body
     assert "object-fit: cover;" in body
     assert "color: #fff;" in body
@@ -856,6 +988,20 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "document.title = nextTitle" in body
     assert "activateView" in body
     assert "syncViewFromFrame" in body
+    assert "openDashboardEventDialog" in body
+    assert "setDashboardEventDialogMode" in body
+    assert "applyDashboardEventStatusValue" in body
+    assert "dashboardEventStatusCheckbox" in body
+    assert "openDashboardEventStatusSelect" not in body
+    assert "closeDashboardEventStatusSelect" not in body
+    assert "collectDashboardEventDialogState" in body
+    assert "confirmDashboardEventDialogClose" in body
+    assert "資料尚未存檔，確定要取消嗎？" in body
+    assert "closeDashboardEventCreateDialog" in body
+    assert "ipg:event-form:open" in body
+    assert "儲存變更" in body
+    assert 'pageShell?.setAttribute("inert", "")' in body
+    assert 'pageShell?.setAttribute("aria-hidden", "true")' in body
     assert 'contentFrame.src = targetButton.dataset.viewPath ?? welcomePagePath' in body
     assert "contentFrame.addEventListener" in body
     assert "button.dataset.viewTarget" in body
@@ -863,6 +1009,40 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert 'window.location.assign(logoutUrl)' in body
     assert 'window.location.assign(portalEntryPath)' in body
     assert "sessionStorage" not in body
+
+
+def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/portal-dashboard-events.js",
+            route_params={"asset_name": "portal-dashboard-events.js"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert 'document.getElementById("event-create-open")' in body
+    assert "openEventCreateDialog" in body
+    assert "openEventEditDialog" in body
+    assert "setEventDialogMode" in body
+    assert "applyEventStatusValue" in body
+    assert "eventStatusCheckbox" in body
+    assert "openEventStatusSelect" not in body
+    assert "closeEventStatusSelect" not in body
+    assert "collectEventDialogState" in body
+    assert "confirmEventDialogClose" in body
+    assert "資料尚未存檔，確定要取消嗎？" in body
+    assert "closeEventCreateDialog" in body
+    assert "requestParentEventFormDialog" in body
+    assert "window.parent.postMessage" in body
+    assert "window.parent !== window" in body
+    assert "data-event-form-open" in body
+    assert "儲存變更" in body
+    assert 'event.key !== "Enter" && event.key !== " "' in body
+    assert "eventCreateDialog.hidden = false" in body
+    assert "eventCode" not in body
+    assert 'event.key === "Escape"' in body
 
 
 def test_favicon_asset_returns_expected_content_type_for_portal_pages() -> None:

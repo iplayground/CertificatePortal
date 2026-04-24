@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="robots" content="noindex, nofollow">
+    <title>活動管理 - 文件管理平台 - iPlayground</title>
+    <link rel="icon" href="/assets/favicon.png" type="image/png" sizes="32x32">
+    <link rel="stylesheet" href="/assets/theme.css">
+    <link rel="stylesheet" href="/assets/portal.css">
+  </head>
+  <body class="portal-embedded-body">
+    <main class="embedded-page-shell">
+      <section class="content-card embedded-page-card event-management-card">
+        <div class="event-management-header">
+          <div class="content-section-heading">
+            <h1 class="embedded-page-title">活動管理</h1>
+            <p class="embedded-page-lead">管理目前活動、活動狀態，以及各活動可申請的文件類型。</p>
+          </div>
+          <button class="submit-button event-create-button" id="event-create-open" type="button">
+            建立活動
+          </button>
+        </div>
+
+        <div class="event-table-wrap">
+          <table class="event-list-table" aria-label="活動清單">
+            <colgroup>
+              <col class="event-list-col-name">
+              <col class="event-list-col-documents">
+              <col class="event-list-col-status">
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">活動名稱</th>
+                <th scope="col">可申請文件</th>
+                <th scope="col">狀態</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                class="event-list-row"
+                tabindex="0"
+                role="button"
+                aria-label="編輯活動 iPlayground 2026"
+                data-event-form-open="edit"
+                data-event-name="iPlayground 2026"
+                data-event-status="open"
+                data-event-document-types="completionCert"
+              >
+                <td>
+                    <strong>iPlayground 2026</strong>
+                  </td>
+                <td>
+                  <span class="document-type-pill">完訓證明</span>
+                </td>
+                <td>
+                  <span class="event-status-badge is-open">開放</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div
+          class="event-dialog-backdrop"
+          id="event-create-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="event-create-title"
+          hidden
+        >
+          <section class="event-dialog">
+            <header class="event-dialog-header">
+              <h2 id="event-create-title">建立活動</h2>
+              <label class="event-status-switch-option" title="切換為下架">
+                <span class="event-status-switch-copy">
+                  <span class="event-status-switch-label" id="event-status-label">活動狀態</span>
+                  <strong id="event-status-text">開放</strong>
+                </span>
+                <input
+                  class="event-status-switch-input"
+                  id="event-status-checkbox"
+                  name="eventStatus"
+                  type="checkbox"
+                  value="open"
+                  aria-labelledby="event-status-label event-status-text"
+                  checked
+                >
+                <span class="event-status-switch-track" aria-hidden="true">
+                  <span class="event-status-switch-thumb"></span>
+                </span>
+              </label>
+            </header>
+
+            <form class="event-management-form" aria-label="建立活動">
+              <div class="event-form-grid">
+                <div class="field">
+                  <span class="field-label" id="event-name-label">活動名稱</span>
+                  <input
+                    id="event-name-input"
+                    name="eventName"
+                    type="text"
+                    value="iPlayground 2026"
+                    aria-labelledby="event-name-label"
+                  >
+                </div>
+              </div>
+
+              <fieldset class="document-type-fieldset">
+                <legend>可申請文件類型</legend>
+                <label class="document-type-option">
+                  <input
+                    name="documentTypes"
+                    type="checkbox"
+                    value="completionCert"
+                    data-document-type="completionCert"
+                    checked
+                  >
+                  <span>
+                    <strong>完訓證明</strong>
+                    <small>完成指定活動後開放申請</small>
+                  </span>
+                </label>
+                <label class="document-type-option">
+                  <input
+                    name="documentTypes"
+                    type="checkbox"
+                    value="taxReceipt"
+                    data-document-type="taxReceipt"
+                  >
+                  <span>
+                    <strong>營業稅繳稅證明</strong>
+                    <small>開放協會 407 收據聯影本供下載</small>
+                  </span>
+                </label>
+              </fieldset>
+
+              <div class="event-form-actions">
+                <button class="secondary-button event-cancel-button" id="event-create-cancel" type="button">取消</button>
+                <button class="submit-button" id="event-form-submit" type="button">建立活動</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="/assets/portal-dashboard-events.js"></script>
+  </body>
+</html>
