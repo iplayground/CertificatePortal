@@ -662,6 +662,14 @@ form {
   color: rgba(240, 246, 255, 0.66);
 }
 
+.sidebar-account-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
 .sidebar-account-panel .admin-account-value {
   color: rgba(255, 255, 255, 0.94);
   font-size: 1.04rem;
@@ -670,7 +678,7 @@ form {
 }
 
 .sidebar-account-panel .secondary-button {
-  justify-self: start;
+  white-space: nowrap;
   background: rgba(255, 255, 255, 0.18);
   color: rgba(255, 255, 255, 0.94);
 }
@@ -894,6 +902,11 @@ form {
   display: grid;
   align-content: start;
   gap: 26px;
+}
+
+.document-workspace-card::before,
+.event-management-card::before {
+  display: none;
 }
 
 .document-workspace-card .content-section-heading-minimal {
