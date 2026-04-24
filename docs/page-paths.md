@@ -28,7 +28,7 @@
 
 ### 呈現方式
 
-目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace Internal SSO 與 session cookie 授權檢查，但尚未串接實際業務資料。
+目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie，但尚未串接實際業務資料。
 
 - 首頁與管理平台目前為靜態 HTML GUI
 - 公開驗證頁面目前為靜態純文字輸出
@@ -52,7 +52,7 @@
 - 首頁 `/` 不提供管理平台按鈕入口
 - `/portal` 目前採 Google 單一登入入口，不再接受本地帳號密碼表單
 - Google 登入與登出統一走 `/portal/auth/google/login`、`/portal/auth/google/callback`、`/portal/auth/logout`
-- 管理平台授權主要依賴 Google OAuth client 的 `Internal` 設定與伺服器端 session cookie，而不是前端暫存狀態
+- 管理平台授權採雙層邊界：OAuth client 的 `Internal` 設定先排除非組織帳號，再由 Google Group 直接成員檢查與伺服器端 session cookie 控制 portal 存取
 - 登入後的完訓證明管理平台目前位於 `/portal/dashboard`
 - 完訓證明管理平台以 iframe 載入歡迎頁、`檢視清單` 與 `上傳清單` 三個獨立頁面
 - 左側功能清單固定顯示 `檢視清單` 與 `上傳清單`
@@ -110,9 +110,13 @@ status: 尚未串接實際驗證資料
 - 套用與首頁相同的日夜主題切換規則
 - 未登入時顯示 Google 登入按鈕與 `返回首頁` 連結
 - 若使用者在 Google OAuth 流程中取消授權，會返回 `/portal`
+- 若使用者未完成資料授權，會顯示資料授權未完成 alert
+- 若群組驗證因 Cloud Identity API 或群組可見度設定未完成而無法判斷，會顯示群組驗證未完成 alert
+- 若登入帳號不是允許群組的直接成員，會顯示沒有管理平台權限 alert
 - OAuth callback 會以一次性 flash cookie 傳遞錯誤狀態，不使用 URL query
 - `/portal` 讀取這個一次性 flash cookie 後，會顯示浮動錯誤 alert，並立即清除 cookie
-- 本機若缺少 Google OAuth 設定時，顯示設定未完成提示、停用中的登入按鈕與 `返回首頁` 連結
+- 共用 alert 元件預設 6 秒後自動關閉，並支援依頁面或情境覆寫；目前 `/portal` 登入錯誤 alert 不會自動關閉
+- 若缺少 Google OAuth 或 Google Group 授權設定，顯示設定未完成提示、停用中的登入按鈕與 `返回首頁` 連結
 - 已登入時，伺服器端直接導向 `/portal/dashboard`
 - 不提供語系切換器
 

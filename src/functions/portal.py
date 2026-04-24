@@ -17,10 +17,14 @@ from src.shared.portal_auth import (
     build_portal_login_url,
     build_portal_logout_url,
     is_portal_google_auth_configured,
-    is_running_in_azure_environment,
+    is_portal_google_group_auth_configured,
     resolve_portal_access,
 )
-from src.shared.page_alerts import build_page_alert_html
+from src.shared.page_alerts import (
+    DEFAULT_PAGE_ALERT_CONTEXT,
+    build_page_alert_html,
+    resolve_page_alert_dismiss_delay_ms,
+)
 from src.shared.templates import render_html_template
 
 blueprint = func.Blueprint()
@@ -31,7 +35,13 @@ PORTAL_HOME_PATH = "/"
 PORTAL_FLASH_COOKIE_NAME = "portal_flash"
 PORTAL_FLASH_MAX_AGE_SECONDS = 60
 PORTAL_GOOGLE_LOGIN_CANCELLED_ERROR = "google-login-cancelled"
+PORTAL_GOOGLE_LOGIN_DATA_AUTHORIZATION_REQUIRED_ERROR = "google-login-data-authorization-required"
 PORTAL_GOOGLE_LOGIN_FAILED_ERROR = "google-login-failed"
+PORTAL_GOOGLE_LOGIN_AUTHORIZATION_CHECK_FAILED_ERROR = "google-login-authorization-check-failed"
+PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR = "google-login-not-authorized"
+PORTAL_LOGIN_ALERT_DISMISS_DELAY_MS_BY_ERROR_CODE = {
+    DEFAULT_PAGE_ALERT_CONTEXT: None,
+}
 PORTAL_LOGIN_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_login.html"
 PORTAL_DASHBOARD_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_dashboard.html"
 PORTAL_DASHBOARD_WELCOME_TEMPLATE_PATH = (
@@ -127,10 +137,34 @@ def build_portal_feedback_html(message: str) -> str:
 def resolve_portal_login_error_message(error_code: str) -> str:
     if error_code == PORTAL_GOOGLE_LOGIN_CANCELLED_ERROR:
         return "已取消 Google 登入。若仍需進入管理平台，請再試一次。"
+    if error_code == PORTAL_GOOGLE_LOGIN_DATA_AUTHORIZATION_REQUIRED_ERROR:
+        return "請完成資料授權後再登入。"
+    if error_code == PORTAL_GOOGLE_LOGIN_AUTHORIZATION_CHECK_FAILED_ERROR:
+        return "群組驗證未完成，請稍後再試。"
     if error_code == PORTAL_GOOGLE_LOGIN_FAILED_ERROR:
         return "Google 登入未完成。請稍後再試一次。"
+    if error_code == PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR:
+        return "此帳號不在允許群組中，請聯絡管理員。"
 
     return ""
+
+
+def resolve_portal_login_error_title(error_code: str) -> str:
+    if error_code == PORTAL_GOOGLE_LOGIN_DATA_AUTHORIZATION_REQUIRED_ERROR:
+        return "資料授權未完成"
+    if error_code == PORTAL_GOOGLE_LOGIN_AUTHORIZATION_CHECK_FAILED_ERROR:
+        return "群組驗證未完成"
+    if error_code == PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR:
+        return "沒有管理平台權限"
+
+    return "Google 登入未完成"
+
+
+def resolve_portal_login_alert_dismiss_delay_ms(error_code: str) -> int | None:
+    return resolve_page_alert_dismiss_delay_ms(
+        error_code,
+        PORTAL_LOGIN_ALERT_DISMISS_DELAY_MS_BY_ERROR_CODE,
+    )
 
 
 def resolve_portal_flash_error_code(req: func.HttpRequest) -> str:
@@ -149,35 +183,32 @@ def build_portal_login_context(
     feedback_html = ""
     page_alert_html = ""
     portal_google_auth_configured = is_portal_google_auth_configured()
-    azure_environment = is_running_in_azure_environment()
+    portal_google_group_auth_configured = is_portal_google_group_auth_configured()
     identity_html = ""
 
     if not access.principal.is_authenticated:
         portal_error_message = resolve_portal_login_error_message(flash_error_code)
         if portal_error_message:
             page_alert_html = build_page_alert_html(
-                title="Google 登入未完成",
+                title=resolve_portal_login_error_title(flash_error_code),
                 message=portal_error_message,
                 tone="error",
-                dismiss_delay_ms=6000,
+                dismiss_delay_ms=resolve_portal_login_alert_dismiss_delay_ms(
+                    flash_error_code
+                ),
             )
 
-        if not portal_google_auth_configured and not azure_environment:
+        if not portal_google_auth_configured:
             feedback_html = build_portal_feedback_html(
-                "本機 Google 登入尚未設定完成。請先在 local.settings.json 設定 "
-                "PORTAL_GOOGLE_CLIENT_ID 與 PORTAL_GOOGLE_CLIENT_SECRET，再重新啟動 Azure Functions。"
+                "Google 登入尚未設定完成。請先設定 PORTAL_GOOGLE_CLIENT_ID 與 "
+                "PORTAL_GOOGLE_CLIENT_SECRET，再重新啟動 Azure Functions。"
             )
             primary_action_html = (
                 '<button class="submit-button" type="button" disabled aria-disabled="true">'
                 "Google 登入尚未設定"
                 "</button>"
             )
-            secondary_action_html = (
-                '<p class="portal-auth-note">'
-                "redirect URI 應設為 http://localhost:7075/portal/auth/google/callback。"
-                "</p>"
-                f"{home_link_html}"
-            )
+            secondary_action_html = home_link_html
             return {
                 "portal_panel_kicker": "管理者登入",
                 "page_alert_html": page_alert_html,
@@ -186,6 +217,26 @@ def build_portal_login_context(
                 "portal_identity_html": identity_html,
                 "portal_primary_action_html": primary_action_html,
                 "portal_secondary_action_html": secondary_action_html,
+            }
+
+        if not portal_google_group_auth_configured:
+            feedback_html = build_portal_feedback_html(
+                "Google 群組授權尚未設定完成。請設定 PORTAL_GOOGLE_ALLOWED_GROUP_KEYS，"
+                "再重新啟動 Azure Functions。"
+            )
+            primary_action_html = (
+                '<button class="submit-button" type="button" disabled aria-disabled="true">'
+                "Google 群組授權尚未設定"
+                "</button>"
+            )
+            return {
+                "portal_panel_kicker": "管理者登入",
+                "page_alert_html": page_alert_html,
+                "portal_lead_html": lead_html,
+                "portal_feedback_html": feedback_html,
+                "portal_identity_html": identity_html,
+                "portal_primary_action_html": primary_action_html,
+                "portal_secondary_action_html": home_link_html,
             }
 
         primary_action_html = (
@@ -230,9 +281,9 @@ def build_portal_google_auth_error_response(
     req: func.HttpRequest,
     error: PortalGoogleAuthError,
 ) -> func.HttpResponse:
-    error_code = PORTAL_GOOGLE_LOGIN_FAILED_ERROR
+    error_code = error.error_code or PORTAL_GOOGLE_LOGIN_FAILED_ERROR
     if str(error) == "access_denied":
-        error_code = PORTAL_GOOGLE_LOGIN_CANCELLED_ERROR
+        error_code = PORTAL_GOOGLE_LOGIN_DATA_AUTHORIZATION_REQUIRED_ERROR
 
     return build_portal_redirect_response(
         PORTAL_ENTRY_PATH,

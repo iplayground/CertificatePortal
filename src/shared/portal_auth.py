@@ -5,6 +5,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import time
@@ -18,7 +19,13 @@ from urllib.request import Request, urlopen
 
 import azure.functions as func
 
-CLIENT_PRINCIPAL_HEADER = "X-MS-CLIENT-PRINCIPAL"
+from src.shared.portal_google_group_auth import (
+    PortalGoogleGroupAuthorizationError,
+    PORTAL_GOOGLE_GROUPS_READONLY_SCOPE,
+    is_portal_google_group_authorization_configured,
+    is_portal_google_user_in_allowed_group,
+)
+
 COOKIE_HEADER = "Cookie"
 PORTAL_GOOGLE_LOGIN_PATH = "/portal/auth/google/login"
 PORTAL_GOOGLE_CALLBACK_PATH = "/portal/auth/google/callback"
@@ -26,23 +33,15 @@ PORTAL_GOOGLE_LOGOUT_PATH = "/portal/auth/logout"
 PORTAL_GOOGLE_STATE_COOKIE_NAME = "portal_google_oauth_state"
 PORTAL_GOOGLE_SESSION_COOKIE_NAME = "portal_google_session"
 GOOGLE_OIDC_DISCOVERY_DOCUMENT_URL = "https://accounts.google.com/.well-known/openid-configuration"
-PORTAL_GOOGLE_OAUTH_SCOPES = ("openid", "email", "profile")
+PORTAL_GOOGLE_OAUTH_SCOPES = (
+    "openid",
+    "email",
+    "profile",
+    PORTAL_GOOGLE_GROUPS_READONLY_SCOPE,
+)
 PORTAL_GOOGLE_STATE_MAX_AGE_SECONDS = 600
 PORTAL_GOOGLE_SESSION_MAX_AGE_SECONDS = 28800
-NAME_CLAIM_TYPES = (
-    "name",
-    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
-)
-EMAIL_CLAIM_TYPES = (
-    "preferred_username",
-    "email",
-    "emails",
-    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
-)
-USER_ID_CLAIM_TYPES = (
-    "sub",
-    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier",
-)
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -68,39 +67,26 @@ class PortalGoogleAuthConfig:
 
 
 class PortalGoogleAuthError(RuntimeError):
-    def __init__(self, message: str, *, status_code: int = 400):
+    def __init__(self, message: str, *, status_code: int = 400, error_code: str | None = None):
         super().__init__(message)
         self.status_code = status_code
-
-
-def build_easy_auth_login_url(post_login_redirect_uri: str) -> str:
-    return f"/.auth/login/google?post_login_redirect_uri={quote(post_login_redirect_uri, safe='/')}"
-
-
-def build_easy_auth_logout_url(post_logout_redirect_uri: str) -> str:
-    return f"/.auth/logout?post_logout_redirect_uri={quote(post_logout_redirect_uri, safe='/')}"
+        self.error_code = error_code
 
 
 def build_portal_login_url(req: func.HttpRequest, post_login_redirect_uri: str) -> str:
     normalized_redirect_uri = _normalize_post_auth_redirect_uri(post_login_redirect_uri)
-    if is_portal_google_auth_configured():
-        return (
-            f"{PORTAL_GOOGLE_LOGIN_PATH}"
-            f"?post_login_redirect_uri={quote(normalized_redirect_uri, safe='/')}"
-        )
-
-    return build_easy_auth_login_url(normalized_redirect_uri)
+    return (
+        f"{PORTAL_GOOGLE_LOGIN_PATH}"
+        f"?post_login_redirect_uri={quote(normalized_redirect_uri, safe='/')}"
+    )
 
 
 def build_portal_logout_url(req: func.HttpRequest, post_logout_redirect_uri: str) -> str:
     normalized_redirect_uri = _normalize_post_auth_redirect_uri(post_logout_redirect_uri)
-    if is_portal_google_auth_configured():
-        return (
-            f"{PORTAL_GOOGLE_LOGOUT_PATH}"
-            f"?post_logout_redirect_uri={quote(normalized_redirect_uri, safe='/')}"
-        )
-
-    return build_easy_auth_logout_url(normalized_redirect_uri)
+    return (
+        f"{PORTAL_GOOGLE_LOGOUT_PATH}"
+        f"?post_logout_redirect_uri={quote(normalized_redirect_uri, safe='/')}"
+    )
 
 
 def resolve_portal_access(req: func.HttpRequest) -> PortalAccess:
@@ -108,7 +94,7 @@ def resolve_portal_access(req: func.HttpRequest) -> PortalAccess:
 
     return PortalAccess(
         principal=principal,
-        is_authorized=principal.is_authenticated,
+        is_authorized=_is_portal_principal_authorized(principal),
     )
 
 
@@ -127,62 +113,21 @@ def resolve_portal_principal(req: func.HttpRequest) -> PortalPrincipal:
             user_id="local-dev-bypass",
         )
 
-    principal_header = req.headers.get(CLIENT_PRINCIPAL_HEADER)
-    if not principal_header:
-        return PortalPrincipal(
-            is_authenticated=False,
-            auth_type="",
-            display_name="",
-            email=None,
-            user_id=None,
-        )
-
-    try:
-        payload = _decode_client_principal(principal_header)
-    except (ValueError, json.JSONDecodeError):
-        return PortalPrincipal(
-            is_authenticated=False,
-            auth_type="",
-            display_name="",
-            email=None,
-            user_id=None,
-        )
-
-    auth_type = str(payload.get("auth_typ", "")).strip()
-    claims = payload.get("claims", [])
-    if not auth_type or not isinstance(claims, list):
-        return PortalPrincipal(
-            is_authenticated=False,
-            auth_type="",
-            display_name="",
-            email=None,
-            user_id=None,
-        )
-
-    claims_by_type = _group_claim_values(claims)
-    name_claim_types = _ordered_claim_types(payload.get("name_typ"), NAME_CLAIM_TYPES)
-
-    display_name = _first_claim_value(claims_by_type, name_claim_types)
-    email = _normalize_email(_first_claim_value(claims_by_type, EMAIL_CLAIM_TYPES))
-    user_id = _first_claim_value(claims_by_type, USER_ID_CLAIM_TYPES) or None
-
-    normalized_display_name = display_name or email or "管理者"
-
     return PortalPrincipal(
-        is_authenticated=True,
-        auth_type=auth_type,
-        display_name=normalized_display_name,
-        email=email,
-        user_id=user_id,
+        is_authenticated=False,
+        auth_type="",
+        display_name="",
+        email=None,
+        user_id=None,
     )
-
-
-def is_running_in_azure_environment() -> bool:
-    return bool(os.getenv("WEBSITE_INSTANCE_ID"))
 
 
 def is_portal_google_auth_configured() -> bool:
     return _get_portal_google_auth_config() is not None
+
+
+def is_portal_google_group_auth_configured() -> bool:
+    return is_portal_google_group_authorization_configured()
 
 
 def build_portal_google_auth_start_response(req: func.HttpRequest) -> func.HttpResponse:
@@ -254,11 +199,29 @@ def build_portal_google_auth_callback_response(req: func.HttpRequest) -> func.Ht
         authorization_code=authorization_code,
         redirect_uri=redirect_uri,
     )
+    granted_scopes = str(token_payload.get("scope", "")).split()
+    LOGGER.info(
+        "Google token scope grant result. scope_count=%d has_cloud_identity_group_scope=%s",
+        len(granted_scopes),
+        PORTAL_GOOGLE_GROUPS_READONLY_SCOPE in granted_scopes,
+    )
     userinfo = _fetch_portal_google_userinfo(token_payload.get("access_token", ""))
     email = _normalize_email(str(userinfo.get("email", "")).strip())
     email_verified = bool(userinfo.get("email_verified"))
     if not email or not email_verified:
-        raise PortalGoogleAuthError("Google 回傳的使用者資訊缺少已驗證的 email。", status_code=502)
+        raise PortalGoogleAuthError(
+            "Google 回傳的使用者資訊缺少已驗證的 email。",
+            status_code=403,
+            error_code="google-login-data-authorization-required",
+        )
+
+    is_authorized = _authorize_portal_google_user(email, str(token_payload.get("access_token", "")).strip())
+    if not is_authorized:
+        raise PortalGoogleAuthError(
+            "此 Google 帳號不在允許的管理群組內。",
+            status_code=403,
+            error_code="google-login-not-authorized",
+        )
 
     display_name = str(userinfo.get("name", "")).strip() or email
     user_id = str(userinfo.get("sub", "")).strip() or None
@@ -286,7 +249,6 @@ def build_portal_google_auth_callback_response(req: func.HttpRequest) -> func.Ht
 
 
 def build_portal_google_logout_response(req: func.HttpRequest) -> func.HttpResponse:
-    _get_portal_google_auth_config_or_raise()
     post_logout_redirect_uri = _normalize_post_auth_redirect_uri(req.params.get("post_logout_redirect_uri", "/portal"))
     return _build_cookie_redirect_response(
         location=post_logout_redirect_uri,
@@ -299,61 +261,26 @@ def is_portal_auth_bypass_enabled() -> bool:
     return enabled in {"1", "true", "yes", "on"}
 
 
-def _decode_client_principal(header_value: str) -> dict[str, Any]:
-    padded_value = f"{header_value}{'=' * (-len(header_value) % 4)}"
-    decoded_value = base64.b64decode(padded_value.encode("utf-8"), validate=True)
-    payload = json.loads(decoded_value.decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("Client principal payload must be an object.")
-
-    return payload
-
-
-def _group_claim_values(claims: list[object]) -> dict[str, list[str]]:
-    grouped_values: dict[str, list[str]] = {}
-
-    for claim in claims:
-        if not isinstance(claim, dict):
-            continue
-
-        claim_type = str(claim.get("typ", "")).strip()
-        claim_value = str(claim.get("val", "")).strip()
-        if not claim_type or not claim_value:
-            continue
-
-        grouped_values.setdefault(claim_type, []).append(claim_value)
-
-    return grouped_values
-
-
-def _ordered_claim_types(
-    preferred_type: object,
-    fallback_types: tuple[str, ...],
-) -> tuple[str, ...]:
-    normalized_preferred_type = ""
-    if isinstance(preferred_type, str):
-        normalized_preferred_type = preferred_type.strip()
-
-    normalized_types = [normalized_preferred_type] if normalized_preferred_type else []
-    normalized_types.extend(fallback_types)
-    return tuple(dict.fromkeys(normalized_types))
-
-
-def _first_claim_value(
-    claims_by_type: dict[str, list[str]],
-    claim_types: tuple[str, ...],
-) -> str:
-    for claim_type in claim_types:
-        for value in claims_by_type.get(claim_type, []):
-            normalized_value = value.strip()
-            if normalized_value:
-                return normalized_value
-
-    return ""
-
-
 def _read_env(env_name: str, default_value: str) -> str:
     return os.getenv(env_name, default_value).strip()
+
+
+def _authorize_portal_google_user(email: str, access_token: str) -> bool:
+    try:
+        return is_portal_google_user_in_allowed_group(email, access_token)
+    except PortalGoogleGroupAuthorizationError as exc:
+        raise PortalGoogleAuthError(
+            str(exc),
+            status_code=403,
+            error_code="google-login-authorization-check-failed",
+        ) from exc
+
+
+def _is_portal_principal_authorized(principal: PortalPrincipal) -> bool:
+    if not principal.is_authenticated:
+        return False
+
+    return principal.auth_type in {"google-oauth", "google-local-dev-bypass"}
 
 
 def _resolve_portal_google_principal(req: func.HttpRequest) -> PortalPrincipal | None:

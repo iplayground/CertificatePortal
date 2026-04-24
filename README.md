@@ -12,11 +12,11 @@ iPlayground 完訓證明系統。
 
 首頁與管理平台目前為 HTML 頁面，公開驗證頁面仍為純文字；三者都尚未包含實際業務資料、資料庫存取或檔案處理。
 
-管理平台目前已建立 Google Workspace Internal SSO 基線：
+管理平台目前已建立 Google Workspace SSO + Google Group 授權基線：
 
-- `/portal` 會依應用程式內建的 Google OAuth 流程與 session cookie 判斷目前狀態
+- `/portal` 會依應用程式內建的 Google OAuth 流程、Google Group 驗證結果與 session cookie 判斷目前狀態
 - 未登入時顯示 Google SSO 登入入口與返回首頁連結
-- 已登入帳號可進入 `/portal/dashboard`
+- 只有已加入允許 Google Group 直接成員的帳號可進入 `/portal/dashboard`
 - `/portal/dashboard` 與其子頁都會在伺服器端再次檢查 session cookie，不依賴前端暫存
 
 ## 目前頁面基線
@@ -74,15 +74,20 @@ cp local.settings.json.example local.settings.json
 
 接著依本機或 Azure 環境需求，自行填入 `local.settings.json` 內的實際值。
 
-若要在本機直接驗證 Google 登入，請設定與 Azure 相同命名的 portal Google OAuth app settings。本機與 production 應各自使用分開的 OAuth client 實際值：
+本機開發若只需要檢視管理平台 UI，建議使用 bypass。若現階段需要在 localhost 端到端驗證 Google 登入與群組授權，才暫時設定與 Azure 相同命名的 portal Google OAuth app settings：
 
 ```json
 {
   "PORTAL_GOOGLE_CLIENT_ID": "<local-google-client-id>",
   "PORTAL_GOOGLE_CLIENT_SECRET": "<local-google-client-secret>",
-  "PORTAL_GOOGLE_REDIRECT_URI": "http://localhost:7075/portal/auth/google/callback"
+  "PORTAL_GOOGLE_REDIRECT_URI": "http://localhost:7075/portal/auth/google/callback",
+  "PORTAL_GOOGLE_ALLOWED_GROUP_KEYS": "<allowed-group-name-1>,<allowed-group-name-2>"
 }
 ```
+
+`PORTAL_GOOGLE_ALLOWED_GROUP_KEYS` 應使用逗號分隔的 allowlist；若值未包含 `@`，程式會自動補成目前登入使用者所在網域的完整群組地址。若你要指定其他完整 key，也可直接填帶 `@` 的值。
+
+Google Group 授權依賴 OAuth client 所屬 Google Cloud project 的 Cloud Identity API。若要直接驗證 Google 登入，請先依 [docs/portal-authentication.md](docs/portal-authentication.md) 啟用 Cloud Identity API，並確認目標群組允許組織內使用者查看群組與成員。本機 OAuth 設定只作為現階段開發驗證用途，不是長期本機開發基線。
 
 若只想快速查看管理平台 UI、不經過真正的 Google OAuth，可暫時開啟：
 
@@ -92,7 +97,7 @@ cp local.settings.json.example local.settings.json
 }
 ```
 
-其中 `PORTAL_GOOGLE_*` 代表 local 與 Azure 共用的登入流程參數名稱，但本機與 production 應各自填入對應的 client 值；只有 bypass 設定只限本機開發，不得部署到正式環境。
+其中 `PORTAL_GOOGLE_CLIENT_*` 與 `PORTAL_GOOGLE_REDIRECT_URI` 代表 OAuth client 設定，`PORTAL_GOOGLE_ALLOWED_GROUP_KEYS` 代表群組授權設定。只有 bypass 設定只限本機開發，不得部署到正式環境。
 
 ### 啟動
 
@@ -126,7 +131,7 @@ PYTHONPATH=. pytest
 - `local.settings.json` 內已設定 `AzureWebJobsDisableHomepage=true`，避免根目錄顯示 Azure Functions 預設首頁。
 - 目前未接 Azurite 或實體 Storage Account，因此本機啟動時可能看到 `AzureWebJobsStorage` 的 unhealthy 訊息；在 `--skip-azure-storage-check` 下，這不影響目前首頁、靜態資產路由與公開驗證頁面。
 - 管理平台入口現已統一使用 `/portal`，避免與 Azure Functions runtime 內建保留的 `/admin` 路徑衝突。
-- `/portal` 正式環境目前應明確設定 `PORTAL_GOOGLE_CLIENT_ID`、`PORTAL_GOOGLE_CLIENT_SECRET` 與 `PORTAL_GOOGLE_REDIRECT_URI`；建議以 Azure CLI 寫入 app settings，詳細流程請參考 [docs/portal-authentication.md](docs/portal-authentication.md)。
+- `/portal` 正式環境目前應明確設定 `PORTAL_GOOGLE_CLIENT_ID`、`PORTAL_GOOGLE_CLIENT_SECRET`、`PORTAL_GOOGLE_REDIRECT_URI` 與 `PORTAL_GOOGLE_ALLOWED_GROUP_KEYS`；建議以 Azure CLI 或 Key Vault reference 寫入 app settings，詳細流程請參考 [docs/portal-authentication.md](docs/portal-authentication.md)。
 - 目前尚未保留其他管理子路由、下載流程與實際業務邏輯。
 
 ## Azure 部署

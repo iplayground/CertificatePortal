@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import base64
-import json
 from http.cookies import SimpleCookie
 
 import azure.functions as func
@@ -9,6 +7,7 @@ import pytest
 
 from src.functions.assets import static_asset
 from src.functions.portal import (
+    PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR,
     portal_dashboard_page,
     portal_dashboard_records_page,
     portal_dashboard_upload_page,
@@ -17,7 +16,9 @@ from src.functions.portal import (
     portal_google_login_page,
     portal_google_logout_page,
     portal_login_page,
+    resolve_portal_login_alert_dismiss_delay_ms,
 )
+from src.shared.portal_google_group_auth import PortalGoogleGroupAuthorizationError
 
 
 def build_request(
@@ -37,48 +38,37 @@ def build_request(
     )
 
 
-def build_client_principal_header(
+def configure_portal_auth_bypass_env(
+    monkeypatch: pytest.MonkeyPatch,
     *,
     display_name: str = "王小明",
     email: str | None = "admin@iplayground.io",
-) -> str:
-    claims = [
-        {"typ": "name", "val": display_name},
-        {"typ": "sub", "val": "google-subject-demo"},
-    ]
-    if email is not None:
-        claims.insert(1, {"typ": "preferred_username", "val": email})
-
-    payload = {
-        "auth_typ": "google",
-        "name_typ": "name",
-        "claims": claims,
-    }
-    serialized_payload = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    return base64.b64encode(serialized_payload).decode("utf-8")
-
-
-def build_authenticated_headers(
-    *,
-    display_name: str = "王小明",
-    email: str | None = "admin@iplayground.io",
-) -> dict[str, str]:
-    return {
-        "X-MS-CLIENT-PRINCIPAL": build_client_principal_header(
-            display_name=display_name,
-            email=email,
-        )
-    }
+) -> None:
+    monkeypatch.setenv("PORTAL_AUTH_BYPASS_ENABLED", "true")
+    monkeypatch.setenv("PORTAL_AUTH_BYPASS_DISPLAY_NAME", display_name)
+    if email is None:
+        monkeypatch.setenv("PORTAL_AUTH_BYPASS_EMAIL", "")
+    else:
+        monkeypatch.setenv("PORTAL_AUTH_BYPASS_EMAIL", email)
 
 
 def reset_portal_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PORTAL_GOOGLE_CLIENT_ID", raising=False)
     monkeypatch.delenv("PORTAL_GOOGLE_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("PORTAL_GOOGLE_REDIRECT_URI", raising=False)
+    monkeypatch.delenv("PORTAL_GOOGLE_ALLOWED_GROUP_KEYS", raising=False)
     monkeypatch.delenv("WEBSITE_INSTANCE_ID", raising=False)
     monkeypatch.delenv("PORTAL_AUTH_BYPASS_ENABLED", raising=False)
     monkeypatch.delenv("PORTAL_AUTH_BYPASS_DISPLAY_NAME", raising=False)
     monkeypatch.delenv("PORTAL_AUTH_BYPASS_EMAIL", raising=False)
+
+
+def configure_portal_google_group_auth_env(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    allowed_group_keys: str = "group-a@example.com,group-b@example.com",
+) -> None:
+    monkeypatch.setenv("PORTAL_GOOGLE_ALLOWED_GROUP_KEYS", allowed_group_keys)
 
 
 def parse_set_cookie_value(set_cookie_header: str, cookie_name: str) -> str:
@@ -91,7 +81,7 @@ def build_cookie_header(**cookie_values: str) -> str:
     return "; ".join(f"{cookie_name}={cookie_value}" for cookie_name, cookie_value in cookie_values.items())
 
 
-def test_portal_login_page_shows_local_google_setup_message_when_not_authenticated_on_localhost(
+def test_portal_login_page_shows_google_setup_message_when_not_authenticated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
@@ -108,15 +98,14 @@ def test_portal_login_page_shows_local_google_setup_message_when_not_authenticat
     assert "<title>完訓證明管理平台 - iPlayground</title>" in body
     assert '<h1 id="portal-title">完訓證明管理平台</h1>' in body
     assert '<p class="panel-kicker">管理者登入</p>' in body
-    assert "本機 Google 登入尚未設定完成" in body
+    assert "Google 登入尚未設定完成" in body
     assert "PORTAL_GOOGLE_CLIENT_ID" in body
     assert "PORTAL_GOOGLE_CLIENT_SECRET" in body
     assert "Google 登入尚未設定" in body
-    assert "http://localhost:7075/portal/auth/google/callback" in body
+    assert "http://localhost:7075/portal/auth/google/callback" not in body
     assert 'href="/"' in body
     assert "返回首頁" in body
     assert 'class="portal-sso-button portal-action-link"' not in body
-    assert '/.auth/login/google?post_login_redirect_uri=/portal' not in body
     assert 'class="portal-identity-card"' not in body
     assert 'id="form-feedback"' in body
     assert 'id="portal-login-form"' not in body
@@ -134,18 +123,36 @@ def test_portal_login_page_uses_portal_google_auth_entry_when_configured(
     reset_portal_auth_env(monkeypatch)
     monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
     monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+    configure_portal_google_group_auth_env(monkeypatch)
 
     response = portal_login_page(build_request("http://localhost:7075/portal"))
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
     assert '/portal/auth/google/login?post_login_redirect_uri=/portal' in body
-    assert '/.auth/login/google?post_login_redirect_uri=/portal' not in body
     assert 'class="secondary-button portal-action-link"' in body
     assert 'href="/"' in body
     assert "返回首頁" in body
     assert "請使用 Google Workspace 管理者帳號登入以繼續操作。" not in body
     assert "目前僅開放 iplayground.io 網域帳號登入。" not in body
+    assert "Google 群組授權尚未設定" not in body
+
+
+def test_portal_login_page_shows_group_auth_setup_message_when_group_authorization_is_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+
+    response = portal_login_page(build_request("http://localhost:7075/portal"))
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Google 群組授權尚未設定完成" in body
+    assert "PORTAL_GOOGLE_ALLOWED_GROUP_KEYS" in body
+    assert "Google 群組授權尚未設定" in body
+    assert '/portal/auth/google/login?post_login_redirect_uri=/portal' not in body
 
 
 def test_portal_login_page_shows_google_login_cancelled_alert(
@@ -154,6 +161,7 @@ def test_portal_login_page_shows_google_login_cancelled_alert(
     reset_portal_auth_env(monkeypatch)
     monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
     monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+    configure_portal_google_group_auth_env(monkeypatch)
 
     response = portal_login_page(
         build_request(
@@ -167,7 +175,7 @@ def test_portal_login_page_shows_google_login_cancelled_alert(
     assert 'class="page-alert"' in body
     assert "data-page-alert" in body
     assert 'data-page-alert-tone="error"' in body
-    assert 'data-page-alert-dismiss-delay="6000"' in body
+    assert "data-page-alert-dismiss-delay" not in body
     assert 'class="page-alert-frame"' in body
     assert 'class="page-alert-content"' in body
     assert "Google 登入未完成" in body
@@ -181,15 +189,99 @@ def test_portal_login_page_shows_google_login_cancelled_alert(
     assert response.headers["Set-Cookie"].startswith("portal_flash=;")
 
 
-def test_portal_login_page_redirects_to_dashboard_when_user_is_authenticated_with_email(
+def test_portal_login_alert_dismiss_delay_uses_login_page_setting() -> None:
+    assert (
+        resolve_portal_login_alert_dismiss_delay_ms(
+            PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR
+        )
+        is None
+    )
+    assert resolve_portal_login_alert_dismiss_delay_ms("unknown-login-error") is None
+
+
+def test_portal_login_page_shows_google_login_not_authorized_alert(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+    configure_portal_google_group_auth_env(monkeypatch)
 
     response = portal_login_page(
         build_request(
             "http://localhost:7075/portal",
-            headers=build_authenticated_headers(),
+            headers={"Cookie": build_cookie_header(portal_flash="google-login-not-authorized")},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert "沒有管理平台權限" in body
+    assert "此帳號不在允許群組中，請聯絡管理員。" in body
+    assert "資料授權未完成" not in body
+    assert "請完成資料授權後再登入。" not in body
+    assert '/portal/auth/google/login?post_login_redirect_uri=/portal' in body
+
+
+def test_portal_login_page_shows_google_login_data_authorization_required_alert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+    configure_portal_google_group_auth_env(monkeypatch)
+
+    response = portal_login_page(
+        build_request(
+            "http://localhost:7075/portal",
+            headers={"Cookie": build_cookie_header(portal_flash="google-login-data-authorization-required")},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert "資料授權未完成" in body
+    assert "請完成資料授權後再登入。" in body
+    assert "沒有管理平台權限" not in body
+    assert "此帳號不在允許群組中" not in body
+    assert "email" not in body
+    assert "群組資訊" not in body
+    assert '/portal/auth/google/login?post_login_redirect_uri=/portal' in body
+
+
+def test_portal_login_page_shows_google_login_authorization_check_failed_alert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+    configure_portal_google_group_auth_env(monkeypatch)
+
+    response = portal_login_page(
+        build_request(
+            "http://localhost:7075/portal",
+            headers={"Cookie": build_cookie_header(portal_flash="google-login-authorization-check-failed")},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert "群組驗證未完成" in body
+    assert "群組驗證未完成，請稍後再試。" in body
+    assert "資料授權未完成" not in body
+    assert "此帳號不在允許群組中" not in body
+    assert '/portal/auth/google/login?post_login_redirect_uri=/portal' in body
+
+
+def test_portal_login_page_redirects_to_dashboard_when_user_is_authenticated_with_email(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch)
+
+    response = portal_login_page(
+        build_request(
+            "http://localhost:7075/portal",
         )
     )
 
@@ -198,18 +290,19 @@ def test_portal_login_page_redirects_to_dashboard_when_user_is_authenticated_wit
     assert response.headers["Cache-Control"] == "no-store"
 
 
-def test_portal_login_page_redirects_to_dashboard_when_authenticated_email_is_not_iplayground_domain(
+def test_portal_login_page_redirects_to_dashboard_when_bypass_email_is_external_domain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(
+        monkeypatch,
+        display_name="網域管理者",
+        email="viewer@example.com",
+    )
 
     response = portal_login_page(
         build_request(
             "http://localhost:7075/portal",
-            headers=build_authenticated_headers(
-                display_name="網域管理者",
-                email="viewer@example.com",
-            ),
         )
     )
 
@@ -222,14 +315,15 @@ def test_portal_login_page_redirects_to_dashboard_when_authenticated_user_email_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(
+        monkeypatch,
+        display_name="陳小華",
+        email=None,
+    )
 
     response = portal_login_page(
         build_request(
             "http://localhost:7075/portal",
-            headers=build_authenticated_headers(
-                display_name="陳小華",
-                email=None,
-            ),
         )
     )
 
@@ -253,11 +347,15 @@ def test_portal_dashboard_page_returns_html_when_authenticated_email_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(
+        monkeypatch,
+        display_name="陳小華",
+        email=None,
+    )
 
     response = portal_dashboard_page(
         build_request(
             "http://localhost:7075/portal/dashboard",
-            headers=build_authenticated_headers(display_name="陳小華", email=None),
         )
     )
     body = response.get_body().decode("utf-8")
@@ -272,11 +370,11 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch, display_name="系統管理者")
 
     response = portal_dashboard_page(
         build_request(
             "http://localhost:7075/portal/dashboard",
-            headers=build_authenticated_headers(display_name="系統管理者"),
         )
     )
     body = response.get_body().decode("utf-8")
@@ -291,7 +389,7 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'id="portal-dashboard"' in body
     assert 'class="portal-dashboard-shell"' in body
     assert 'data-portal-entry-path="/portal"' in body
-    assert 'data-logout-url="/.auth/logout?post_logout_redirect_uri=/portal"' in body
+    assert 'data-logout-url="/portal/auth/logout?post_logout_redirect_uri=/portal"' in body
     assert 'data-welcome-page-path="/portal/dashboard/welcome"' in body
     assert 'id="portal-dashboard-title"' in body
     assert 'data-view-target="welcome"' in body
@@ -324,6 +422,7 @@ def test_portal_google_auth_callback_sets_session_cookie_and_allows_dashboard_ac
     reset_portal_auth_env(monkeypatch)
     monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
     monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+    configure_portal_google_group_auth_env(monkeypatch)
 
     monkeypatch.setattr(
         "src.shared.portal_auth._load_google_oidc_configuration",
@@ -346,6 +445,10 @@ def test_portal_google_auth_callback_sets_session_cookie_and_allows_dashboard_ac
             "email": "admin@iplayground.io",
             "email_verified": True,
         },
+    )
+    monkeypatch.setattr(
+        "src.shared.portal_auth.is_portal_google_user_in_allowed_group",
+        lambda email, access_token: email == "admin@iplayground.io" and access_token == "google-access-token",
     )
 
     login_response = portal_google_login_page(
@@ -370,6 +473,7 @@ def test_portal_google_auth_callback_sets_session_cookie_and_allows_dashboard_ac
 
     assert callback_response.status_code == 302
     assert callback_response.headers["Location"] == "/portal"
+    assert "cloud-identity.groups.readonly" in login_response.headers["Location"]
     session_cookie_header = callback_response.headers["Set-Cookie"]
     session_token = parse_set_cookie_value(session_cookie_header, "portal_google_session")
 
@@ -386,7 +490,7 @@ def test_portal_google_auth_callback_sets_session_cookie_and_allows_dashboard_ac
     assert 'data-logout-url="/portal/auth/logout?post_logout_redirect_uri=/portal"' in dashboard_body
 
 
-def test_portal_google_auth_callback_redirects_to_portal_with_alert_when_access_is_denied(
+def test_portal_google_auth_callback_redirects_to_portal_when_data_authorization_is_denied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
@@ -403,7 +507,154 @@ def test_portal_google_auth_callback_redirects_to_portal_with_alert_when_access_
     assert response.status_code == 302
     assert response.headers["Location"] == "/portal"
     assert response.headers["Cache-Control"] == "no-store"
-    assert parse_set_cookie_value(response.headers["Set-Cookie"], "portal_flash") == "google-login-cancelled"
+    assert parse_set_cookie_value(response.headers["Set-Cookie"], "portal_flash") == "google-login-data-authorization-required"
+
+
+def test_portal_google_auth_callback_redirects_to_portal_when_verified_email_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+    configure_portal_google_group_auth_env(monkeypatch)
+
+    monkeypatch.setattr(
+        "src.shared.portal_auth._exchange_portal_google_authorization_code",
+        lambda **_: {
+            "access_token": "google-access-token",
+        },
+    )
+    monkeypatch.setattr(
+        "src.shared.portal_auth._fetch_portal_google_userinfo",
+        lambda _: {
+            "sub": "google-user-id",
+            "name": "缺少 email 帳號",
+            "email": "",
+            "email_verified": False,
+        },
+    )
+    monkeypatch.setattr(
+        "src.shared.portal_auth._verify_portal_google_token",
+        lambda token, secret: {"post_login_redirect_uri": "/portal"} if token == "demo-state" else None,
+    )
+
+    response = portal_google_callback_page(
+        build_request(
+            "http://localhost:7075/portal/auth/google/callback",
+            headers={"Cookie": "portal_google_oauth_state=demo-state"},
+            params={
+                "code": "google-auth-code",
+                "state": "demo-state",
+            },
+        )
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/portal"
+    assert parse_set_cookie_value(response.headers["Set-Cookie"], "portal_flash") == "google-login-data-authorization-required"
+
+
+def test_portal_google_auth_callback_redirects_to_portal_when_google_account_is_not_in_allowed_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+    configure_portal_google_group_auth_env(monkeypatch)
+
+    monkeypatch.setattr(
+        "src.shared.portal_auth._exchange_portal_google_authorization_code",
+        lambda **_: {
+            "access_token": "google-access-token",
+        },
+    )
+    monkeypatch.setattr(
+        "src.shared.portal_auth._fetch_portal_google_userinfo",
+        lambda _: {
+            "sub": "google-user-id",
+            "name": "未授權帳號",
+            "email": "member@iplayground.io",
+            "email_verified": True,
+        },
+    )
+    monkeypatch.setattr(
+        "src.shared.portal_auth.is_portal_google_user_in_allowed_group",
+        lambda _email, _access_token: False,
+    )
+    monkeypatch.setattr(
+        "src.shared.portal_auth._verify_portal_google_token",
+        lambda token, secret: {"post_login_redirect_uri": "/portal"} if token == "demo-state" else None,
+    )
+
+    response = portal_google_callback_page(
+        build_request(
+            "http://localhost:7075/portal/auth/google/callback",
+            headers={"Cookie": "portal_google_oauth_state=demo-state"},
+            params={
+                "code": "google-auth-code",
+                "state": "demo-state",
+            },
+        )
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/portal"
+    assert parse_set_cookie_value(response.headers["Set-Cookie"], "portal_flash") == "google-login-not-authorized"
+
+
+def test_portal_google_auth_callback_redirects_to_portal_when_group_check_does_not_authorize_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "portal-client-id")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "portal-client-secret")
+    configure_portal_google_group_auth_env(monkeypatch)
+
+    monkeypatch.setattr(
+        "src.shared.portal_auth._exchange_portal_google_authorization_code",
+        lambda **_: {
+            "access_token": "google-access-token",
+        },
+    )
+    monkeypatch.setattr(
+        "src.shared.portal_auth._fetch_portal_google_userinfo",
+        lambda _: {
+            "sub": "google-user-id",
+            "name": "檢查失敗帳號",
+            "email": "member@iplayground.io",
+            "email_verified": True,
+        },
+    )
+
+    def raise_group_authorization_error(_email: str, _access_token: str) -> bool:
+        raise PortalGoogleGroupAuthorizationError("找不到指定的 Google 群組，或目前登入的 Google 帳號無法查看該群組。")
+
+    monkeypatch.setattr(
+        "src.shared.portal_auth.is_portal_google_user_in_allowed_group",
+        raise_group_authorization_error,
+    )
+    monkeypatch.setattr(
+        "src.shared.portal_auth._verify_portal_google_token",
+        lambda token, secret: {"post_login_redirect_uri": "/portal"} if token == "demo-state" else None,
+    )
+
+    response = portal_google_callback_page(
+        build_request(
+            "http://localhost:7075/portal/auth/google/callback",
+            headers={"Cookie": "portal_google_oauth_state=demo-state"},
+            params={
+                "code": "google-auth-code",
+                "state": "demo-state",
+            },
+        )
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/portal"
+    assert (
+        parse_set_cookie_value(response.headers["Set-Cookie"], "portal_flash")
+        == "google-login-authorization-check-failed"
+    )
 
 
 def test_portal_google_logout_clears_session_cookie(
@@ -429,11 +680,11 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch, display_name="系統管理者")
 
     response = portal_dashboard_welcome_page(
         build_request(
             "http://localhost:7075/portal/dashboard/welcome",
-            headers=build_authenticated_headers(display_name="系統管理者"),
         )
     )
     body = response.get_body().decode("utf-8")
@@ -463,11 +714,11 @@ def test_portal_dashboard_records_page_returns_html_when_user_is_authorized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch)
 
     response = portal_dashboard_records_page(
         build_request(
             "http://localhost:7075/portal/dashboard/records",
-            headers=build_authenticated_headers(),
         )
     )
     body = response.get_body().decode("utf-8")
@@ -485,11 +736,11 @@ def test_portal_dashboard_upload_page_returns_html_when_user_is_authorized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch)
 
     response = portal_dashboard_upload_page(
         build_request(
             "http://localhost:7075/portal/dashboard/upload",
-            headers=build_authenticated_headers(),
         )
     )
     body = response.get_body().decode("utf-8")
@@ -671,7 +922,9 @@ def test_portal_sidebar_logo_asset_returns_expected_content_type() -> None:
     assert response.status_code == 200
     assert response.mimetype == "image/png"
     assert len(response.get_body()) > 0
-def test_portal_login_page_uses_easy_auth_entry_on_azure_when_portal_google_auth_is_not_configured(
+
+
+def test_portal_login_page_shows_setup_message_on_azure_when_portal_google_auth_is_not_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
@@ -681,6 +934,6 @@ def test_portal_login_page_uses_easy_auth_entry_on_azure_when_portal_google_auth
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
-    assert 'class="portal-sso-button portal-action-link"' in body
-    assert '/.auth/login/google?post_login_redirect_uri=/portal' in body
-    assert "本機 Google 登入尚未設定完成" not in body
+    assert "Google 登入尚未設定完成" in body
+    assert "Google 登入尚未設定" in body
+    assert "http://localhost:7075/portal/auth/google/callback" not in body

@@ -27,6 +27,10 @@ param portalGoogleClientSecret string = ''
 @description('Optional absolute redirect URI override for the portal Google OAuth callback.')
 param portalGoogleRedirectUri string = ''
 
+@description('Comma-separated Google Group keys allowed to access the portal.')
+@secure()
+param portalGoogleAllowedGroupKeys string = ''
+
 @description('Maximum Flex Consumption instances.')
 @minValue(1)
 @maxValue(1000)
@@ -214,6 +218,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'PORTAL_GOOGLE_REDIRECT_URI'
           value: portalGoogleRedirectUri
+        }
+        {
+          name: 'PORTAL_GOOGLE_ALLOWED_GROUP_KEYS'
+          value: portalGoogleAllowedGroupKeys
         }
       ]
     }
