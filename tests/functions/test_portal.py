@@ -420,6 +420,13 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'id="portal-completion-upload-dialog"' in body
     assert 'class="event-dialog-backdrop portal-event-dialog-backdrop"' in body
     assert 'id="portal-event-name-input"' in body
+    assert body.count('autocomplete="off"') == 1
+    assert body.count('data-1p-ignore="true"') == 1
+    assert body.count('data-op-ignore="true"') == 1
+    assert body.count('data-lpignore="true"') == 1
+    assert body.count('data-bwignore="true"') == 1
+    assert body.count('data-protonpass-ignore="true"') == 1
+    assert body.count('data-form-type="other"') == 1
     assert 'id="portal-completion-upload-file"' in body
     assert 'id="portal-completion-upload-file-name"' in body
     assert 'id="portal-completion-upload-submit"' in body
@@ -943,6 +950,13 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert 'id="event-create-open"' in body
     assert "建立活動" in body
     assert 'id="event-create-dialog"' in body
+    assert body.count('autocomplete="off"') == 1
+    assert body.count('data-1p-ignore="true"') == 1
+    assert body.count('data-op-ignore="true"') == 1
+    assert body.count('data-lpignore="true"') == 1
+    assert body.count('data-bwignore="true"') == 1
+    assert body.count('data-protonpass-ignore="true"') == 1
+    assert body.count('data-form-type="other"') == 1
     assert 'aria-modal="true"' in body
     assert 'class="secondary-button event-cancel-button"' in body
     assert 'id="event-create-close"' not in body

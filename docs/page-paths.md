@@ -36,6 +36,12 @@
 - 實際業務資料、資料存取、後端上傳處理與持久化流程尚未串接
 - 完訓證明頁目前已有前端 CSV 解析與頁面暫存清單，用於管理介面流程示意
 
+### 表單輸入規則
+
+- 首頁的報名人姓名、`email` 欄位與管理平台的活動名稱欄位不是登入憑證欄位，應在初始 HTML 標記為不使用瀏覽器自動完成與常見密碼管理器 autofill
+- 目前採用 `autocomplete="off"`，並搭配常見密碼管理器的忽略屬性：`data-1p-ignore`、`data-op-ignore`、`data-lpignore`、`data-bwignore`、`data-protonpass-ignore` 與 `data-form-type="other"`
+- 不以 CSS 隱藏密碼管理器注入的 DOM 作為基線做法；若日後新增同類型非憑證文字輸入欄位，應沿用同一組 HTML 屬性
+
 ### 語系規則
 
 - 首頁與公開驗證頁支援 `zh-TW` 與 `en-US`

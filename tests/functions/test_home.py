@@ -37,6 +37,17 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "報名人姓名" in body
     assert "會眾姓名" not in body
     assert "email" in body
+    assert 'id="attendee-name"' in body
+    assert 'id="email"' in body
+    assert 'autocomplete="name"' not in body
+    assert 'autocomplete="email"' not in body
+    assert body.count('autocomplete="off"') == 2
+    assert body.count('data-1p-ignore="true"') == 2
+    assert body.count('data-op-ignore="true"') == 2
+    assert body.count('data-lpignore="true"') == 2
+    assert body.count('data-bwignore="true"') == 2
+    assert body.count('data-protonpass-ignore="true"') == 2
+    assert body.count('data-form-type="other"') == 2
     assert "請輸入您的報名人姓名" in body
     assert 'data-current-locale="zh-TW"' in body
     assert 'data-locale-cookie-name="ipg_locale"' in body
