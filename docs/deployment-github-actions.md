@@ -20,6 +20,24 @@ Resource Group、Region 與 Function App 名稱由 Bicep 參數或 GitHub Action
 
 `functionAppName` 必須保持 Azure 全域唯一，並會同時影響 Function App 名稱、預設公開網址，以及衍生出的 Storage Account、Application Insights、Log Analytics 與 GitHub 部署身分命名。
 
+若未明確提供 `cosmosAccountName`，Bicep 會依 `functionAppName` 與 Resource Group 產生全域唯一的 Cosmos DB account 名稱。`cosmosDatabaseName` 預設為 `ipg-certificate`。目前已建立活動管理用的 `events` container，partition key 為 `/id`。資料模型與欄位規則請參考 [cosmos-data-model.md](cosmos-data-model.md)。
+
+因為 Cosmos DB account 停用 local auth，Azure Portal 的 Data Explorer 也需要 Cosmos native RBAC。Azure RBAC 的 `Owner` 或 `Contributor` 可管理 account，但不會自動取得 Cosmos 資料面讀取權限。
+
+若管理者需要在 Portal 檢視資料，應把 Cosmos DB Built-in Data Reader 授與既有的 Microsoft Entra 管理者安全群組，而不是直接授與個人帳號。Cosmos native RBAC 不接受 `Global Administrator` 這類 Entra directory role object ID 作為 principal；若需要讓全域系統管理員使用 Portal Data Explorer，應以安全群組承載這批管理者，再把群組 object ID 作為部署參數傳入。
+
+建議的群組與部署方式如下：
+
+1. 在 Microsoft Entra ID 建立專用 security group，例如 `<cosmos-portal-readers-group>`。
+2. 將需要在 Azure Portal Data Explorer 檢視資料的管理者加入該群組。
+3. 部署 Bicep 時傳入該群組的 object ID：
+
+```bash
+--parameters cosmosPortalDataReaderPrincipalIds='["<entra-security-group-object-id>"]'
+```
+
+這會授與 Cosmos DB Built-in Data Reader，scope 為 Cosmos account；應用程式本身仍使用 Function App system-assigned managed identity 的 database 範圍 Cosmos DB Built-in Data Contributor。實際群組 object ID 與成員名單屬於環境設定，不提交到儲存庫。
+
 ## 第一次手動佈署基礎設施
 
 可直接用 CLI 覆寫參數：
@@ -77,11 +95,14 @@ az functionapp config appsettings set \
 - `source-uploads`
 - `cert-templates`
 - `issued-certs`
+- 1 個 Azure Cosmos DB for NoSQL serverless account，使用 Session consistency，並停用 local auth
+- 1 個 Cosmos DB SQL database，預設名稱 `ipg-certificate`
+- 1 個 Cosmos DB SQL container `events`，partition key 為 `/id`
 - 1 個 Log Analytics Workspace
 - 1 個 Application Insights
 - 1 個 GitHub Actions 專用 user-assigned managed identity
 - 1 個綁定到 `main` 分支的 federated credential
-- 4 個 Function App 執行所需的存取設定
+- Function App 執行所需的 Storage 與 Cosmos DB 存取設定
 
 ## 部署後需要設定的 GitHub Actions Secrets 與 Variables
 
@@ -151,6 +172,11 @@ gh workflow list -R iplayground/CertificatePortal
 - Host storage：`AzureWebJobsStorage__accountName`，以 system-assigned managed identity 存取
 - Deployment storage：Blob container `function-releases`，以 system-assigned managed identity 存取
 - Function App `httpsOnly`：啟用，僅允許 HTTPS 存取
+- Cosmos DB：Azure Cosmos DB for NoSQL serverless account
+- Cosmos DB local auth：停用，Function App 以 system-assigned managed identity 取得 database 範圍的 Cosmos DB Built-in Data Contributor 權限
+- Cosmos Portal inspection：可透過 `cosmosPortalDataReaderPrincipalIds` 為管理者安全群組授與 account 範圍 Cosmos DB Built-in Data Reader
+- Cosmos app settings：`COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME` 與 `COSMOS_EVENTS_CONTAINER` 由 Bicep 寫入 Function App
+- Cosmos containers：`events` 使用 `/id` 作為 partition key，供活動管理資料使用
 
 ## 注意事項
 

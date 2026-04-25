@@ -31,6 +31,19 @@ param portalGoogleRedirectUri string = ''
 @secure()
 param portalGoogleAllowedGroupKeys string = ''
 
+@description('Optional globally unique Azure Cosmos DB account name. Leave empty to derive one from the Function App name.')
+@maxLength(44)
+param cosmosAccountName string = ''
+
+@description('Azure Cosmos DB SQL database name. Containers are intentionally defined later with their partition keys.')
+param cosmosDatabaseName string = 'ipg-certificate'
+
+@description('Cosmos DB container name for activity management events.')
+param cosmosEventsContainerName string = 'events'
+
+@description('Optional Microsoft Entra security group object IDs that should be able to inspect Cosmos DB data in Azure Portal. Avoid assigning individual users.')
+param cosmosPortalDataReaderPrincipalIds array = []
+
 @description('Maximum Flex Consumption instances.')
 @minValue(1)
 @maxValue(1000)
@@ -50,6 +63,7 @@ var functionPlanName = '${normalizedFunctionAppName}-fc'
 var applicationInsightsName = '${normalizedFunctionAppName}-appi'
 var logAnalyticsWorkspaceName = take('${normalizedFunctionAppName}-law', 63)
 var githubIdentityName = '${normalizedFunctionAppName}-gh-oidc'
+var effectiveCosmosAccountName = empty(cosmosAccountName) ? take('cosmos-${take(replace(normalizedFunctionAppName, '-', ''), 20)}-${uniqueString(resourceGroup().id, functionAppName)}', 44) : toLower(cosmosAccountName)
 var deploymentContainerName = 'function-releases'
 var blobContainers = [
   deploymentContainerName
@@ -162,6 +176,68 @@ resource githubFederatedCredential 'Microsoft.ManagedIdentity/userAssignedIdenti
   }
 }
 
+resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
+  name: effectiveCosmosAccountName
+  location: location
+  tags: tags
+  kind: 'GlobalDocumentDB'
+  properties: {
+    backupPolicy: {
+      type: 'Periodic'
+      periodicModeProperties: {
+        backupIntervalInMinutes: 240
+        backupRetentionIntervalInHours: 8
+      }
+    }
+    capabilities: [
+      {
+        name: 'EnableServerless'
+      }
+    ]
+    consistencyPolicy: {
+      defaultConsistencyLevel: 'Session'
+    }
+    databaseAccountOfferType: 'Standard'
+    disableLocalAuth: true
+    enableAutomaticFailover: true
+    minimalTlsVersion: 'Tls12'
+    locations: [
+      {
+        failoverPriority: 0
+        isZoneRedundant: false
+        locationName: location
+      }
+    ]
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+resource cosmosSqlDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' = {
+  name: cosmosDatabaseName
+  parent: cosmosAccount
+  properties: {
+    resource: {
+      id: cosmosDatabaseName
+    }
+  }
+}
+
+resource cosmosEventsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  name: cosmosEventsContainerName
+  parent: cosmosSqlDatabase
+  properties: {
+    resource: {
+      id: cosmosEventsContainerName
+      partitionKey: {
+        kind: 'Hash'
+        paths: [
+          '/id'
+        ]
+      }
+    }
+  }
+}
+
 resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   name: normalizedFunctionAppName
   location: location
@@ -208,6 +284,18 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: 'true'
         }
         {
+          name: 'COSMOS_ENDPOINT'
+          value: cosmosAccount.properties.documentEndpoint
+        }
+        {
+          name: 'COSMOS_DATABASE_NAME'
+          value: cosmosSqlDatabase.name
+        }
+        {
+          name: 'COSMOS_EVENTS_CONTAINER'
+          value: cosmosEventsContainer.name
+        }
+        {
           name: 'PORTAL_GOOGLE_CLIENT_ID'
           value: portalGoogleClientId
         }
@@ -227,6 +315,26 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
     }
   }
 }
+
+resource functionCosmosDataContributorRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
+  name: guid(cosmosAccount.id, functionApp.id, cosmosSqlDatabase.id, 'cosmos-data-contributor')
+  parent: cosmosAccount
+  properties: {
+    principalId: functionApp.identity.principalId
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    scope: '${cosmosAccount.id}/dbs/${cosmosSqlDatabase.name}'
+  }
+}
+
+resource cosmosPortalDataReaderRoleAssignments 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = [for principalId in cosmosPortalDataReaderPrincipalIds: {
+  name: guid(cosmosAccount.id, principalId, 'cosmos-data-reader')
+  parent: cosmosAccount
+  properties: {
+    principalId: principalId
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000001'
+    scope: cosmosAccount.id
+  }
+}]
 
 resource functionStorageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageAccount.id, functionApp.id, roleDefinitionIds.storageBlobDataOwner)
@@ -271,6 +379,10 @@ resource githubWebsiteContributorRoleAssignment 'Microsoft.Authorization/roleAss
 output functionAppName string = functionApp.name
 output functionAppHostName string = functionApp.properties.defaultHostName
 output storageAccountName string = storageAccount.name
+output cosmosAccountName string = cosmosAccount.name
+output cosmosDatabaseName string = cosmosSqlDatabase.name
+output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
+output cosmosEventsContainerName string = cosmosEventsContainer.name
 output deploymentContainerName string = deploymentContainerName
 output deploymentContainerUrl string = '${storageAccount.properties.primaryEndpoints.blob}${deploymentContainerName}'
 output githubActionsIdentityClientId string = githubDeploymentIdentity.properties.clientId

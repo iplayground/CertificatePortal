@@ -130,6 +130,7 @@ PYTHONPATH=. pytest
 - `local.settings.json.example` 是可提交的模板；Azure 資源相關欄位預設留空，需由開發者自行填入。實際使用的 `local.settings.json` 仍維持忽略，不進 git。
 - `local.settings.json` 內已設定 `AzureWebJobsDisableHomepage=true`，避免根目錄顯示 Azure Functions 預設首頁。
 - 目前未接 Azurite 或實體 Storage Account，因此本機啟動時可能看到 `AzureWebJobsStorage` 的 unhealthy 訊息；在 `--skip-azure-storage-check` 下，這不影響目前首頁、靜態資產路由與公開驗證頁面。
+- `COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME` 與 `COSMOS_EVENTS_CONTAINER` 是 Cosmos DB 連線設定；目前 IaC 建立 serverless account、database，以及活動管理用的 `events` container。
 - 管理平台入口現已統一使用 `/portal`，避免與 Azure Functions runtime 內建保留的 `/admin` 路徑衝突。
 - `/portal` 正式環境目前應明確設定 `PORTAL_GOOGLE_CLIENT_ID`、`PORTAL_GOOGLE_CLIENT_SECRET`、`PORTAL_GOOGLE_REDIRECT_URI` 與 `PORTAL_GOOGLE_ALLOWED_GROUP_KEYS`；建議以 Azure CLI 或 Key Vault reference 寫入 app settings，詳細流程請參考 [docs/portal-authentication.md](docs/portal-authentication.md)。
 - 目前尚未保留其他管理子路由、下載流程與實際業務邏輯。
