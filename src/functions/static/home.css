@@ -314,6 +314,7 @@ form {
 }
 
 .custom-select-trigger,
+.field-static-value,
 input {
   width: 100%;
   padding: 15px 16px;
@@ -340,6 +341,15 @@ input::placeholder {
   background: var(--theme-input-strong-bg);
   box-shadow: var(--theme-input-inset-shadow);
   cursor: pointer;
+}
+
+.field-static-value {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  background: var(--theme-input-bg);
+  color: var(--theme-content-muted);
+  box-shadow: var(--theme-input-inset-shadow);
 }
 
 .custom-select-value {

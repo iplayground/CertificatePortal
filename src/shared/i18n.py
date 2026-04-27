@@ -54,6 +54,7 @@ HOME_PAGE_COPY_KEYS = frozenset(
         "form_subtitle",
         "event_name_label",
         "event_name_hint",
+        "event_name_empty_option",
         "document_type_label",
         "document_type_hint",
         "document_type_completion_cert",

@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="/assets/theme.css">
     <link rel="stylesheet" href="/assets/portal.css">
   </head>
-  <body class="portal-embedded-body">
+  <body class="portal-embedded-body" data-portal-csrf-token="{{portal_csrf_token}}">
     <main class="embedded-page-shell">
       <section class="content-card embedded-page-card event-management-card">
         <div class="event-management-header">
@@ -37,26 +37,9 @@
                 <th scope="col">狀態</th>
               </tr>
             </thead>
-            <tbody>
-              <tr
-                class="event-list-row"
-                tabindex="0"
-                role="button"
-                aria-label="編輯活動 iPlayground 2026"
-                data-event-form-open="edit"
-                data-event-name="iPlayground 2026"
-                data-event-status="open"
-                data-event-document-types="completionCert"
-              >
-                <td>
-                    <strong>iPlayground 2026</strong>
-                  </td>
-                <td>
-                  <span class="document-type-pill">完訓證明</span>
-                </td>
-                <td>
-                  <span class="event-status-badge is-open">開放</span>
-                </td>
+            <tbody id="event-list-body">
+              <tr class="document-empty-row">
+                <td colspan="3">活動載入中。</td>
               </tr>
             </tbody>
           </table>
@@ -73,10 +56,10 @@
           <section class="event-dialog">
             <header class="event-dialog-header">
               <h2 id="event-create-title">建立活動</h2>
-              <label class="event-status-switch-option" title="切換為下架">
+              <label class="event-status-switch-option" title="切換為開放">
                 <span class="event-status-switch-copy">
                   <span class="event-status-switch-label" id="event-status-label">活動狀態</span>
-                  <strong id="event-status-text">開放</strong>
+                  <strong id="event-status-text">下架</strong>
                 </span>
                 <input
                   class="event-status-switch-input"
@@ -85,7 +68,6 @@
                   type="checkbox"
                   value="open"
                   aria-labelledby="event-status-label event-status-text"
-                  checked
                 >
                 <span class="event-status-switch-track" aria-hidden="true">
                   <span class="event-status-switch-thumb"></span>
@@ -108,7 +90,6 @@
                     data-bwignore="true"
                     data-protonpass-ignore="true"
                     data-form-type="other"
-                    value="iPlayground 2026"
                     aria-labelledby="event-name-label"
                   >
                 </div>
@@ -116,19 +97,46 @@
 
               <fieldset class="document-type-fieldset">
                 <legend>可申請文件類型</legend>
-                <label class="form-checkbox-option document-type-option">
-                  <input
-                    name="documentTypes"
-                    type="checkbox"
-                    value="completionCert"
-                    data-document-type="completionCert"
-                    checked
-                  >
-                  <span>
-                    <strong>完訓證明</strong>
-                    <small>完成指定活動後開放申請</small>
-                  </span>
-                </label>
+                <div
+                  class="form-checkbox-option document-type-option document-type-option-with-setting"
+                  data-completion-document-type-option
+                >
+                  <label class="document-type-checkbox-control">
+                    <input
+                      name="documentTypes"
+                      type="checkbox"
+                      value="completionCert"
+                      data-document-type="completionCert"
+                      checked
+                    >
+                    <span>
+                      <strong>完訓證明</strong>
+                      <small>完成指定活動後開放申請</small>
+                    </span>
+                  </label>
+                  <div class="document-type-setting" id="event-completion-download-setting">
+                    <span
+                      class="field-label document-type-setting-toggle"
+                      id="event-completion-download-starts-at-label"
+                      role="button"
+                      tabindex="0"
+                      data-completion-download-toggle
+                    >
+                      完訓證明開放下載時間
+                    </span>
+                    <input
+                      class="form-datetime-input document-type-datetime-input"
+                      id="event-completion-download-starts-at"
+                      name="completionCertDownloadStartsAt"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      aria-labelledby="event-completion-download-starts-at-label"
+                      placeholder="---- / -- / -- --:--"
+                      pattern="[0-9]{4} / [0-9]{2} / [0-9]{2} ([01][0-9]|2[0-3]):[0-5][0-9]"
+                    >
+                  </div>
+                </div>
                 <label class="form-checkbox-option document-type-option">
                   <input
                     name="documentTypes"
@@ -145,7 +153,7 @@
 
               <div class="event-form-actions">
                 <button class="secondary-button event-cancel-button" id="event-create-cancel" type="button">取消</button>
-                <button class="submit-button" id="event-form-submit" type="button">建立活動</button>
+                <button class="submit-button" id="event-form-submit" type="button" disabled>建立活動</button>
               </div>
             </form>
           </section>
@@ -153,6 +161,8 @@
       </section>
     </main>
 
+    <script src="/assets/portal-datetime-picker.js"></script>
+    <script src="/assets/page-alert.js"></script>
     <script src="/assets/portal-dashboard-events.js"></script>
   </body>
 </html>

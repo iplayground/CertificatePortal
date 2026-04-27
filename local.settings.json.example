@@ -15,6 +15,7 @@
     "PORTAL_GOOGLE_CLIENT_SECRET": "",
     "PORTAL_GOOGLE_REDIRECT_URI": "http://localhost:7075/portal/auth/google/callback",
     "PORTAL_GOOGLE_ALLOWED_GROUP_KEYS": "",
+    "PORTAL_CSRF_SECRET": "",
     "PORTAL_AUTH_BYPASS_ENABLED": "false",
     "PORTAL_AUTH_BYPASS_DISPLAY_NAME": "本機管理者",
     "PORTAL_AUTH_BYPASS_EMAIL": "local-admin@iplayground.io"

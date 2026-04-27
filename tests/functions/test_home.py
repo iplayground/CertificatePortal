@@ -30,7 +30,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert response.mimetype == "text/html"
     assert response.headers["Content-Language"] == "zh-TW"
     assert response.headers["Vary"] == "Cookie, Accept-Language"
-    assert "iPlayground 2026" in body
+    assert "iPlayground 2026" not in body
     assert "iPlayground 2025" not in body
     assert "iPlayground 文件申請入口" in body
     assert "文件申請 - iPlayground" in body
@@ -61,6 +61,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "繁體中文" in body
     assert "English" in body
     assert "文件申請" in body
+    assert "尚無可申請活動" in body
     assert "文件類型" in body
     assert "完訓證明" in body
     assert "營業稅繳稅證明" in body
@@ -75,6 +76,9 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'src="/assets/logo_b_alpha.png"' in body
     assert "iPlayground Certify" not in body
     assert 'class="custom-select-trigger"' in body
+    assert 'id="event-name-trigger"' not in body
+    assert 'id="event-name-options"' not in body
+    assert 'class="field-static-value" id="event-name-value"' in body
     assert 'data-value="iPlayground 2025"' not in body
     assert 'name="viewport"' in body
     assert 'name="color-scheme"' in body
@@ -118,6 +122,7 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert "This page is currently a UI preview before the full flow is connected." in body
     assert "Registrant name" in body
     assert "Document type" in body
+    assert "No available events" in body
     assert "Completion Certificate" in body
     assert "407 Tax Receipt" in body
     assert '<span id="document-type-value" class="custom-select-value">Completion Certificate</span>' in body
@@ -258,7 +263,8 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "applyHomePageLocale" in body
     assert "closeEventNameSelect" in body
     assert "closeDocumentTypeSelect" in body
-    assert "eventNameTrigger.blur()" in body
+    assert "eventNameTrigger?.blur()" in body
+    assert "canOpenEventNameSelect" in body
     assert "documentTypeTrigger.blur()" in body
     assert 'JSON.parse(homePageI18nScript.textContent ?? "{}")' in body
     assert "applyEventNameValue" in body

@@ -101,12 +101,12 @@ function resolveDocumentTypeLabel(documentTypeValueText) {
 
 function applyEventNameValue(nextValue) {
   const normalizedValue = nextValue?.trim();
-  if (!normalizedValue) {
-    return;
-  }
+  const currentBundle = getLocaleBundle(currentLocale);
+  const currentHomePageCopy = currentBundle?.home_page ?? {};
+  const emptyEventNameText = currentHomePageCopy.event_name_empty_option ?? "";
 
   eventNameInput.value = normalizedValue;
-  eventNameValue.textContent = normalizedValue;
+  eventNameValue.textContent = normalizedValue || emptyEventNameText;
 
   eventNameOptions.forEach((item) => {
     const optionValue = item.dataset.value ?? item.textContent?.trim() ?? "";
@@ -234,6 +234,7 @@ function applyHomePageLocale(nextLocale) {
   updateTextContent(formSubtitle, homePageCopy.form_subtitle);
   updateTextContent(eventNameLabel, homePageCopy.event_name_label);
   updateTextContent(eventNameHint, homePageCopy.event_name_hint);
+  applyEventNameValue(eventNameInput.value);
   updateTextContent(documentTypeLabel, homePageCopy.document_type_label);
   updateTextContent(documentTypeHint, homePageCopy.document_type_hint);
   updateDocumentTypeOptionLabels(homePageCopy);
@@ -281,18 +282,34 @@ function applyLocaleSelection(nextLocale) {
 }
 
 function closeEventNameSelect({ blurTrigger = false } = {}) {
-  eventNameSelect.classList.remove("is-open");
-  eventNameTrigger.setAttribute("aria-expanded", "false");
-  document.getElementById("event-name-options").hidden = true;
+  eventNameSelect?.classList.remove("is-open");
+  eventNameTrigger?.setAttribute("aria-expanded", "false");
+  const eventNameMenu = document.getElementById("event-name-options");
+  if (eventNameMenu) {
+    eventNameMenu.hidden = true;
+  }
+
   if (blurTrigger) {
-    eventNameTrigger.blur();
+    eventNameTrigger?.blur();
   }
 }
 
+function canOpenEventNameSelect() {
+  return eventNameOptions.length > 1;
+}
+
 function openEventNameSelect() {
-  eventNameSelect.classList.add("is-open");
-  eventNameTrigger.setAttribute("aria-expanded", "true");
-  document.getElementById("event-name-options").hidden = false;
+  if (!canOpenEventNameSelect()) {
+    closeEventNameSelect();
+    return;
+  }
+
+  eventNameSelect?.classList.add("is-open");
+  eventNameTrigger?.setAttribute("aria-expanded", "true");
+  const eventNameMenu = document.getElementById("event-name-options");
+  if (eventNameMenu) {
+    eventNameMenu.hidden = false;
+  }
 }
 
 function closeDocumentTypeSelect({ blurTrigger = false } = {}) {
@@ -334,8 +351,12 @@ function openLocaleMenu() {
   }
 }
 
-eventNameTrigger.addEventListener("click", () => {
-  if (eventNameSelect.classList.contains("is-open")) {
+eventNameTrigger?.addEventListener("click", () => {
+  if (!canOpenEventNameSelect()) {
+    return;
+  }
+
+  if (eventNameSelect?.classList.contains("is-open")) {
     closeEventNameSelect({ blurTrigger: true });
     return;
   }
@@ -343,9 +364,13 @@ eventNameTrigger.addEventListener("click", () => {
   openEventNameSelect();
 });
 
-eventNameTrigger.addEventListener("keydown", (event) => {
+eventNameTrigger?.addEventListener("keydown", (event) => {
   if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
     event.preventDefault();
+    if (!canOpenEventNameSelect()) {
+      return;
+    }
+
     openEventNameSelect();
     eventNameOptions[0]?.focus();
   }
@@ -439,7 +464,7 @@ documentTypeOptions.forEach((option, index) => {
 });
 
 document.addEventListener("click", (event) => {
-  if (!eventNameSelect.contains(event.target)) {
+  if (eventNameSelect instanceof HTMLElement && !eventNameSelect.contains(event.target)) {
     closeEventNameSelect();
   }
 

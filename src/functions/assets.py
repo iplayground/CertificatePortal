@@ -18,6 +18,11 @@ ASSET_DEFINITIONS: dict[str, tuple[Path, str, bool]] = {
     "page-alert.js": (STATIC_DIR / "page-alert.js", "application/javascript", True),
     "google-g-icon.svg": (STATIC_DIR / "google-g-icon.svg", "image/svg+xml", True),
     "portal.css": (STATIC_DIR / "portal.css", "text/css", True),
+    "portal-datetime-picker.js": (
+        STATIC_DIR / "portal-datetime-picker.js",
+        "application/javascript",
+        True,
+    ),
     "portal-dashboard-completion-certs.js": (
         STATIC_DIR / "portal-dashboard-completion-certs.js",
         "application/javascript",

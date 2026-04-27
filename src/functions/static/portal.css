@@ -1021,7 +1021,8 @@ form {
   position: relative;
 }
 
-.custom-select-trigger {
+.custom-select-trigger,
+.field-static-value {
   position: relative;
   width: 100%;
   min-height: 56px;
@@ -1040,6 +1041,14 @@ form {
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.field-static-value {
+  justify-content: flex-start;
+  padding-right: 16px;
+  background: var(--theme-input-bg);
+  color: var(--theme-content-muted);
+  cursor: default;
 }
 
 .custom-select-value {
@@ -1362,6 +1371,12 @@ form {
   cursor: pointer;
 }
 
+.event-list-row.is-disabled {
+  cursor: wait;
+  opacity: 0.48;
+  pointer-events: none;
+}
+
 .event-list-row td {
   transition: background-color 160ms ease;
 }
@@ -1397,6 +1412,27 @@ form {
   color: var(--theme-accent-deep);
   font-size: 0.82rem;
   font-weight: 800;
+}
+
+.document-type-pill.is-completion-cert {
+  background: rgba(245, 111, 32, 0.12);
+  color: #e95f17;
+}
+
+.document-type-pill.is-tax-receipt {
+  background: rgba(49, 80, 203, 0.1);
+  color: #3150cb;
+}
+
+.document-type-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.document-type-pill.is-empty {
+  background: rgba(100, 116, 139, 0.1);
+  color: var(--theme-content-muted);
 }
 
 .event-dialog-backdrop {
@@ -1450,10 +1486,9 @@ form {
   align-items: center;
   gap: 10px;
   min-height: 40px;
-  padding: 7px 8px 7px 12px;
-  border: 1px solid rgba(81, 121, 254, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--theme-content-text);
   cursor: pointer;
   user-select: none;
@@ -1561,6 +1596,200 @@ form {
   font-weight: 800;
 }
 
+.document-type-setting {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.document-type-setting[hidden] {
+  display: none;
+}
+
+.document-type-setting-toggle {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.document-type-setting-toggle:focus-visible {
+  outline: 3px solid rgba(242, 134, 94, 0.28);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.form-datetime-input {
+  width: 100%;
+  min-height: 56px;
+  padding: 16px 18px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 18px;
+  appearance: none;
+  background: var(--theme-input-bg);
+  color: var(--theme-content-text);
+  color-scheme: light;
+  font: inherit;
+  font-size: 16px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.form-datetime-input::placeholder {
+  color: var(--theme-input-placeholder);
+}
+
+.form-datetime-input:focus {
+  outline: none;
+  border-color: var(--theme-focus-border);
+  box-shadow:
+    0 0 0 5px var(--theme-focus-ring),
+    0 12px 24px var(--theme-focus-shadow);
+  transform: translateY(-1px);
+}
+
+.form-datetime-input[hidden] {
+  display: none;
+}
+
+.form-datetime-picker {
+  display: grid;
+  grid-template-columns: 140px 70px;
+  gap: 6px;
+  width: max-content;
+  min-width: 0;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 18px;
+  padding: 7px;
+  background: var(--theme-input-bg);
+}
+
+.form-datetime-picker[hidden] {
+  display: none;
+}
+
+.form-datetime-picker-inline {
+  position: relative;
+}
+
+.form-datetime-picker-date,
+.form-datetime-picker-time,
+.form-datetime-picker-time-input {
+  min-height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theme-content-text);
+  color-scheme: light;
+  font: inherit;
+  font-size: 15px;
+  min-width: 0;
+  width: 100%;
+}
+
+.form-datetime-picker-time {
+  display: grid;
+  grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px);
+  gap: 0.2ch;
+  align-items: center;
+  padding: 8px 6px;
+}
+
+.form-datetime-picker-date {
+  display: grid;
+  grid-template-columns: calc(4ch + 2px) max-content calc(2ch + 2px) max-content calc(2ch + 2px) 22px;
+  gap: 2px;
+  align-items: center;
+  padding: 8px 4px 8px 10px;
+}
+
+.form-datetime-picker-date-part {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--theme-content-text);
+  color-scheme: light;
+  font: inherit;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.form-datetime-picker-date-part.is-year {
+  text-align: center;
+}
+
+.form-datetime-picker-date-part:focus {
+  outline: none;
+}
+
+.form-datetime-picker-date-native {
+  width: 22px;
+  min-width: 0;
+  height: 22px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: transparent;
+  color-scheme: light;
+  font: inherit;
+}
+
+.form-datetime-picker-date-native::-webkit-datetime-edit {
+  display: none;
+}
+
+.form-datetime-picker-date-native::-webkit-calendar-picker-indicator {
+  margin: 0;
+  padding: 0;
+  cursor: default;
+  opacity: 1;
+}
+
+.form-datetime-picker-time-input {
+  min-height: 0;
+  padding: 0;
+  box-sizing: border-box;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.form-datetime-picker-time-input:focus {
+  outline: none;
+}
+
+.document-type-datetime-input[hidden] + .form-datetime-picker {
+  padding: 0 3px;
+  border-radius: 10px;
+  grid-template-columns: 130px 65px;
+  gap: 4px;
+  width: max-content;
+}
+
+.document-type-datetime-input[hidden] + .form-datetime-picker .form-datetime-picker-date,
+.document-type-datetime-input[hidden] + .form-datetime-picker .form-datetime-picker-time,
+.document-type-datetime-input[hidden] + .form-datetime-picker .form-datetime-picker-time-input {
+  min-height: 26px;
+  font-size: 14px;
+}
+
+.document-type-datetime-input[hidden] + .form-datetime-picker .form-datetime-picker-time {
+  grid-template-columns: minmax(24px, 26px) max-content minmax(24px, 26px);
+  padding: 3px 4px;
+}
+
+.document-type-datetime-input[hidden] + .form-datetime-picker .form-datetime-picker-date {
+  grid-template-columns: calc(4.3ch + 2px) max-content calc(2.3ch + 2px) max-content calc(2.3ch + 2px) 22px;
+  padding: 3px 2px 3px 8px;
+}
+
+.document-type-datetime-input {
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
 .form-checkbox-option {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
@@ -1572,7 +1801,20 @@ form {
   background: rgba(255, 255, 255, 0.64);
 }
 
-.form-checkbox-option input {
+.document-type-option-with-setting {
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+}
+
+.document-type-checkbox-control {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+}
+
+.form-checkbox-option input[type="checkbox"] {
   width: 18px;
   height: 18px;
   margin: 3px 0 0;
@@ -1580,13 +1822,13 @@ form {
   cursor: pointer;
 }
 
-.form-checkbox-option input:focus-visible {
+.form-checkbox-option input[type="checkbox"]:focus-visible {
   outline: 3px solid rgba(242, 134, 94, 0.28);
   outline-offset: 2px;
 }
 
 @media (prefers-color-scheme: dark) {
-  .form-checkbox-option input {
+  .form-checkbox-option input[type="checkbox"] {
     appearance: auto;
     color-scheme: light;
     accent-color: #ea6e1e;

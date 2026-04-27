@@ -69,32 +69,8 @@
             <form id="document-request-form">
               <div class="field">
                 <span id="event-name-label" class="field-label">{{event_name_label}}</span>
-                <div class="custom-select" id="event-name-select">
-                  <input id="event-name" name="eventName" type="hidden" value="iPlayground 2026">
-                  <button
-                    class="custom-select-trigger"
-                    id="event-name-trigger"
-                    type="button"
-                    aria-expanded="false"
-                    aria-haspopup="listbox"
-                    aria-controls="event-name-options"
-                    aria-labelledby="event-name-label event-name-value"
-                  >
-                    <span id="event-name-value" class="custom-select-value">iPlayground 2026</span>
-                    <span class="select-caret" aria-hidden="true"></span>
-                  </button>
-                  <div class="custom-select-menu" id="event-name-options" role="listbox" hidden>
-                    <button
-                      class="custom-select-option is-selected"
-                      type="button"
-                      role="option"
-                      aria-selected="true"
-                      data-value="iPlayground 2026"
-                    >
-                      iPlayground 2026
-                    </button>
-                  </div>
-                </div>
+                <input id="event-name" name="eventName" type="hidden" value="">
+                <div class="field-static-value" id="event-name-value">{{event_name_empty_option}}</div>
                 <div id="event-name-hint" class="hint">{{event_name_hint}}</div>
               </div>
 

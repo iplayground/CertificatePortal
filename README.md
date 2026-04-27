@@ -133,7 +133,8 @@ PYTHONPATH=. pytest
 - `COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME` 與 `COSMOS_EVENTS_CONTAINER` 是 Cosmos DB 連線設定；目前 IaC 建立 serverless account、database，以及活動管理用的 `events` container。
 - 管理平台入口現已統一使用 `/portal`，避免與 Azure Functions runtime 內建保留的 `/admin` 路徑衝突。
 - `/portal` 正式環境目前應明確設定 `PORTAL_GOOGLE_CLIENT_ID`、`PORTAL_GOOGLE_CLIENT_SECRET`、`PORTAL_GOOGLE_REDIRECT_URI` 與 `PORTAL_GOOGLE_ALLOWED_GROUP_KEYS`；建議以 Azure CLI 或 Key Vault reference 寫入 app settings，詳細流程請參考 [docs/portal-authentication.md](docs/portal-authentication.md)。
-- 目前尚未保留其他管理子路由、下載流程與實際業務邏輯。
+- 會異動資料的管理 API 會檢查同源請求與 CSRF token；可選擇設定 `PORTAL_CSRF_SECRET` 作為 CSRF 簽章密鑰，未設定時會優先沿用 `PORTAL_GOOGLE_CLIENT_SECRET`。
+- 目前活動管理已串接 Cosmos DB 的新增、查詢與修改；尚未保留其他管理子路由、下載流程與其餘文件業務邏輯。
 
 ## Azure 部署
 

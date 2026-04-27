@@ -13,6 +13,9 @@
 | `GET` | `/portal/dashboard/completion-certs` | dashboard iframe 的完訓證明頁 | `text/html` |
 | `GET` | `/portal/dashboard/tax-receipts` | dashboard iframe 的營業稅繳稅證明頁 | `text/html` |
 | `GET` | `/portal/dashboard/events` | dashboard iframe 的活動管理頁 | `text/html` |
+| `GET` | `/api/v1/admin/events` | 查詢活動管理資料 | `application/json` |
+| `POST` | `/api/v1/admin/events` | 建立活動管理資料 | `application/json` |
+| `PUT` | `/api/v1/admin/events/{eventId}` | 更新單筆活動管理資料 | `application/json` |
 | `GET` | `/verify/{certId}` | 公開驗證頁面 | `text/plain` |
 
 ## 內部導向端點
@@ -29,11 +32,11 @@
 
 ### 呈現方式
 
-目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie，但尚未串接實際業務資料。
+目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie；活動管理已串接 Cosmos DB，其餘文件資料流程仍逐步實作中。
 
-- 首頁與管理平台目前為靜態 HTML GUI，部分管理頁面已有前端暫存互動
+- 首頁目前為靜態 HTML GUI；管理平台的活動管理已串接 Cosmos DB，部分其他管理頁面仍為前端暫存互動
 - 公開驗證頁面目前為靜態純文字輸出
-- 實際業務資料、資料存取、後端上傳處理與持久化流程尚未串接
+- 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓名單與繳稅證明的後端上傳處理與持久化流程尚未串接
 - 完訓證明頁目前已有前端 CSV 解析與頁面暫存清單，用於管理介面流程示意
 - 營業稅繳稅證明頁目前已有前端單筆 PDF、PNG 或 JPG/JPEG 新增與頁面暫存清單，用於管理介面流程示意；目前不支援 WebP
 
@@ -44,6 +47,7 @@
 - 不以 CSS 隱藏密碼管理器注入的 DOM 作為基線做法；若日後新增同類型非憑證文字輸入欄位，應沿用同一組 HTML 屬性
 - 管理端新增原生 checkbox 時應使用 `form-checkbox-option` 共用樣式，讓夜間模式沿用固定的 checkbox color scheme 與 accent color；特定情境可再疊加語意 class，例如 `document-type-option` 或 `document-upload-continue-option`
 - 若 checkbox 是內嵌於動作列的輔助選項，例如繳稅證明上傳視窗的連續上傳選項，應保留 `form-checkbox-option` 的 checkbox 色彩規則，但可移除外框、背景與卡片式留白，且文字不可被拖曳選取
+- 管理端日期時間輸入應使用 `form-datetime-input` 共用樣式與 24 小時制文字格式 `yyyy / MM / dd HH:mm`，避免原生日期輸入在夜間模式落回黑底；未填寫時 placeholder 使用 `---- / -- / -- --:--`
 
 ### 語系規則
 
@@ -66,6 +70,7 @@
 - 管理平台授權採雙層邊界：OAuth client 的 `Internal` 設定先排除非組織帳號，再由 Google Group 直接成員檢查與伺服器端 session cookie 控制 portal 存取
 - 登入後的文件管理平台目前位於 `/portal/dashboard`
 - 文件管理平台以 iframe 載入歡迎頁、`活動管理`、`完訓證明` 與 `營業稅繳稅證明` 四個獨立頁面
+- 進入 `/portal/dashboard` 後，伺服器會在背景預先初始化活動管理使用的 Cosmos DB container client，降低第一次進入活動管理時才初始化 SDK 與 credential chain 的延遲
 - 左側功能清單固定依序顯示 `活動管理`、`完訓證明` 與 `營業稅繳稅證明`
 - 左側功能清單說明文字：`活動與文件設定`、`清單與資料上傳`、`PDF/PNG/JPG 上傳與管理`
 
@@ -100,7 +105,7 @@
 - 顯示 iPlayground logo 與品牌色
 - logo 置中顯示
 - 提供語系切換器，目前支援 `zh-TW` 與 `en-US`
-- 提供活動名自訂下拉元件，目前固定為 `iPlayground 2026`
+- 活動名在沒有活動或只有一個活動時以靜態欄位顯示；只有多個活動可選時才使用下拉選單
 - 提供文件類型自訂下拉元件，目前固定為 `完訓證明`、`營業稅繳稅證明`
 - 首頁文件類型顯示文字納入 i18n，表單值使用穩定文件類型代碼：`completionCert`、`taxReceipt`
 - 提供報名人姓名與 `email` 輸入欄位
@@ -149,6 +154,7 @@ status: 尚未串接實際驗證資料
 - 父頁 title 會同步成目前 iframe 顯示頁面的 title
 - `/portal/dashboard` 與其 iframe 子頁都會在伺服器端重新檢查 session cookie 與授權狀態
 - 點擊 `登出` 會導向 `/portal/auth/logout`，再回到 `/portal`
+- 管理端會對資料庫造成異動的 API 需要通過伺服器端 session 授權、同源 `Origin` 或 `Referer` 檢查，以及頁面注入的 CSRF token 檢查；第三方網頁即使知道 API 路徑，也不能直接操作
 
 ### `/portal/dashboard/welcome`
 
@@ -174,7 +180,7 @@ status: 尚未串接實際驗證資料
 - 完訓證明清單不提供選取列功能，批次設定一律套用至目前活動全部資料
 - 每列提供可雙向切換的簽到狀態開關
 - 每列在操作欄提供 `下載` 按鈕
-- 清單上方提供採用專案主題樣式的活動篩選下拉選單，選擇時直接套用篩選
+- 清單上方提供活動篩選欄位；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單並直接套用篩選
 - 標題列右上方提供 `上傳完訓證明資料` 按鈕
 - 點擊 `上傳完訓證明資料` 後開啟中央上傳視窗
 - 上傳視窗可選擇匯入資料所屬活動，預設帶入目前清單篩選活動
@@ -191,7 +197,7 @@ status: 尚未串接實際驗證資料
 - 清單欄位包含統編、產製時間、金額、收據聯檔案與操作
 - 營業稅繳稅證明沒有停用狀態，只要完成上傳即一律可下載
 - 每列在操作欄提供 `下載`、`修改` 與 `刪除` 按鈕
-- 清單上方提供採用專案主題樣式的活動篩選下拉選單，選擇時直接套用篩選
+- 清單上方提供活動篩選欄位；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單並直接套用篩選
 - 標題列右上方提供 `新增繳稅證明` 按鈕
 - 點擊 `新增繳稅證明` 後開啟中央上傳視窗
 - 上傳視窗可選擇資料所屬活動，預設帶入目前清單篩選活動
@@ -205,7 +211,7 @@ status: 尚未串接實際驗證資料
 ### `/portal/dashboard/events`
 
 - 作為 dashboard 右側 iframe 的活動管理頁
-- 預設顯示目前活動清單、活動狀態與各活動可申請文件類型；目前資料為靜態示意資料
+- 預設顯示目前活動清單、活動狀態與各活動可申請文件類型；資料由 `GET /api/v1/admin/events` 從 Cosmos DB 非同步載入
 - 活動狀態固定為 `下架`、`開放`
 - 活動狀態在建立與編輯活動子畫面的右上角使用 switch，開啟代表 `開放`，關閉代表 `下架`
 - 活動管理畫面不顯示也不編輯活動代碼
@@ -223,8 +229,87 @@ status: 尚未串接實際驗證資料
 - 中央活動子畫面提供活動名稱輸入欄、右上角活動狀態 switch，以及可申請文件類型的開通勾選版型
 - 可申請文件類型目前固定為 `完訓證明`、`營業稅繳稅證明`
 - `完訓證明` 的文件類型代碼為 `completionCert`
+- 只有勾選 `完訓證明` 時，才顯示 `完訓證明開放下載時間` 欄位；此欄位僅設定開放下載時間，不設定截止日期
 - `營業稅繳稅證明` 的文件類型代碼為 `taxReceipt`，管理端說明文字為 `開放協會 407 收據聯影本供下載`
-- 現階段尚未串接資料庫、權威活動資料或文件類型設定寫入流程
+- 活動清單載入會呼叫 `GET /api/v1/admin/events`，由後端驗證管理者 session 後查詢 Cosmos DB，並依 `updatedAt` 由新到舊排序
+- 建立活動會呼叫 `POST /api/v1/admin/events`，由後端驗證管理者 session、同源請求與 CSRF token 後寫入 Cosmos DB
+- 建立活動請求必須帶 `Idempotency-Key` header；同一管理者使用相同 key 重試時會對應同一筆活動 id，避免因網路重送建立重複資料
+- 編輯活動會呼叫 `PUT /api/v1/admin/events/{eventId}`，由後端驗證管理者 session、同源請求與 CSRF token 後更新同一筆 Cosmos DB 文件，不會建立第二筆活動
+- 建立與編輯活動送出後，活動清單不整表刷新；建立時先插入 disabled 暫存列，編輯時鎖定該列，待 DB 回應後以共用 alert 顯示成功或失敗並恢復列狀態
+- `完訓證明開放下載時間` 從管理端台灣時間顯示格式送出前會轉成 UTC ISO 8601，例如 `2026 / 04 / 27 20:38` 送出為 `2026-04-27T12:38:00Z`
+
+### `GET /api/v1/admin/events`
+
+- 查詢 Cosmos DB `events` container 中的活動清單
+- 只接受已登入且通過授權的管理者 session
+- 回傳資料依 `updatedAt` 由新到舊排序
+- Response JSON 範例：
+
+```json
+{
+  "events": [
+    {
+      "id": "evt_550e8400-e29b-41d4-a716-446655440000",
+      "name": "iPlayground 2026",
+      "status": "unlisted",
+      "documentTypes": [
+        "completionCert"
+      ],
+      "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z"
+    }
+  ]
+}
+```
+
+### `POST /api/v1/admin/events`
+
+- 建立活動資料並寫入 Cosmos DB `events` container
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求；後端會檢查 `Origin`，若缺少則檢查 `Referer`
+- 必須帶 `X-Portal-CSRF-Token` header，token 由管理平台頁面伺服器端注入
+- 必須帶 `Idempotency-Key` header，避免重試時重複建立活動
+- Request JSON 範例：
+
+```json
+{
+  "name": "iPlayground 2026",
+  "status": "unlisted",
+  "documentTypes": [
+    "completionCert"
+  ],
+  "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z"
+}
+```
+
+- Response JSON 範例：
+
+```json
+{
+  "event": {
+    "id": "evt_550e8400-e29b-41d4-a716-446655440000",
+    "name": "iPlayground 2026",
+    "status": "unlisted",
+    "documentTypes": [
+      "completionCert"
+    ],
+    "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
+    "createdAt": "2026-04-27T12:00:00Z",
+    "createdBy": "admin@example.com",
+    "updatedAt": "2026-04-27T12:00:00Z",
+    "updatedBy": "admin@example.com"
+  }
+}
+```
+
+### `PUT /api/v1/admin/events/{eventId}`
+
+- 更新既有活動資料並寫回 Cosmos DB `events` container
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求；後端會檢查 `Origin`，若缺少則檢查 `Referer`
+- 必須帶 `X-Portal-CSRF-Token` header，token 由管理平台頁面伺服器端注入
+- 不使用 `Idempotency-Key`；活動識別碼由路徑中的 `{eventId}` 指定
+- Request JSON 格式與建立活動相同
+- Response JSON 格式與建立活動相同，`createdAt` 與 `createdBy` 保持原值，`updatedAt` 與 `updatedBy` 會更新
 
 ## 靜態資產
 

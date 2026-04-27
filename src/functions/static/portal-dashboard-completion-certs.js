@@ -37,7 +37,8 @@ const completionUploadImportMessageType = "ipg:completion-upload:import";
 const defaultCompletionUploadFileName = "尚未選擇 CSV 檔案";
 const invalidCompletionUploadFileName = "請選擇 CSV 檔案";
 const failedCompletionUploadFileName = "CSV 檔案讀取失敗";
-const defaultCompletionEventName = "iPlayground 2026";
+const defaultCompletionEventName = "";
+const emptyCompletionEventName = "尚無活動資料";
 const completionCsvFieldAliases = {
   attendeeName: ["姓名", "name", "attendeeName", "attendee_name", "中文姓名"],
   email: ["email", "e-mail", "電子郵件", "信箱"],
@@ -71,7 +72,7 @@ function requestParentCompletionUploadDialog() {
 
 function getCompletionFilterEventName() {
   if (completionEventFilter instanceof HTMLInputElement) {
-    return completionEventFilter.value || defaultCompletionEventName;
+    return completionEventFilter.value;
   }
 
   return defaultCompletionEventName;
@@ -93,7 +94,7 @@ function applyCompletionUploadEventValue(nextValue) {
   }
 
   if (completionUploadEventValue) {
-    completionUploadEventValue.textContent = normalizedValue;
+    completionUploadEventValue.textContent = normalizedValue || emptyCompletionEventName;
   }
 
   completionUploadEventOptions.forEach((item) => {
@@ -500,6 +501,11 @@ function closeCompletionEventFilterSelect({ blurTrigger = false } = {}) {
 }
 
 function openCompletionEventFilterSelect() {
+  if (completionEventFilterOptions.length <= 1) {
+    closeCompletionEventFilterSelect();
+    return;
+  }
+
   completionEventFilterSelect?.classList.add("is-open");
   completionEventFilterTrigger?.setAttribute("aria-expanded", "true");
 
@@ -522,6 +528,11 @@ function closeCompletionUploadEventSelect({ blurTrigger = false } = {}) {
 }
 
 function openCompletionUploadEventSelect() {
+  if (completionUploadEventOptions.length <= 1) {
+    closeCompletionUploadEventSelect();
+    return;
+  }
+
   completionUploadEventSelect?.classList.add("is-open");
   completionUploadEventTrigger?.setAttribute("aria-expanded", "true");
 
@@ -542,6 +553,10 @@ completionUploadSubmitButton?.addEventListener("click", () => {
 completionUploadFileInput?.addEventListener("change", updateCompletionUploadFileName);
 
 completionUploadEventTrigger?.addEventListener("click", () => {
+  if (completionUploadEventOptions.length <= 1) {
+    return;
+  }
+
   if (completionUploadEventSelect?.classList.contains("is-open")) {
     closeCompletionUploadEventSelect({ blurTrigger: true });
     return;
@@ -553,6 +568,10 @@ completionUploadEventTrigger?.addEventListener("click", () => {
 completionUploadEventTrigger?.addEventListener("keydown", (event) => {
   if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
     event.preventDefault();
+    if (completionUploadEventOptions.length <= 1) {
+      return;
+    }
+
     openCompletionUploadEventSelect();
     completionUploadEventOptions[0]?.focus();
   }
@@ -576,6 +595,10 @@ completionFilterForm?.addEventListener("submit", (event) => {
 });
 
 completionEventFilterTrigger?.addEventListener("click", () => {
+  if (completionEventFilterOptions.length <= 1) {
+    return;
+  }
+
   if (completionEventFilterSelect?.classList.contains("is-open")) {
     closeCompletionEventFilterSelect({ blurTrigger: true });
     return;
@@ -587,6 +610,10 @@ completionEventFilterTrigger?.addEventListener("click", () => {
 completionEventFilterTrigger?.addEventListener("keydown", (event) => {
   if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
     event.preventDefault();
+    if (completionEventFilterOptions.length <= 1) {
+      return;
+    }
+
     openCompletionEventFilterSelect();
     completionEventFilterOptions[0]?.focus();
   }

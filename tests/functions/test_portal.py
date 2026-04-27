@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from http.cookies import SimpleCookie
+from typing import Any
 
 import azure.functions as func
 import pytest
@@ -8,6 +9,9 @@ import pytest
 from src.functions.assets import static_asset
 from src.functions.portal import (
     PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR,
+    build_portal_csrf_token,
+    portal_admin_events_create_api,
+    portal_admin_events_update_api,
     portal_dashboard_completion_certs_page,
     portal_dashboard_events_page,
     portal_dashboard_page,
@@ -19,23 +23,27 @@ from src.functions.portal import (
     portal_login_page,
     resolve_portal_login_alert_dismiss_delay_ms,
 )
+from src.shared.portal_auth import resolve_portal_access
+from src.shared.event_store import EventStoreOperationError
 from src.shared.portal_google_group_auth import PortalGoogleGroupAuthorizationError
 
 
 def build_request(
     url: str,
     *,
+    method: str = "GET",
+    body: bytes = b"",
     headers: dict[str, str] | None = None,
     params: dict[str, str] | None = None,
     route_params: dict[str, str] | None = None,
 ) -> func.HttpRequest:
     return func.HttpRequest(
-        method="GET",
+        method=method,
         url=url,
         headers=headers or {},
         params=params or {},
         route_params=route_params or {},
-        body=b"",
+        body=body,
     )
 
 
@@ -80,6 +88,51 @@ def parse_set_cookie_value(set_cookie_header: str, cookie_name: str) -> str:
 
 def build_cookie_header(**cookie_values: str) -> str:
     return "; ".join(f"{cookie_name}={cookie_value}" for cookie_name, cookie_value in cookie_values.items())
+
+
+class FakeEventsContainer:
+    def __init__(self) -> None:
+        self.items: dict[str, dict[str, Any]] = {}
+
+    def create_item(self, body: dict[str, Any]) -> dict[str, Any]:
+        self.items[body["id"]] = body
+        return body
+
+    def read_item(self, item: str, partition_key: str) -> dict[str, Any]:
+        assert item == partition_key
+        return self.items[item]
+
+    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]:
+        assert item == body["id"]
+        self.items[item] = body
+        return body
+
+
+def build_authorized_portal_api_request(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    body: bytes = b"",
+    method: str = "POST",
+    origin: str = "http://localhost:7075",
+    url: str = "http://localhost:7075/api/v1/admin/events",
+    route_params: dict[str, str] | None = None,
+) -> func.HttpRequest:
+    configure_portal_auth_bypass_env(monkeypatch)
+    token_request = build_request("http://localhost:7075/portal/dashboard")
+    token = build_portal_csrf_token(token_request, resolve_portal_access(token_request))
+    return build_request(
+        url,
+        method=method,
+        body=body,
+        headers={
+            "Content-Type": "application/json",
+            "Host": "localhost:7075",
+            "Idempotency-Key": "event-create-test-key",
+            "Origin": origin,
+            "X-Portal-CSRF-Token": token,
+        },
+        route_params=route_params,
+    )
 
 
 def test_portal_login_page_shows_google_setup_message_when_not_authenticated(
@@ -137,6 +190,217 @@ def test_portal_login_page_uses_portal_google_auth_entry_when_configured(
     assert "請使用 Google Workspace 管理者帳號登入以繼續操作。" not in body
     assert "目前僅開放 iplayground.io 網域帳號登入。" not in body
     assert "Google 群組授權尚未設定" not in body
+
+
+def test_portal_admin_events_create_api_requires_authenticated_portal_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+
+    response = portal_admin_events_create_api(
+        build_request(
+            "http://localhost:7075/api/v1/admin/events",
+            method="POST",
+            body=b"{}",
+            headers={
+                "Host": "localhost:7075",
+                "Origin": "http://localhost:7075",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 401
+    assert response.mimetype == "application/json"
+    assert "unauthorized" in body
+
+
+def test_portal_admin_events_create_api_rejects_cross_origin_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=b"{}",
+        origin="https://attacker.example",
+    )
+
+    response = portal_admin_events_create_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 403
+    assert "invalid_origin" in body
+
+
+def test_portal_admin_events_create_api_rejects_missing_csrf_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure_portal_auth_bypass_env(monkeypatch)
+
+    response = portal_admin_events_create_api(
+        build_request(
+            "http://localhost:7075/api/v1/admin/events",
+            method="POST",
+            body=b"{}",
+            headers={
+                "Host": "localhost:7075",
+                "Idempotency-Key": "event-create-test-key",
+                "Origin": "http://localhost:7075",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 403
+    assert "invalid_csrf_token" in body
+
+
+def test_portal_admin_events_create_api_creates_event_with_utc_iso_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_container = FakeEventsContainer()
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_container)
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=(
+            b'{"name":"iPlayground 2026","status":"unlisted",'
+            b'"documentTypes":["completionCert"],'
+            b'"completionCertDownloadStartsAt":"2026-04-27T12:38:00Z"}'
+        ),
+    )
+
+    response = portal_admin_events_create_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 201
+    assert '"event"' in body
+    assert len(fake_container.items) == 1
+    event = next(iter(fake_container.items.values()))
+    assert event["id"].startswith("evt_")
+    assert event["name"] == "iPlayground 2026"
+    assert event["status"] == "unlisted"
+    assert event["documentTypes"] == ["completionCert"]
+    assert event["completionCertDownloadStartsAt"] == "2026-04-27T12:38:00Z"
+    assert event["createdBy"] == "admin@iplayground.io"
+    assert event["updatedBy"] == "admin@iplayground.io"
+
+
+def test_portal_admin_events_create_api_rejects_local_display_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=(
+            b'{"name":"iPlayground 2026","status":"open",'
+            b'"documentTypes":["completionCert"],'
+            b'"completionCertDownloadStartsAt":"2026 / 04 / 27 20:38"}'
+        ),
+    )
+
+    response = portal_admin_events_create_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 400
+    assert "UTC ISO 8601" in body
+
+
+def test_portal_admin_events_create_api_returns_json_when_event_store_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+
+    def raise_event_store_error(**_: Any) -> tuple[dict[str, Any], bool]:
+        raise EventStoreOperationError("Cosmos DB 活動容器不存在。")
+
+    monkeypatch.setattr("src.functions.portal.create_event_document", raise_event_store_error)
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=(
+            b'{"name":"iPlayground 2026","status":"unlisted",'
+            b'"documentTypes":["completionCert"],'
+            b'"completionCertDownloadStartsAt":"2026-04-27T12:38:00Z"}'
+        ),
+    )
+
+    response = portal_admin_events_create_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 503
+    assert response.mimetype == "application/json"
+    assert "event_store_unavailable" in body
+
+
+def test_portal_admin_events_update_api_updates_existing_event_without_creating_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_container = FakeEventsContainer()
+    fake_container.items["evt_existing"] = {
+        "id": "evt_existing",
+        "name": "Old Event",
+        "status": "unlisted",
+        "documentTypes": ["completionCert"],
+        "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
+        "createdAt": "2026-04-27T12:00:00Z",
+        "createdBy": "creator@example.com",
+        "updatedAt": "2026-04-27T12:00:00Z",
+        "updatedBy": "creator@example.com",
+    }
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_container)
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=(
+            b'{"name":"Updated Event","status":"open",'
+            b'"documentTypes":["taxReceipt"],'
+            b'"completionCertDownloadStartsAt":null}'
+        ),
+        method="PUT",
+        route_params={"event_id": "evt_existing"},
+        url="http://localhost:7075/api/v1/admin/events/evt_existing",
+    )
+
+    response = portal_admin_events_update_api(request)
+    event = fake_container.items["evt_existing"]
+
+    assert response.status_code == 200
+    assert len(fake_container.items) == 1
+    assert event["id"] == "evt_existing"
+    assert event["name"] == "Updated Event"
+    assert event["status"] == "open"
+    assert event["documentTypes"] == ["taxReceipt"]
+    assert event["completionCertDownloadStartsAt"] is None
+    assert event["createdAt"] == "2026-04-27T12:00:00Z"
+    assert event["createdBy"] == "creator@example.com"
+    assert event["updatedBy"] == "admin@iplayground.io"
+
+
+def test_portal_admin_events_list_api_returns_events_without_blocking_page_render(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr(
+        "src.functions.portal.list_event_documents",
+        lambda **_: [
+            {
+                "id": "evt_1",
+                "name": "iPlayground 2026",
+                "status": "open",
+                "documentTypes": ["completionCert", "taxReceipt"],
+                "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
+                "createdAt": "2026-04-27T12:00:00Z",
+            }
+        ],
+    )
+    request = build_authorized_portal_api_request(monkeypatch, method="GET")
+
+    response = portal_admin_events_create_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/json"
+    assert '"events"' in body
+    assert '"name":"iPlayground 2026"' in body
+    assert '"status":"open"' in body
+    assert '"documentTypes":["completionCert","taxReceipt"]' in body
+    assert '"completionCertDownloadStartsAt":"2026-04-27T12:38:00Z"' in body
 
 
 def test_portal_login_page_shows_group_auth_setup_message_when_group_authorization_is_not_configured(
@@ -422,22 +686,48 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'id="portal-tax-upload-dialog"' in body
     assert 'class="event-dialog-backdrop portal-event-dialog-backdrop"' in body
     assert 'id="portal-event-name-input"' in body
-    assert body.count('autocomplete="off"') == 4
+    assert 'id="portal-event-form-submit" type="button" disabled' in body
+    assert 'id="portal-event-status-text">下架</strong>' in body
+    assert 'id="portal-event-status-checkbox"' in body
+    assert 'id="portal-event-status-checkbox"\n              name="eventStatus"' in body
+    assert "完訓證明開放下載時間" in body
+    assert 'id="portal-event-completion-download-setting"' in body
+    assert "data-completion-document-type-option" in body
+    assert 'class="form-checkbox-option document-type-option document-type-option-with-setting"' in body
+    assert 'class="document-type-checkbox-control"' in body
+    assert 'id="portal-event-completion-download-starts-at-label"' in body
+    assert 'class="field-label document-type-setting-toggle"' in body
+    assert "data-completion-download-toggle" in body
+    assert 'role="button"' in body
+    assert 'tabindex="0"' in body
+    assert 'aria-labelledby="portal-event-completion-download-starts-at-label"' in body
+    assert 'for="portal-event-completion-download-starts-at"' not in body
+    assert 'id="portal-event-completion-download-starts-at"' in body
+    assert 'name="completionCertDownloadStartsAt"' in body
+    assert 'class="form-datetime-input document-type-datetime-input"' in body
+    assert 'type="datetime-local"' not in body
+    assert 'type="text"' in body
+    assert 'inputmode="numeric"' in body
+    assert 'placeholder="---- / -- / -- --:--"' in body
+    assert "2[0-3]" in body
+    assert "截止" not in body
+    assert body.count('autocomplete="off"') == 5
     assert body.count('data-1p-ignore="true"') == 4
     assert body.count('data-op-ignore="true"') == 4
     assert body.count('data-lpignore="true"') == 4
     assert body.count('data-bwignore="true"') == 4
     assert body.count('data-protonpass-ignore="true"') == 4
     assert body.count('data-form-type="other"') == 4
+    assert "data-portal-csrf-token" in body
     assert 'id="portal-completion-upload-file"' in body
     assert 'id="portal-completion-upload-file-name"' in body
     assert 'id="portal-completion-upload-submit"' in body
     assert 'id="portal-completion-upload-event"' in body
-    assert 'id="portal-completion-upload-event-select"' in body
-    assert 'id="portal-completion-upload-event-trigger"' in body
-    assert 'id="portal-completion-upload-event-options"' in body
+    assert 'id="portal-completion-upload-event-select"' not in body
+    assert 'id="portal-completion-upload-event-trigger"' not in body
+    assert 'id="portal-completion-upload-event-options"' not in body
     assert 'id="portal-completion-upload-event-value"' in body
-    assert 'aria-labelledby="portal-completion-upload-event-label portal-completion-upload-event-value"' in body
+    assert 'class="field-static-value" id="portal-completion-upload-event-value"' in body
     assert 'class="document-upload-input"' in body
     assert 'class="document-upload-copy"' in body
     assert 'class="document-upload-file-name"' in body
@@ -452,10 +742,11 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'id="portal-tax-upload-file-name"' in body
     assert 'id="portal-tax-upload-submit"' in body
     assert 'id="portal-tax-upload-event"' in body
-    assert 'id="portal-tax-upload-event-select"' in body
-    assert 'id="portal-tax-upload-event-trigger"' in body
-    assert 'id="portal-tax-upload-event-options"' in body
+    assert 'id="portal-tax-upload-event-select"' not in body
+    assert 'id="portal-tax-upload-event-trigger"' not in body
+    assert 'id="portal-tax-upload-event-options"' not in body
     assert 'id="portal-tax-upload-event-value"' in body
+    assert 'class="field-static-value" id="portal-tax-upload-event-value"' in body
     assert 'id="portal-tax-upload-tax-id"' in body
     assert 'id="portal-tax-upload-amount"' in body
     assert 'id="portal-tax-upload-generated-at"' in body
@@ -466,7 +757,7 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'id="portal-tax-upload-continue-label"' not in body
     assert 'id="portal-tax-upload-continue-text"' not in body
     assert body.index('id="portal-tax-upload-submit"') < body.index('id="portal-tax-upload-continue-option"')
-    assert 'aria-labelledby="portal-tax-upload-event-label portal-tax-upload-event-value"' in body
+    assert 'aria-labelledby="portal-tax-upload-event-label portal-tax-upload-event-value"' not in body
     assert 'accept=".pdf,application/pdf,image/png,image/jpeg,.png,.jpg,.jpeg"' in body
     assert "新增營業稅繳稅證明" in body
     assert "選擇 PDF 或圖檔" in body
@@ -502,7 +793,11 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'href="/assets/theme.css"' in body
     assert 'href="/assets/portal.css"' in body
     assert 'href="/assets/favicon.png"' in body
+    assert 'src="/assets/portal-datetime-picker.js"' in body
     assert 'src="/assets/portal-dashboard.js"' in body
+    assert body.index('src="/assets/portal-datetime-picker.js"') < body.index(
+        'src="/assets/portal-dashboard.js"'
+    )
     assert 'data-portal-account-storage-key="portalSignedInAccount"' not in body
     assert 'id="portal-login-form"' not in body
 
@@ -888,29 +1183,29 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert 'aria-label="完訓證明資料篩選"' in body
     assert '<th scope="col">活動</th>' not in body
     assert 'data-field="eventName"' not in body
-    assert 'class="custom-select"' in body
-    assert 'class="custom-select-trigger"' in body
-    assert 'class="custom-select-menu"' in body
-    assert 'class="custom-select-option is-selected"' in body
-    assert 'role="listbox"' in body
-    assert 'role="option"' in body
+    assert 'class="custom-select"' not in body
+    assert 'class="custom-select-trigger"' not in body
+    assert 'class="custom-select-menu"' not in body
+    assert 'class="custom-select-option is-selected"' not in body
+    assert 'role="listbox"' not in body
+    assert 'role="option"' not in body
     assert 'id="completion-event-filter"' in body
     assert 'type="hidden"' in body
     assert 'name="eventName"' in body
-    assert 'aria-required="true"' in body
+    assert 'aria-required="true"' not in body
     assert "<select" not in body
-    assert "iPlayground 2026" in body
+    assert "iPlayground 2026" not in body
     assert "必填" not in body
     assert "套用篩選" not in body
     assert "completion-upload-file" in body
     assert 'id="completion-upload-file-name"' in body
     assert 'id="completion-upload-submit"' in body
     assert 'id="completion-upload-event"' in body
-    assert 'id="completion-upload-event-select"' in body
-    assert 'id="completion-upload-event-trigger"' in body
-    assert 'id="completion-upload-event-options"' in body
+    assert 'id="completion-upload-event-select"' not in body
+    assert 'id="completion-upload-event-trigger"' not in body
+    assert 'id="completion-upload-event-options"' not in body
     assert 'id="completion-upload-event-value"' in body
-    assert 'aria-labelledby="completion-upload-event-label completion-upload-event-value"' in body
+    assert 'class="field-static-value" id="completion-upload-event-value"' in body
     assert 'class="document-upload-input"' in body
     assert 'class="document-upload-copy"' in body
     assert 'class="document-upload-file-name"' in body
@@ -930,6 +1225,7 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert '<p class="panel-kicker">完訓證明</p>' not in body
     assert "清單檢視" not in body
     assert "尚未串接完訓證明資料來源" in body
+    assert "尚無活動資料" in body
     assert "獨立工作頁" not in body
 
 
@@ -959,10 +1255,12 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert "PDF 或圖檔" in body
     assert 'aria-label="營業稅繳稅證明篩選"' in body
     assert 'id="tax-event-filter"' in body
-    assert 'id="tax-event-filter-select"' in body
-    assert 'id="tax-event-filter-trigger"' in body
-    assert 'id="tax-event-filter-options"' in body
+    assert 'id="tax-event-filter-select"' not in body
+    assert 'id="tax-event-filter-trigger"' not in body
+    assert 'id="tax-event-filter-options"' not in body
     assert 'id="tax-event-filter-value"' in body
+    assert 'class="field-static-value" id="tax-event-filter-value"' in body
+    assert "尚無活動資料" in body
     assert "套用至目前活動全部資料" not in body
     assert "設為可下載" not in body
     assert "設為停用" not in body
@@ -1007,17 +1305,20 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert 'id="tax-upload-file-name"' in body
     assert 'id="tax-upload-submit"' in body
     assert 'id="tax-upload-event"' in body
-    assert 'id="tax-upload-event-select"' in body
-    assert 'id="tax-upload-event-trigger"' in body
-    assert 'id="tax-upload-event-options"' in body
+    assert 'id="tax-upload-event-select"' not in body
+    assert 'id="tax-upload-event-trigger"' not in body
+    assert 'id="tax-upload-event-options"' not in body
     assert 'id="tax-upload-event-value"' in body
+    assert 'class="field-static-value" id="tax-upload-event-value"' in body
     assert 'id="tax-upload-tax-id"' in body
     assert 'id="tax-upload-amount"' in body
     assert 'id="tax-upload-generated-at"' in body
     assert 'id="tax-upload-continue"' in body
     assert 'id="tax-upload-continue-option"' in body
     assert 'inputmode="decimal"' in body
-    assert 'type="datetime-local"' in body
+    assert 'class="form-datetime-input"' in body
+    assert 'type="datetime-local"' not in body
+    assert 'placeholder="---- / -- / -- --:--"' in body
     assert 'class="document-detail-grid"' in body
     assert 'class="document-upload-input"' in body
     assert 'class="document-upload-copy"' in body
@@ -1031,7 +1332,11 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert "每次新增一筆資料" in body
     assert "還有其他檔案要上傳" in body
     assert "尚未選擇 PDF 或圖檔" in body
+    assert 'src="/assets/portal-datetime-picker.js"' in body
     assert 'src="/assets/portal-dashboard-tax-receipts.js"' in body
+    assert body.index('src="/assets/portal-datetime-picker.js"') < body.index(
+        'src="/assets/portal-dashboard-tax-receipts.js"'
+    )
     assert "CSV" not in body
     assert "獨立工作頁" not in body
 
@@ -1053,6 +1358,7 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert response.mimetype == "text/html"
     assert "<title>活動管理 - 文件管理平台 - iPlayground</title>" in body
     assert 'class="portal-embedded-body"' in body
+    assert "data-portal-csrf-token" in body
     assert "event-management-card" in body
     assert "event-management-panel" not in body
     assert "event-panel-heading" not in body
@@ -1063,13 +1369,16 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert 'class="event-list-col-code"' not in body
     assert 'class="event-list-col-documents"' in body
     assert 'class="event-list-col-status"' in body
-    assert 'class="event-list-row"' in body
-    assert 'role="button"' in body
-    assert 'aria-label="編輯活動 iPlayground 2026"' in body
-    assert 'data-event-form-open="edit"' in body
-    assert 'data-event-name="iPlayground 2026"' in body
-    assert 'data-event-status="open"' in body
-    assert 'data-event-document-types="completionCert"' in body
+    assert 'id="event-list-body"' in body
+    assert 'class="event-list-row"' not in body
+    assert 'class="event-list-row" role="button"' not in body
+    assert 'aria-label="編輯活動 iPlayground 2026"' not in body
+    assert 'data-event-form-open="edit"' not in body
+    assert 'data-event-name="iPlayground 2026"' not in body
+    assert 'data-event-status="open"' not in body
+    assert 'data-event-document-types="completionCert"' not in body
+    assert "活動載入中" in body
+    assert "尚未建立活動" not in body
     assert "活動代碼" not in body
     assert "ipg-2026" not in body
     assert 'id="event-code-input"' not in body
@@ -1079,7 +1388,7 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert 'id="event-create-open"' in body
     assert "建立活動" in body
     assert 'id="event-create-dialog"' in body
-    assert body.count('autocomplete="off"') == 1
+    assert body.count('autocomplete="off"') == 2
     assert body.count('data-1p-ignore="true"') == 1
     assert body.count('data-op-ignore="true"') == 1
     assert body.count('data-lpignore="true"') == 1
@@ -1088,9 +1397,11 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert body.count('data-form-type="other"') == 1
     assert 'aria-modal="true"' in body
     assert 'class="secondary-button event-cancel-button"' in body
+    assert 'id="event-form-submit" type="button" disabled' in body
     assert 'id="event-create-close"' not in body
     assert "關閉建立活動畫面" not in body
     assert "活動狀態" in body
+    assert 'id="event-status-text">下架</strong>' in body
     assert 'class="event-status-switch-option"' in body
     assert 'class="event-status-switch-input"' in body
     assert 'class="event-status-switch-track"' in body
@@ -1104,14 +1415,20 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert "開放" in body
     assert "可申請文件類型" in body
     assert "完訓證明" in body
-    assert "營業稅繳稅證明" in body
-    assert "開放協會 407 收據聯影本供下載" in body
-    assert 'value="taxReceipt"' in body
-    assert "適用營業稅繳稅資料" not in body
-    assert "參與證明" not in body
-    assert "志工服務證明" not in body
-    assert "已開通" not in body
-    assert 'src="/assets/portal-dashboard-events.js"' in body
+    assert "完訓證明開放下載時間" in body
+    assert 'id="event-completion-download-setting"' in body
+    assert "data-completion-document-type-option" in body
+    assert 'class="form-checkbox-option document-type-option document-type-option-with-setting"' in body
+    assert 'class="document-type-checkbox-control"' in body
+    assert 'id="event-completion-download-starts-at-label"' in body
+    assert 'class="field-label document-type-setting-toggle"' in body
+    assert "data-completion-download-toggle" in body
+    assert 'role="button"' in body
+    assert 'tabindex="0"' in body
+    assert 'aria-labelledby="event-completion-download-starts-at-label"' in body
+    assert 'for="event-completion-download-starts-at"' not in body
+    assert 'id="event-completion-download-starts-at"' in body
+    assert 'name="completionCertDownloadStartsAt"' in body
 
 
 def test_portal_css_asset_returns_expected_content_type() -> None:
@@ -1157,6 +1474,7 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".custom-select-trigger" in body
     assert ".custom-select-menu" in body
     assert ".custom-select-option" in body
+    assert ".field-static-value" in body
     assert ".document-workspace-card" in body
     assert ".document-filter-form" in body
     assert ".document-bulk-toolbar" in body
@@ -1207,6 +1525,8 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".event-status-checkbox-option" not in body
     assert ".event-status-inline-option" not in body
     assert ".event-status-switch-option" in body
+    assert "border: 0;" in body
+    assert "background: transparent;" in body
     assert ".event-status-switch-input:checked + .event-status-switch-track" in body
     assert ".event-status-switch-thumb" in body
     assert "transform: translateX(18px);" in body
@@ -1214,7 +1534,52 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".event-status-badge.is-draft" not in body
     assert ".event-status-badge.is-unlisted" in body
     assert ".event-status-badge.is-open" in body
+    assert ".document-type-pill-list" in body
+    assert ".document-type-pill.is-completion-cert" in body
+    assert ".document-type-pill.is-tax-receipt" in body
+    assert ".document-type-pill.is-empty" in body
     assert ".form-checkbox-option" in body
+    assert ".document-type-option-with-setting" in body
+    assert ".document-type-checkbox-control" in body
+    assert ".document-type-setting" in body
+    assert "grid-template-columns: max-content max-content;" in body
+    assert "grid-template-columns: 140px 70px;" in body
+    assert "grid-template-columns: 130px 65px;" in body
+    assert "grid-template-columns: minmax(0, 1fr) max-content;" in body
+    assert ".document-type-option-with-setting {\n    grid-template-columns: 1fr;" not in body
+    assert ".document-type-setting {\n    grid-template-columns: 1fr;" not in body
+    assert ".document-type-setting[hidden]" in body
+    assert ".document-type-setting-toggle" in body
+    document_type_toggle_css = body[body.index(".document-type-setting-toggle") :]
+    document_type_toggle_css = document_type_toggle_css[
+        : document_type_toggle_css.index(".document-type-setting-toggle:focus-visible")
+    ]
+    assert "cursor: pointer;" not in document_type_toggle_css
+    assert ".document-type-setting-toggle:focus-visible" in body
+    assert ".form-datetime-input" in body
+    assert ".form-datetime-input:focus" in body
+    assert ".form-datetime-picker-proxy" not in body
+    assert ".form-datetime-picker" in body
+    assert ".form-datetime-picker-inline" in body
+    assert ".form-datetime-picker-date" in body
+    assert ".form-datetime-picker-date-part" in body
+    assert ".form-datetime-picker-date-part.is-year" in body
+    assert ".form-datetime-picker-date-native" in body
+    assert ".form-datetime-picker-date-native::-webkit-calendar-picker-indicator" in body
+    assert ".form-datetime-picker-time" in body
+    assert ".form-datetime-picker-time-input" in body
+    assert ".form-datetime-picker-time-input:focus" in body
+    assert "grid-template-columns: calc(4ch + 2px) max-content calc(2ch + 2px) max-content calc(2ch + 2px) 22px;" in body
+    assert "grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px);" in body
+    assert "grid-template-columns: calc(4.3ch + 2px) max-content calc(2.3ch + 2px) max-content calc(2.3ch + 2px) 22px;" in body
+    assert "grid-template-columns: minmax(24px, 26px) max-content minmax(24px, 26px);" in body
+    assert "gap: 0.2ch;" in body
+    assert ".form-datetime-input[hidden]" in body
+    assert "width: max-content;" in body
+    assert "padding: 8px 4px 8px 10px;" in body
+    assert ".document-type-datetime-input" in body
+    assert "min-height: 40px;" in body
+    assert "padding: 8px 12px;" in body
     assert "background-image: none;" in body
     assert ".event-cancel-button" in body
     assert "border-radius: 14px;" not in body
@@ -1270,6 +1635,99 @@ def test_page_alert_js_asset_returns_expected_content_type() -> None:
     assert 'event.animationName !== "page-alert-dissolve"' in body
     assert 'pageAlert.classList.add("is-hidden")' in body
     assert "pageAlert.dataset.pageAlertDismissDelay" in body
+
+
+def test_portal_datetime_picker_js_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/portal-datetime-picker.js",
+            route_params={"asset_name": "portal-datetime-picker.js"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert "window.iPlaygroundPortalDateTime" in body
+    assert "const minDateTimeYear = 2018" in body
+    assert "const maxDateTimeYear = 2099" in body
+    assert "const taipeiUtcOffsetMinutes = 8 * 60" in body
+    assert "formatCurrentDateTimeInputValue" in body
+    assert "now.getUTCHours()" in body
+    assert "function formatDateTimeInputValue" in body
+    assert "function formatUtcIsoDateTimeInputValue" in body
+    assert "function formatDateTimeInputValueFromUtcIso" in body
+    assert "function normalizeDateTimeInputValue" in body
+    assert "function parseUtcIsoDateTimeValue" in body
+    assert "formatUtcIsoDateTimeValue(utcDate)" in body
+    assert "function getDaysInMonth" in body
+    assert "function isValidDateTimeParts" in body
+    assert "year >= minDateTimeYear" in body
+    assert "year <= maxDateTimeYear" in body
+    assert "parseDisplayDateTimeValue" in body
+    assert "!isValidDateTimeParts(yearValue, monthValue, dayValue, hourValue, minuteValue)" in body
+    assert "function installDateTimePicker" in body
+    assert "textInput.type = \"datetime-local\"" not in body
+    assert "textInput.showPicker()" not in body
+    assert "textInput.hidden = true" in body
+    assert "form-datetime-picker form-datetime-picker-inline" in body
+    assert "document.createElement(\"select\")" not in body
+    assert "document.createElement(\"input\")" in body
+    assert "timeGroup.className = \"form-datetime-picker-time\"" in body
+    assert "yearInput.maxLength = 4" in body
+    assert "monthInput.maxLength = 2" in body
+    assert "dayInput.maxLength = 2" in body
+    assert "dateInput.type = \"date\"" in body
+    assert "yearInput.setAttribute(\"aria-label\", \"年\")" in body
+    assert "monthInput.setAttribute(\"aria-label\", \"月\")" in body
+    assert "dayInput.setAttribute(\"aria-label\", \"日\")" in body
+    assert "dateInput.setAttribute(\"aria-label\", \"日期選擇器\")" in body
+    assert "document.createTextNode(\"/\")" in body
+    assert "document.createTextNode(\":\")" in body
+    assert "handleDateInput(yearInput, monthInput, 4)" in body
+    assert "handleDateInput(monthInput, dayInput, 2)" in body
+    assert "handleDateInput(dayInput, hourInput, 2)" in body
+    assert "dateInput.addEventListener(\"input\", handleNativeDateInput)" in body
+    assert "let isApplyingPickerValue = false" in body
+    assert "let restoreDisplayValue = \"\"" in body
+    assert "normalizeYearValue" in body
+    assert "function getRestoreDisplayValue" in body
+    assert "function isPickerValueComplete" in body
+    assert "function isPickerValueValid" in body
+    assert "function restorePreviousPickerValue" in body
+    assert "if (!isPickerValueComplete() || !isPickerValueValid())" in body
+    assert "if (!applyPickerValue())" in body
+    assert "restorePreviousPickerValue();" in body
+    assert "restoreDisplayValue = getRestoreDisplayValue();" in body
+    assert "restoreDisplayValue = textInput.value;" in body
+    assert "return false;" in body
+    assert "normalizeTimeValue(hourInput.value)" in body
+    assert "normalizeTimeValue(minuteInput.value)" in body
+    assert "hourInput.value.length === 2" in body
+    assert "minuteInput.value.length === 2" in body
+    assert "if (isApplyingPickerValue)" in body
+    assert "selectDateTimeInputValue" in body
+    assert "installSelectAllOnFocus" in body
+    assert "const pickerPartInputs = [yearInput, monthInput, dayInput, hourInput, minuteInput]" in body
+    assert "function handlePickerPartNavigation" in body
+    assert "event.key !== \"ArrowLeft\" && event.key !== \"ArrowRight\"" in body
+    assert "const direction = event.key === \"ArrowLeft\" ? -1 : 1" in body
+    assert "pickerPartInputs[currentIndex + direction]" in body
+    assert "input.addEventListener(\"keydown\", handlePickerPartNavigation)" in body
+    assert "hourInput.inputMode = \"numeric\"" in body
+    assert "minuteInput.inputMode = \"numeric\"" in body
+    assert "hourInput.maxLength = 2" in body
+    assert "minuteInput.maxLength = 2" in body
+    assert "handleTimeInput(hourInput, minuteInput)" in body
+    assert "normalizeTimeValue" in body
+    assert "normalizeAndApplyDateInput(yearInput)" in body
+    assert "normalizeAndApplyTimeInput(hourInput)" in body
+    assert "normalizeAndApplyTimeInput(minuteInput)" in body
+    assert "hourInput.setAttribute(\"aria-label\", \"小時\")" in body
+    assert "minuteInput.setAttribute(\"aria-label\", \"分鐘\")" in body
+    assert "textInput.getBoundingClientRect()" not in body
+    assert "textInput.addEventListener(\"focus\", openPicker)" not in body
+    assert "textInput.addEventListener(\"input\", syncInlinePicker)" in body
 
 
 def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
@@ -1331,11 +1789,19 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "resetDashboardTaxUploadFieldsForNextFile" in body
     assert "setDashboardTaxUploadDialogMode" in body
     assert "taxReceiptUploadImportMessageType" in body
+    assert "const adminEventsApiPath = \"/api/v1/admin/events\"" in body
+    assert "const portalCsrfToken = portalPage.dataset.portalCsrfToken ?? \"\"" in body
+    assert "submitDashboardEventForm" in body
+    assert "dashboardEventFormSubmitButton?.addEventListener(\"click\"" in body
+    assert "\"X-Portal-CSRF-Token\": portalCsrfToken" in body
+    assert "const idempotencyKey = isEditMode ? \"\" : buildDashboardIdempotencyKey()" in body
+    assert "\"Idempotency-Key\": idempotencyKey" in body
     assert "ipg:tax-receipt-upload:import" in body
     assert "ipg:tax-receipt-upload:open" in body
     assert "eventName: getDashboardTaxUploadEventName()" in body
     assert "file: selectedFile ?? null" in body
-    assert "generatedAt: getDashboardTaxUploadTextValue(dashboardTaxUploadGeneratedAtInput)" in body
+    assert "generatedAt: formatUtcIsoDateTimeInputValue(" in body
+    assert "getDashboardTaxUploadTextValue(dashboardTaxUploadGeneratedAtInput)" in body
     assert "rowId: dashboardTaxUploadEditingRowId" in body
     assert "taxId: getDashboardTaxUploadTextValue(dashboardTaxUploadTaxIdInput)" in body
     assert "儲存變更" in body
@@ -1343,14 +1809,46 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert ".webp" not in body
     assert "setDashboardEventDialogMode" in body
     assert "applyDashboardEventStatusValue" in body
+    assert 'eventData.status ?? (isEditMode ? "open" : "unlisted")' in body
     assert "dashboardEventStatusCheckbox" in body
     assert "openDashboardEventStatusSelect" not in body
     assert "closeDashboardEventStatusSelect" not in body
     assert "collectDashboardEventDialogState" in body
+    assert "dashboardEventCompletionDownloadStartsAtInput" in body
+    assert "dashboardEventCompletionDownloadToggle" in body
+    assert "dashboardEventCompletionDocumentTypeOption" in body
+    assert "completionCertDownloadStartsAt" in body
+    assert "updateDashboardCompletionDownloadStartsAtVisibility" in body
+    assert "toggleDashboardCompletionCertDocumentType" in body
+    assert "dashboardEventCompletionDownloadToggle?.addEventListener(\"click\"" in body
+    assert "dashboardEventCompletionDownloadToggle?.addEventListener(\"keydown\"" in body
+    assert "dashboardEventCompletionDocumentTypeOption?.addEventListener(\"click\"" in body
+    assert "event.target !== dashboardEventCompletionDocumentTypeOption" in body
+    assert "completionCertInput.dispatchEvent(new Event(\"change\", { bubbles: true }))" in body
+    assert "window.iPlaygroundPortalDateTime" in body
+    assert "formatCurrentDateTimeInputValue" in body
+    assert "formatUtcIsoDateTimeInputValue" in body
+    assert "normalizeDateTimeInputValue" in body
+    assert "installDateTimePicker" in body
+    assert "function installDateTimePicker" not in body
+    assert "function padDateTimePart" not in body
+    assert "function parseDisplayDateTimeValue" not in body
+    assert "textInput.type = \"datetime-local\"" not in body
+    assert "document.createElement(\"select\")" not in body
+    assert "installDateTimePicker(dashboardEventCompletionDownloadStartsAtInput)" in body
+    assert "installDateTimePicker(dashboardTaxUploadGeneratedAtInput)" in body
+    assert "dashboardEventDocumentTypeInputs.forEach" in body
+    assert "updateDashboardEventFormSubmitState" in body
+    assert "dashboardEventNameInput?.addEventListener(\"input\"" in body
     assert "confirmDashboardEventDialogClose" in body
     assert "資料尚未存檔，確定要取消嗎？" in body
     assert "closeDashboardEventCreateDialog" in body
     assert "ipg:event-form:open" in body
+    assert "ipg:event-row:remove" in body
+    assert "replaceEventId: pendingEventId" in body
+    assert "buildDashboardPendingEventId" in body
+    assert "contentFrame.contentWindow.location.reload()" not in body
+    assert "window.alert(error instanceof Error ? error.message" not in body
     assert "ipg:completion-upload:open" in body
     assert "儲存變更" in body
     assert 'pageShell?.setAttribute("inert", "")' in body
@@ -1478,6 +1976,17 @@ def test_portal_dashboard_tax_receipts_js_asset_returns_expected_content_type() 
     assert "確定要刪除此筆繳稅證明嗎？" in body
     assert "儲存變更" in body
     assert "formatTaxGeneratedAt" in body
+    assert "window.iPlaygroundPortalDateTime" in body
+    assert "formatCurrentDateTimeInputValue" in body
+    assert "formatUtcIsoDateTimeInputValue" in body
+    assert "normalizeDateTimeInputValue" in body
+    assert "installDateTimePicker" in body
+    assert "function installDateTimePicker" not in body
+    assert "function padDateTimePart" not in body
+    assert "function parseDisplayDateTimeValue" not in body
+    assert "textInput.type = \"datetime-local\"" not in body
+    assert "document.createElement(\"select\")" not in body
+    assert "installDateTimePicker(taxUploadGeneratedAtInput)" in body
     assert "可下載" not in body
     assert "停用" not in body
     assert "CSV" not in body
@@ -1501,17 +2010,64 @@ def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> Non
     assert "openEventEditDialog" in body
     assert "setEventDialogMode" in body
     assert "applyEventStatusValue" in body
+    assert 'eventData.status ?? (isEditMode ? "open" : "unlisted")' in body
     assert "eventStatusCheckbox" in body
     assert "openEventStatusSelect" not in body
     assert "closeEventStatusSelect" not in body
     assert "collectEventDialogState" in body
+    assert "eventCompletionDownloadStartsAtInput" in body
+    assert "eventCompletionDownloadToggle" in body
+    assert "const adminEventsApiPath = \"/api/v1/admin/events\"" in body
+    assert "const portalCsrfToken = document.body.dataset.portalCsrfToken ?? \"\"" in body
+    assert "submitEventForm" in body
+    assert "eventFormSubmitButton?.addEventListener(\"click\"" in body
+    assert "\"X-Portal-CSRF-Token\": portalCsrfToken" in body
+    assert "const idempotencyKey = isEditMode ? \"\" : buildEventIdempotencyKey()" in body
+    assert "\"Idempotency-Key\": idempotencyKey" in body
+    assert "eventCompletionDocumentTypeOption" in body
+    assert "completionCertDownloadStartsAt" in body
+    assert "updateCompletionDownloadStartsAtVisibility" in body
+    assert "toggleCompletionCertDocumentType" in body
+    assert "eventCompletionDownloadToggle?.addEventListener(\"click\"" in body
+    assert "eventCompletionDownloadToggle?.addEventListener(\"keydown\"" in body
+    assert "eventCompletionDocumentTypeOption?.addEventListener(\"click\"" in body
+    assert "event.target !== eventCompletionDocumentTypeOption" in body
+    assert "completionCertInput.dispatchEvent(new Event(\"change\", { bubbles: true }))" in body
+    assert "window.iPlaygroundPortalDateTime" in body
+    assert "formatCurrentDateTimeInputValue" in body
+    assert "formatUtcIsoDateTimeInputValue" in body
+    assert "normalizeDateTimeInputValue" in body
+    assert "installDateTimePicker" in body
+    assert "function installDateTimePicker" not in body
+    assert "function padDateTimePart" not in body
+    assert "function parseDisplayDateTimeValue" not in body
+    assert "textInput.type = \"datetime-local\"" not in body
+    assert "document.createElement(\"select\")" not in body
+    assert "installDateTimePicker(eventCompletionDownloadStartsAtInput)" in body
+    assert "updateEventFormSubmitState" in body
+    assert "eventNameInput?.addEventListener(\"input\"" in body
     assert "confirmEventDialogClose" in body
     assert "資料尚未存檔，確定要取消嗎？" in body
     assert "closeEventCreateDialog" in body
     assert "requestParentEventFormDialog" in body
     assert "window.parent.postMessage" in body
     assert "window.parent !== window" in body
-    assert "data-event-form-open" in body
+    assert "loadEventRows" in body
+    assert "renderEventRows" in body
+    assert "buildEventRow" in body
+    assert "row.dataset.eventFormOpen = \"edit\"" in body
+    assert "resolveEventDocumentTypeItems" in body
+    assert "document-type-pill-list" in body
+    assert "document-type-pill" in body
+    assert "is-completion-cert" in body
+    assert "is-tax-receipt" in body
+    assert "event-status-badge is-open" in body
+    assert "event-status-badge is-unlisted" in body
+    assert "insertPendingEventRow" in body
+    assert "buildPendingEventRow" in body
+    assert "removeEventRow" in body
+    assert "replaceEventId: pendingEventId" in body
+    assert "ipg:event-row:remove" in body
     assert "儲存變更" in body
     assert 'event.key !== "Enter" && event.key !== " "' in body
     assert "eventCreateDialog.hidden = false" in body

@@ -41,6 +41,7 @@ partition key: /id
 | `name` | string | 活動顯示名稱 |
 | `status` | string | 活動狀態 |
 | `documentTypes` | string[] | 此活動開放申請的文件類型 |
+| `completionCertDownloadStartsAt` | string \| null | 完訓證明開放下載時間，UTC ISO 8601；未開放完訓證明時為 null |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
 | `createdBy` | string | 建立者識別 |
 | `updatedAt` | string | 最後更新時間，UTC ISO 8601 |
@@ -50,7 +51,7 @@ partition key: /id
 
 ```text
 open
-closed
+unlisted
 ```
 
 `documentTypes` 目前允許值：
@@ -65,16 +66,23 @@ taxReceipt
 - 由後端建立活動時自動產生。
 - 前端不得提供、編輯或顯示 `id`。
 - 活動名稱不是 `id`；活動名稱可修改，但 `id` 不可變。
-- 使用 UUID v4，格式為 `evt_<uuid-v4>`。
+- 使用管理者識別與 `Idempotency-Key` 產生穩定 UUIDv5，格式為 `evt_<uuid-v5>`。
+- 同一管理者使用相同 `Idempotency-Key` 重試建立活動時，會得到同一個 `id`，避免因網路重送建立重複資料。
 
 Python 產生方式：
 
 ```python
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
 
 
-def new_event_id() -> str:
-    return f"evt_{uuid4()}"
+EVENT_IDEMPOTENCY_NAMESPACE = "io.iplayground.ipg-certificate.admin.events"
+
+
+def build_event_id(idempotency_key: str, *, actor: str) -> str:
+    normalized_actor = actor.strip().lower() or "unknown"
+    normalized_key = idempotency_key.strip()
+    namespace_value = f"{EVENT_IDEMPOTENCY_NAMESPACE}:{normalized_actor}:{normalized_key}"
+    return f"evt_{uuid5(NAMESPACE_URL, namespace_value)}"
 ```
 
 範例：
@@ -87,6 +95,7 @@ def new_event_id() -> str:
   "documentTypes": [
     "completionCert"
   ],
+  "completionCertDownloadStartsAt": "2026-04-25T03:30:00Z",
   "createdAt": "2026-04-25T03:30:00Z",
   "createdBy": "admin@example.com",
   "updatedAt": "2026-04-25T03:30:00Z",
@@ -99,9 +108,12 @@ def new_event_id() -> str:
 活動清單：
 
 ```sql
-SELECT * FROM c
-ORDER BY c.createdAt DESC
+SELECT c.id, c.name, c.status, c.documentTypes, c.completionCertDownloadStartsAt
+FROM c
+ORDER BY c.updatedAt DESC
 ```
+
+活動清單只投影管理端 UI 需要的欄位，並依最後更新時間由新到舊排序。
 
 單筆活動讀取：
 
@@ -111,3 +123,5 @@ partition key = <event-id>
 ```
 
 雖然活動清單查詢會跨 partition，但活動數量與管理端使用頻率都很低，初期接受這個取捨。單筆讀取與更新應使用 point read / replace，並以 `id` 作為 partition key。
+
+管理端進入 `/portal/dashboard` 後，伺服器會在背景預先初始化活動管理使用的 Cosmos DB container client；同一個 Functions worker 生命週期內會重用該 client，避免第一次進入活動管理時才承擔 SDK 與 credential chain 初始化成本。

@@ -35,7 +35,8 @@ const taxReceiptUploadImportMessageType = "ipg:tax-receipt-upload:import";
 const defaultTaxUploadFileName = "尚未選擇 PDF 或圖檔";
 const invalidTaxUploadFileName = "請選擇 PDF、PNG 或 JPG 檔案";
 const failedTaxUploadFileName = "檔案讀取失敗";
-const defaultTaxEventName = "iPlayground 2026";
+const defaultTaxEventName = "";
+const emptyTaxEventName = "尚無活動資料";
 const taxReceiptUploadExtensions = [".pdf", ".png", ".jpg", ".jpeg"];
 const taxReceiptUploadMimeTypes = [
   "application/pdf",
@@ -47,6 +48,13 @@ let taxUploadPreviousFocus = null;
 let taxUploadDialogMode = "create";
 let taxUploadEditingRowId = "";
 let taxReceiptRows = [];
+
+const {
+  formatCurrentDateTimeInputValue,
+  formatUtcIsoDateTimeInputValue,
+  installDateTimePicker,
+  normalizeDateTimeInputValue,
+} = window.iPlaygroundPortalDateTime;
 
 function canRequestParentTaxUploadDialog() {
   return window.parent && window.parent !== window;
@@ -73,7 +81,7 @@ function requestParentTaxUploadDialog(mode = "create", rowData = {}) {
 
 function getTaxFilterEventName() {
   if (taxEventFilter instanceof HTMLInputElement) {
-    return taxEventFilter.value || defaultTaxEventName;
+    return taxEventFilter.value;
   }
 
   return defaultTaxEventName;
@@ -95,7 +103,7 @@ function applyTaxUploadEventValue(nextValue) {
   }
 
   if (taxUploadEventValue) {
-    taxUploadEventValue.textContent = normalizedValue;
+    taxUploadEventValue.textContent = normalizedValue || emptyTaxEventName;
   }
 
   taxUploadEventOptions.forEach((item) => {
@@ -109,6 +117,7 @@ function applyTaxUploadEventValue(nextValue) {
 function setTaxUploadTextValue(input, value) {
   if (input instanceof HTMLInputElement) {
     input.value = value ?? "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 }
 
@@ -140,7 +149,10 @@ function setTaxUploadDialogMode(mode = "create", rowData = {}) {
   applyTaxUploadEventValue(rowData.eventName ?? getTaxFilterEventName());
   setTaxUploadTextValue(taxUploadTaxIdInput, rowData.taxId ?? "");
   setTaxUploadTextValue(taxUploadAmountInput, rowData.amount ?? "");
-  setTaxUploadTextValue(taxUploadGeneratedAtInput, rowData.generatedAt ?? "");
+  setTaxUploadTextValue(
+    taxUploadGeneratedAtInput,
+    normalizeDateTimeInputValue(rowData.generatedAt ?? "") || formatCurrentDateTimeInputValue()
+  );
   updateTaxUploadFileName(rowData.fileName ?? "");
 }
 
@@ -306,7 +318,7 @@ function downloadTaxReceiptFile(rowData) {
 }
 
 function formatTaxGeneratedAt(value) {
-  return value ? value.replace("T", " ") : "";
+  return normalizeDateTimeInputValue(value) || "";
 }
 
 function openTaxEditDialog(rowData) {
@@ -408,7 +420,7 @@ function saveSelectedTaxReceiptFile() {
     upsertTaxReceiptFile(selectedFile, {
       amount: getTaxUploadTextValue(taxUploadAmountInput),
       eventName: getTaxUploadEventName(),
-      generatedAt: getTaxUploadTextValue(taxUploadGeneratedAtInput),
+      generatedAt: formatUtcIsoDateTimeInputValue(getTaxUploadTextValue(taxUploadGeneratedAtInput)),
       id: taxUploadEditingRowId,
       taxId: getTaxUploadTextValue(taxUploadTaxIdInput),
     });
@@ -515,6 +527,11 @@ function closeTaxEventFilterSelect({ blurTrigger = false } = {}) {
 }
 
 function openTaxEventFilterSelect() {
+  if (taxEventFilterOptions.length <= 1) {
+    closeTaxEventFilterSelect();
+    return;
+  }
+
   taxEventFilterSelect?.classList.add("is-open");
   taxEventFilterTrigger?.setAttribute("aria-expanded", "true");
 
@@ -537,6 +554,11 @@ function closeTaxUploadEventSelect({ blurTrigger = false } = {}) {
 }
 
 function openTaxUploadEventSelect() {
+  if (taxUploadEventOptions.length <= 1) {
+    closeTaxUploadEventSelect();
+    return;
+  }
+
   taxUploadEventSelect?.classList.add("is-open");
   taxUploadEventTrigger?.setAttribute("aria-expanded", "true");
 
@@ -553,12 +575,18 @@ taxUploadCancelButton?.addEventListener("click", () => {
   closeTaxUploadDialog({ confirmUnsaved: true });
 });
 
+installDateTimePicker(taxUploadGeneratedAtInput);
+
 taxUploadSubmitButton?.addEventListener("click", saveSelectedTaxReceiptFile);
 taxUploadFileInput?.addEventListener("change", () => {
   updateTaxUploadFileName();
 });
 
 taxUploadEventTrigger?.addEventListener("click", () => {
+  if (taxUploadEventOptions.length <= 1) {
+    return;
+  }
+
   if (taxUploadEventSelect?.classList.contains("is-open")) {
     closeTaxUploadEventSelect({ blurTrigger: true });
     return;
@@ -570,6 +598,10 @@ taxUploadEventTrigger?.addEventListener("click", () => {
 taxUploadEventTrigger?.addEventListener("keydown", (event) => {
   if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
     event.preventDefault();
+    if (taxUploadEventOptions.length <= 1) {
+      return;
+    }
+
     openTaxUploadEventSelect();
     taxUploadEventOptions[0]?.focus();
   }
@@ -585,6 +617,10 @@ taxFilterForm?.addEventListener("submit", (event) => {
 });
 
 taxEventFilterTrigger?.addEventListener("click", () => {
+  if (taxEventFilterOptions.length <= 1) {
+    return;
+  }
+
   if (taxEventFilterSelect?.classList.contains("is-open")) {
     closeTaxEventFilterSelect({ blurTrigger: true });
     return;
@@ -596,6 +632,10 @@ taxEventFilterTrigger?.addEventListener("click", () => {
 taxEventFilterTrigger?.addEventListener("keydown", (event) => {
   if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
     event.preventDefault();
+    if (taxEventFilterOptions.length <= 1) {
+      return;
+    }
+
     openTaxEventFilterSelect();
     taxEventFilterOptions[0]?.focus();
   }
