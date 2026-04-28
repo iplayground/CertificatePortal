@@ -158,6 +158,32 @@ def list_event_documents(*, container: EventContainer) -> list[dict[str, Any]]:
         raise
 
 
+def list_public_event_documents(*, container: EventContainer) -> list[dict[str, Any]]:
+    try:
+        return list(
+            container.query_items(
+                query=(
+                    "SELECT c.id, c.name, c.documentTypes, "
+                    "c.completionCertDownloadStartsAt FROM c "
+                    "WHERE c.status = 'open' ORDER BY c.updatedAt DESC"
+                ),
+                enable_cross_partition_query=True,
+            )
+        )
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise EventStoreOperationError(
+                "Cosmos DB 活動容器不存在。請確認 COSMOS_DATABASE_NAME 與 "
+                "COSMOS_EVENTS_CONTAINER 是否指向已建立的資源。"
+            ) from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise EventStoreOperationError(
+                "目前身分沒有 Cosmos DB 活動容器讀取權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Reader 或 Data Contributor 權限。"
+            ) from exc
+        raise
+
+
 def get_event_store_config() -> EventStoreConfig:
     endpoint = _read_env("COSMOS_ENDPOINT")
     database_name = _read_env("COSMOS_DATABASE_NAME")

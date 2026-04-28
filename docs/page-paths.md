@@ -6,13 +6,14 @@
 
 | Method | Path | 說明 | 輸出格式 |
 | --- | --- | --- | --- |
-| `GET` | `/` | 首頁，用於供會眾填寫基本資料、選擇文件類型並進入文件申請流程 | `text/html` |
+| `GET` | `/` | 首頁，用於供會眾選擇活動、文件類型並依文件類型填寫申請資料 | `text/html` |
 | `GET` | `/portal` | 管理平台登入入口 | `text/html` |
 | `GET` | `/portal/dashboard` | 管理者登入後的內部工作區頁面 | `text/html` |
 | `GET` | `/portal/dashboard/welcome` | dashboard iframe 預設載入的歡迎頁 | `text/html` |
 | `GET` | `/portal/dashboard/completion-certs` | dashboard iframe 的完訓證明頁 | `text/html` |
 | `GET` | `/portal/dashboard/tax-receipts` | dashboard iframe 的營業稅繳稅證明頁 | `text/html` |
 | `GET` | `/portal/dashboard/events` | dashboard iframe 的活動管理頁 | `text/html` |
+| `GET` | `/api/v1/events` | 公開首頁可申請活動清單 | `application/json` |
 | `GET` | `/api/v1/admin/events` | 查詢活動管理資料 | `application/json` |
 | `POST` | `/api/v1/admin/events` | 建立活動管理資料 | `application/json` |
 | `PUT` | `/api/v1/admin/events/{eventId}` | 更新單筆活動管理資料 | `application/json` |
@@ -32,9 +33,9 @@
 
 ### 呈現方式
 
-目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie；活動管理已串接 Cosmos DB，其餘文件資料流程仍逐步實作中。
+目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie；活動管理與首頁公開活動清單已串接 Cosmos DB，其餘文件資料流程仍逐步實作中。
 
-- 首頁目前為靜態 HTML GUI；管理平台的活動管理已串接 Cosmos DB，部分其他管理頁面仍為前端暫存互動
+- 首頁 HTML 不同步查詢 Cosmos DB；頁面先載入後由前端呼叫 `GET /api/v1/events`，再依狀態為 `open` 的活動顯示活動清單。管理平台的活動管理已串接 Cosmos DB，部分其他管理頁面仍為前端暫存互動
 - 公開驗證頁面目前為靜態純文字輸出
 - 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓名單與繳稅證明的後端上傳處理與持久化流程尚未串接
 - 完訓證明頁目前已有前端 CSV 解析與頁面暫存清單，用於管理介面流程示意
@@ -42,13 +43,50 @@
 
 ### 表單輸入規則
 
-- 首頁的報名人姓名、`email` 欄位、管理平台的活動名稱欄位，以及營業稅繳稅證明的統編、金額、產製時間欄位不是登入憑證欄位，應在初始 HTML 標記為不使用瀏覽器自動完成與常見密碼管理器 autofill
+- 首頁依文件類型顯示的申請資料欄位、管理平台的活動名稱欄位，以及營業稅繳稅證明的統編、金額、產製時間欄位不是登入憑證欄位，應在初始 HTML 標記為不使用瀏覽器自動完成與常見密碼管理器 autofill
 - 目前採用 `autocomplete="off"`，並搭配常見密碼管理器的忽略屬性：`data-1p-ignore`、`data-op-ignore`、`data-lpignore`、`data-bwignore`、`data-protonpass-ignore` 與 `data-form-type="other"`
 - 不以 CSS 隱藏密碼管理器注入的 DOM 作為基線做法；若日後新增同類型非憑證文字輸入欄位，應沿用同一組 HTML 屬性
 - 管理端新增原生 checkbox 時應使用 `form-checkbox-option` 共用樣式，讓夜間模式沿用固定的 checkbox color scheme 與 accent color；特定情境可再疊加語意 class，例如 `document-type-option` 或 `document-upload-continue-option`
 - 若 checkbox 是內嵌於動作列的輔助選項，例如繳稅證明上傳視窗的連續上傳選項，應保留 `form-checkbox-option` 的 checkbox 色彩規則，但可移除外框、背景與卡片式留白，且文字不可被拖曳選取
 - 管理端日期時間輸入應使用 `form-datetime-input` 共用樣式與 24 小時制文字格式 `yyyy / MM / dd HH:mm`，避免原生日期輸入在夜間模式落回黑底；未填寫時 placeholder 使用 `---- / -- / -- --:--`
+- 共用日期時間選擇器預設不顯示秒數；首頁營業稅繳稅證明的 `產製時間` 會以 `includeSeconds` 模式顯示秒數，格式為 `yyyy / MM / dd HH:mm:ss`，placeholder 使用 `---- / -- / -- --:--:--`。管理平台建立活動的日期選擇器不得因首頁需求而顯示秒數
 
+### 公開首頁 API 規則
+
+- 首頁使用 `GET /api/v1/events` 非同步讀取公開活動清單，避免初次進入首頁時被 Cosmos DB client 初始化或查詢延遲阻塞
+- 此 API 為公開唯讀端點，不要求 API Key、管理者 session、同源請求或 CSRF token
+- 第三方若得知此 API path 並直接呼叫，可以接受；因此回應必須維持最小揭露
+- 回應包含狀態為 `open` 的活動；即使活動目前沒有可申請文件類型，也應回傳該活動並以空陣列表示，讓首頁可告知使用者有活動但尚無可申請文件
+- 回應不得包含管理端稽核欄位、管理者識別、上架狀態以外的內部狀態，或不必要的個人資料
+
+### `GET /api/v1/events`
+
+- 查詢 Cosmos DB `events` container 中公開顯示的活動清單
+- 不要求 API Key、管理者 session、同源請求或 CSRF token
+- 只回傳狀態為 `open` 的活動，並依 `updatedAt` 由新到舊排序
+- `documentTypes` 可為空陣列；首頁會顯示活動，並在文件類型欄位顯示 `尚無可申請文件`
+- 後端只會回傳支援的文件類型代碼，目前為 `completionCert` 與 `taxReceipt`
+- Response JSON 範例：
+
+```json
+{
+  "events": [
+    {
+      "id": "evt_550e8400-e29b-41d4-a716-446655440000",
+      "name": "iPlayground 2026",
+      "documentTypes": [
+        "completionCert",
+        "taxReceipt"
+      ]
+    },
+    {
+      "id": "evt_9fdd26f7-1a37-4e59-bb30-6ac2fe0a22a8",
+      "name": "iPlayground 2027",
+      "documentTypes": []
+    }
+  ]
+}
+```
 ### 語系規則
 
 - 首頁與公開驗證頁支援 `zh-TW` 與 `en-US`
@@ -105,11 +143,14 @@
 - 顯示 iPlayground logo 與品牌色
 - logo 置中顯示
 - 提供語系切換器，目前支援 `zh-TW` 與 `en-US`
-- 活動名在沒有活動或只有一個活動時以靜態欄位顯示；只有多個活動可選時才使用下拉選單
-- 提供文件類型自訂下拉元件，目前固定為 `完訓證明`、`營業稅繳稅證明`
+- 活動在載入中顯示 `活動載入中`；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單
+- 活動清單會顯示所有狀態為 `open` 的活動；若選取的活動沒有可申請文件，文件類型欄位顯示 `尚無可申請文件`，不顯示申請資料欄位，查詢按鈕維持停用
+- 文件類型在活動載入完成前隱藏；活動載入完成且有活動時，依所選活動的 `documentTypes` 顯示可申請文件
+- 文件類型只有一個時以靜態欄位顯示，不顯示下拉三角；多個文件類型時使用自訂下拉元件
 - 首頁文件類型顯示文字納入 i18n，表單值使用穩定文件類型代碼：`completionCert`、`taxReceipt`
-- 提供報名人姓名與 `email` 輸入欄位
-- 顯示目前尚未串接資料庫與文件流程的提示
+- 首頁依文件類型顯示申請資料欄位：`完訓證明` 需要報名序號、報名人姓名與 `email`；`營業稅繳稅證明` 需要統編與產製時間
+- `營業稅繳稅證明` 的產製時間使用共用日期時間選擇器的秒數模式，顯示年、月、日、時、分、秒
+- 查詢文件按鈕在目前可見申請資料欄位未完整填寫前維持停用
 - 顯示頁尾版權聲明
 
 ### `/verify/{certId}`

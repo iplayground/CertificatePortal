@@ -1665,8 +1665,10 @@ def test_portal_datetime_picker_js_asset_returns_expected_content_type() -> None
     assert "year >= minDateTimeYear" in body
     assert "year <= maxDateTimeYear" in body
     assert "parseDisplayDateTimeValue" in body
-    assert "!isValidDateTimeParts(yearValue, monthValue, dayValue, hourValue, minuteValue)" in body
+    assert "!isValidDateTimeParts(yearValue, monthValue, dayValue, hourValue, minuteValue, secondValue)" in body
     assert "function installDateTimePicker" in body
+    assert "function installDateTimePicker(textInput, options = {})" in body
+    assert "const includeSeconds = options.includeSeconds === true" in body
     assert "textInput.type = \"datetime-local\"" not in body
     assert "textInput.showPicker()" not in body
     assert "textInput.hidden = true" in body
@@ -1716,15 +1718,21 @@ def test_portal_datetime_picker_js_asset_returns_expected_content_type() -> None
     assert "input.addEventListener(\"keydown\", handlePickerPartNavigation)" in body
     assert "hourInput.inputMode = \"numeric\"" in body
     assert "minuteInput.inputMode = \"numeric\"" in body
+    assert "secondInput.inputMode = \"numeric\"" in body
     assert "hourInput.maxLength = 2" in body
     assert "minuteInput.maxLength = 2" in body
+    assert "secondInput.maxLength = 2" in body
     assert "handleTimeInput(hourInput, minuteInput)" in body
+    assert "handleTimeInput(minuteInput, includeSeconds ? secondInput : null)" in body
     assert "normalizeTimeValue" in body
     assert "normalizeAndApplyDateInput(yearInput)" in body
     assert "normalizeAndApplyTimeInput(hourInput)" in body
     assert "normalizeAndApplyTimeInput(minuteInput)" in body
+    assert "normalizeAndApplyTimeInput(secondInput)" in body
     assert "hourInput.setAttribute(\"aria-label\", \"小時\")" in body
     assert "minuteInput.setAttribute(\"aria-label\", \"分鐘\")" in body
+    assert "secondInput.setAttribute(\"aria-label\", \"秒\")" in body
+    assert "timeGroup.append(document.createTextNode(\":\"), secondInput)" in body
     assert "textInput.getBoundingClientRect()" not in body
     assert "textInput.addEventListener(\"focus\", openPicker)" not in body
     assert "textInput.addEventListener(\"input\", syncInlinePicker)" in body

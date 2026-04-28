@@ -31,6 +31,7 @@
     data-preview-feedback-template="{{preview_feedback_template}}"
     data-locale-cookie-name="{{locale_cookie_name}}"
     data-locale-cookie-max-age="{{locale_cookie_max_age}}"
+    data-events-api-path="{{events_api_path}}"
   >
     <div class="shell">
       <main class="hero">
@@ -67,56 +68,54 @@
             <p class="form-subtitle" id="form-subtitle">{{form_subtitle}}</p>
 
             <form id="document-request-form">
-              <div class="field">
+              <div class="field" id="event-name-field">
                 <span id="event-name-label" class="field-label">{{event_name_label}}</span>
-                <input id="event-name" name="eventName" type="hidden" value="">
-                <div class="field-static-value" id="event-name-value">{{event_name_empty_option}}</div>
-                <div id="event-name-hint" class="hint">{{event_name_hint}}</div>
+                <div id="event-name-control">{{{event_name_control_html}}}</div>
               </div>
 
-              <div class="field">
+              <div class="field" id="document-type-field" hidden>
                 <span id="document-type-label" class="field-label">{{document_type_label}}</span>
                 <div class="custom-select" id="document-type-select">
-                  <input id="document-type" name="documentType" type="hidden" value="completionCert">
+                  <input id="document-type" name="documentType" type="hidden" value="{{document_type_value}}">
+                  <div class="field-static-value" id="document-type-static-value"{{{document_type_static_hidden_attr}}}>{{document_type_value_label}}</div>
                   <button
                     class="custom-select-trigger"
                     id="document-type-trigger"
                     type="button"
+                    {{{document_type_trigger_hidden_attr}}}
                     aria-expanded="false"
                     aria-haspopup="listbox"
                     aria-controls="document-type-options"
                     aria-labelledby="document-type-label document-type-value"
                   >
-                    <span id="document-type-value" class="custom-select-value">{{document_type_completion_cert}}</span>
+                    <span id="document-type-value" class="custom-select-value">{{document_type_value_label}}</span>
                     <span class="select-caret" aria-hidden="true"></span>
                   </button>
                   <div class="custom-select-menu" id="document-type-options" role="listbox" hidden>
-                    <button
-                      class="custom-select-option is-selected"
-                      type="button"
-                      role="option"
-                      aria-selected="true"
-                      data-value="completionCert"
-                      data-label-key="document_type_completion_cert"
-                    >
-                      {{document_type_completion_cert}}
-                    </button>
-                    <button
-                      class="custom-select-option"
-                      type="button"
-                      role="option"
-                      aria-selected="false"
-                      data-value="taxReceipt"
-                      data-label-key="document_type_tax_receipt"
-                    >
-                      {{document_type_tax_receipt}}
-                    </button>
+                    {{{document_type_options_html}}}
                   </div>
                 </div>
-                <div id="document-type-hint" class="hint">{{document_type_hint}}</div>
               </div>
 
-              <div class="field">
+              <div class="field" id="registration-number-field" data-user-data-field data-document-types="completionCert" hidden>
+                <span id="registration-number-label" class="field-label">{{registration_number_label}}</span>
+                <input
+                  id="registration-number"
+                  name="registrationNumber"
+                  type="text"
+                  autocomplete="off"
+                  data-1p-ignore="true"
+                  data-op-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
+                  data-protonpass-ignore="true"
+                  data-form-type="other"
+                  aria-labelledby="registration-number-label"
+                  placeholder="{{registration_number_placeholder}}"
+                >
+              </div>
+
+              <div class="field" id="attendee-name-field" data-user-data-field data-document-types="completionCert" hidden>
                 <span id="attendee-name-label" class="field-label">{{attendee_name_label}}</span>
                 <input
                   id="attendee-name"
@@ -134,7 +133,7 @@
                 >
               </div>
 
-              <div class="field">
+              <div class="field" id="email-field" data-user-data-field data-document-types="completionCert" hidden>
                 <span id="email-label" class="field-label">{{email_label}}</span>
                 <input
                   id="email"
@@ -153,15 +152,52 @@
                 >
               </div>
 
-              <div class="form-actions">
-                <button class="primary-action" type="button" id="preview-action">{{preview_action_label}}</button>
-                <div class="secondary-note" id="secondary-note">{{secondary_note}}</div>
+              <div class="field" id="business-tax-id-field" data-user-data-field data-document-types="taxReceipt" hidden>
+                <span id="business-tax-id-label" class="field-label">{{business_tax_id_label}}</span>
+                <input
+                  id="business-tax-id"
+                  name="businessTaxId"
+                  type="text"
+                  autocomplete="off"
+                  data-1p-ignore="true"
+                  data-op-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
+                  data-protonpass-ignore="true"
+                  data-form-type="other"
+                  inputmode="numeric"
+                  aria-labelledby="business-tax-id-label"
+                  placeholder="{{business_tax_id_placeholder}}"
+                >
               </div>
 
-              <div id="form-feedback" class="feedback" role="status" aria-live="polite">{{form_feedback_initial}}</div>
-            </form>
+              <div class="field" id="generated-at-field" data-user-data-field data-document-types="taxReceipt" hidden>
+                <span id="generated-at-label" class="field-label">{{generated_at_label}}</span>
+                <input
+                  class="form-datetime-input"
+                  id="generated-at"
+                  name="generatedAt"
+                  type="text"
+                  autocomplete="off"
+                  data-1p-ignore="true"
+                  data-op-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
+                  data-protonpass-ignore="true"
+                  data-form-type="other"
+                  inputmode="numeric"
+                  aria-labelledby="generated-at-label"
+                  pattern="[0-9]{4} / [0-9]{2} / [0-9]{2} ([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]"
+                  placeholder="{{generated_at_placeholder}}"
+                >
+              </div>
 
-            <p class="footnote" id="footnote">{{footnote}}</p>
+              <div class="form-actions">
+                <button class="primary-action" type="button" id="preview-action" disabled>{{preview_action_label}}</button>
+              </div>
+
+              <div id="form-feedback" class="feedback" role="status" aria-live="polite" hidden></div>
+            </form>
           </div>
         </section>
       </main>
@@ -172,6 +208,7 @@
     </div>
 
     <script id="home-page-i18n" type="application/json">{{{home_page_i18n_json}}}</script>
+    <script src="/assets/portal-datetime-picker.js"></script>
     <script src="/assets/home.js"></script>
   </body>
 </html>

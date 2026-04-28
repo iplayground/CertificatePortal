@@ -352,6 +352,12 @@ input::placeholder {
   box-shadow: var(--theme-input-inset-shadow);
 }
 
+.field[hidden],
+.custom-select-trigger[hidden],
+.field-static-value[hidden] {
+  display: none;
+}
+
 .custom-select-value {
   color: var(--theme-content-text);
 }
@@ -468,9 +474,164 @@ input:focus {
   box-shadow: var(--theme-primary-shadow-hover);
 }
 
-.secondary-note {
-  color: var(--theme-content-muted);
-  font-size: 0.9rem;
+.primary-action:disabled,
+.primary-action:disabled:hover,
+.primary-action:disabled:focus-visible {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.form-datetime-input {
+  width: 100%;
+  min-height: 56px;
+  padding: 16px 18px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 18px;
+  appearance: none;
+  background: var(--theme-input-bg);
+  color: var(--theme-content-text);
+  color-scheme: light;
+  font: inherit;
+  font-size: 16px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.form-datetime-input::placeholder {
+  color: var(--theme-input-placeholder);
+}
+
+.form-datetime-input:focus {
+  outline: none;
+  border-color: var(--theme-focus-border);
+  box-shadow:
+    0 0 0 5px var(--theme-focus-ring),
+    0 12px 24px var(--theme-focus-shadow);
+  transform: translateY(-1px);
+}
+
+.form-datetime-picker {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  justify-content: start;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 18px;
+  padding: 7px;
+  background: var(--theme-input-bg);
+}
+
+.form-datetime-picker:focus-within {
+  border-color: var(--theme-focus-border);
+  box-shadow:
+    0 0 0 5px var(--theme-focus-ring),
+    0 12px 24px var(--theme-focus-shadow);
+  transform: translateY(-1px);
+}
+
+.form-datetime-picker[hidden] {
+  display: none;
+}
+
+.form-datetime-picker-inline {
+  position: relative;
+}
+
+.form-datetime-picker-date,
+.form-datetime-picker-time,
+.form-datetime-picker-time-input {
+  min-height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theme-content-text);
+  color-scheme: light;
+  font: inherit;
+  font-size: 15px;
+  min-width: 0;
+  width: 100%;
+}
+
+.form-datetime-picker-time {
+  display: grid;
+  grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px) max-content minmax(26px, 30px);
+  gap: 0.2ch;
+  align-items: center;
+  padding: 8px 6px;
+}
+
+.form-datetime-picker-date {
+  display: grid;
+  grid-template-columns: calc(4ch + 2px) max-content calc(2ch + 2px) max-content calc(2ch + 2px) 22px;
+  gap: 2px;
+  align-items: center;
+  padding: 8px 4px 8px 10px;
+}
+
+.form-datetime-picker-date-part {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  box-sizing: border-box;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--theme-content-text);
+  color-scheme: light;
+  font: inherit;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.form-datetime-picker-date-part.is-year {
+  text-align: center;
+}
+
+.form-datetime-picker-date-part:focus,
+.form-datetime-picker-date-native:focus,
+.form-datetime-picker-time-input:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.form-datetime-picker-date-native {
+  width: 22px;
+  min-width: 0;
+  height: 22px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: transparent;
+  color-scheme: light;
+  font: inherit;
+}
+
+.form-datetime-picker-date-native::-webkit-datetime-edit {
+  display: none;
+}
+
+.form-datetime-picker-date-native::-webkit-calendar-picker-indicator {
+  margin: 0;
+  padding: 0;
+  cursor: default;
+  opacity: 1;
+}
+
+.form-datetime-picker-time-input {
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+  box-sizing: border-box;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .feedback {
@@ -488,13 +649,6 @@ input:focus {
   border-color: var(--theme-feedback-success-border);
   color: var(--theme-feedback-success-color);
   background: var(--theme-feedback-success-bg);
-}
-
-.footnote {
-  margin-top: 18px;
-  color: var(--theme-content-muted);
-  font-size: 0.88rem;
-  line-height: 1.7;
 }
 
 @media (max-width: 920px) {
@@ -585,10 +739,6 @@ input:focus {
     width: 100%;
   }
 
-  .secondary-note {
-    text-align: center;
-  }
-
   .select-caret {
     right: 16px;
   }
@@ -598,8 +748,7 @@ input:focus {
     padding: 8px;
   }
 
-  .feedback,
-  .footnote {
+  .feedback {
     font-size: 0.92rem;
   }
 

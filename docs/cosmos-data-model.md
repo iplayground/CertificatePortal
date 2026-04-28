@@ -40,7 +40,7 @@ partition key: /id
 | `id` | string | 後端自動產生的活動穩定識別碼 |
 | `name` | string | 活動顯示名稱 |
 | `status` | string | 活動狀態 |
-| `documentTypes` | string[] | 此活動開放申請的文件類型 |
+| `documentTypes` | string[] | 此活動開放申請的文件類型；可為空陣列 |
 | `completionCertDownloadStartsAt` | string \| null | 完訓證明開放下載時間，UTC ISO 8601；未開放完訓證明時為 null |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
 | `createdBy` | string | 建立者識別 |
@@ -60,6 +60,8 @@ unlisted
 completionCert
 taxReceipt
 ```
+
+`documentTypes` 可為空陣列。空陣列表示活動本身可公開顯示，但目前沒有可申請文件；公開首頁應顯示該活動，並在文件類型欄位提示尚無可申請文件，而不是隱藏活動。
 
 `id` 產生規則：
 
@@ -114,6 +116,17 @@ ORDER BY c.updatedAt DESC
 ```
 
 活動清單只投影管理端 UI 需要的欄位，並依最後更新時間由新到舊排序。
+
+公開首頁活動清單：
+
+```sql
+SELECT c.id, c.name, c.documentTypes, c.completionCertDownloadStartsAt
+FROM c
+WHERE c.status = 'open'
+ORDER BY c.updatedAt DESC
+```
+
+公開首頁只讀取狀態為 `open` 的活動，並只投影會眾選擇活動與文件類型所需欄位；`documentTypes` 可以是空陣列，代表首頁應顯示活動但提示尚無可申請文件。不得在公開頁面輸出管理端稽核欄位或其他不必要的個人資料。
 
 單筆活動讀取：
 

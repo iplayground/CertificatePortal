@@ -6,6 +6,7 @@ from src.shared.event_store import (
     build_event_id,
     create_event_document,
     list_event_documents,
+    list_public_event_documents,
     update_event_document,
 )
 
@@ -210,6 +211,19 @@ def test_list_event_documents_queries_events_by_updated_at_desc() -> None:
     assert container.query == (
         "SELECT c.id, c.name, c.status, c.documentTypes, "
         "c.completionCertDownloadStartsAt FROM c ORDER BY c.updatedAt DESC"
+    )
+    assert container.enable_cross_partition_query is True
+
+
+def test_list_public_event_documents_queries_open_events_only() -> None:
+    events = [{"id": "evt_a"}, {"id": "evt_b"}]
+    container = QueryContainer(events)
+
+    assert list_public_event_documents(container=container) == events
+    assert container.query == (
+        "SELECT c.id, c.name, c.documentTypes, "
+        "c.completionCertDownloadStartsAt FROM c "
+        "WHERE c.status = 'open' ORDER BY c.updatedAt DESC"
     )
     assert container.enable_cross_partition_query is True
 

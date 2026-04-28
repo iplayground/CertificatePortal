@@ -7,8 +7,8 @@
     return String(value).padStart(2, "0");
   }
 
-  function formatDateTimeInputValue(year, month, day, hour, minute) {
-    return [
+  function formatDateTimeInputValue(year, month, day, hour, minute, second = null) {
+    const parts = [
       year,
       " / ",
       padDateTimePart(month),
@@ -18,17 +18,24 @@
       padDateTimePart(hour),
       ":",
       padDateTimePart(minute),
-    ].join("");
+    ];
+
+    if (second !== null) {
+      parts.push(":", padDateTimePart(second));
+    }
+
+    return parts.join("");
   }
 
-  function formatCurrentDateTimeInputValue() {
+  function formatCurrentDateTimeInputValue(options = {}) {
     const now = new Date(Date.now() + taipeiUtcOffsetMinutes * 60 * 1000);
     return formatDateTimeInputValue(
       now.getUTCFullYear(),
       now.getUTCMonth() + 1,
       now.getUTCDate(),
       now.getUTCHours(),
-      now.getUTCMinutes()
+      now.getUTCMinutes(),
+      options.includeSeconds ? now.getUTCSeconds() : null
     );
   }
 
@@ -36,7 +43,7 @@
     return new Date(year, month, 0).getDate();
   }
 
-  function isValidDateTimeParts(year, month, day, hour, minute) {
+  function isValidDateTimeParts(year, month, day, hour, minute, second = 0) {
     return (
       year >= minDateTimeYear &&
       year <= maxDateTimeYear &&
@@ -47,16 +54,22 @@
       hour >= 0 &&
       hour <= 23 &&
       minute >= 0 &&
-      minute <= 59
+      minute <= 59 &&
+      second >= 0 &&
+      second <= 59
     );
   }
 
-  function parseDisplayDateTimeParts(value) {
+  function parseDisplayDateTimeParts(value, options = {}) {
     const match = value
       .trim()
-      .match(/^([0-9]{4}) \/ ([0-9]{2}) \/ ([0-9]{2}) ([0-9]{2}):([0-9]{2})$/);
+      .match(/^([0-9]{4}) \/ ([0-9]{2}) \/ ([0-9]{2}) ([0-9]{2}):([0-9]{2})(?::([0-9]{2}))?$/);
 
     if (!match) {
+      return null;
+    }
+
+    if (options.includeSeconds && typeof match[6] !== "string") {
       return null;
     }
 
@@ -65,8 +78,9 @@
     const dayValue = Number(match[3]);
     const hourValue = Number(match[4]);
     const minuteValue = Number(match[5]);
+    const secondValue = typeof match[6] === "string" ? Number(match[6]) : 0;
 
-    if (!isValidDateTimeParts(yearValue, monthValue, dayValue, hourValue, minuteValue)) {
+    if (!isValidDateTimeParts(yearValue, monthValue, dayValue, hourValue, minuteValue, secondValue)) {
       return null;
     }
 
@@ -76,16 +90,18 @@
       day: dayValue,
       hour: hourValue,
       minute: minuteValue,
+      second: secondValue,
+      hasSecond: typeof match[6] === "string",
     };
   }
 
-  function parseDisplayDateTimeValue(value) {
-    const parts = parseDisplayDateTimeParts(value);
+  function parseDisplayDateTimeValue(value, options = {}) {
+    const parts = parseDisplayDateTimeParts(value, options);
     if (!parts) {
       return "";
     }
 
-    return [
+    const output = [
       String(parts.year).padStart(4, "0"),
       "-",
       padDateTimePart(parts.month),
@@ -95,7 +111,13 @@
       padDateTimePart(parts.hour),
       ":",
       padDateTimePart(parts.minute),
-    ].join("");
+    ];
+
+    if (options.includeSeconds || parts.hasSecond) {
+      output.push(":", padDateTimePart(parts.second));
+    }
+
+    return output.join("");
   }
 
   function parseUtcIsoDateTimeValue(value) {
@@ -156,7 +178,7 @@
     ].join("");
   }
 
-  function formatDateTimeInputValueFromUtcIso(value) {
+  function formatDateTimeInputValueFromUtcIso(value, options = {}) {
     const parts = parseUtcIsoDateTimeValue(value);
     if (!parts) {
       return "";
@@ -171,8 +193,9 @@
     const taipeiDay = taipeiDate.getUTCDate();
     const taipeiHour = taipeiDate.getUTCHours();
     const taipeiMinute = taipeiDate.getUTCMinutes();
+    const taipeiSecond = taipeiDate.getUTCSeconds();
 
-    if (!isValidDateTimeParts(taipeiYear, taipeiMonth, taipeiDay, taipeiHour, taipeiMinute)) {
+    if (!isValidDateTimeParts(taipeiYear, taipeiMonth, taipeiDay, taipeiHour, taipeiMinute, taipeiSecond)) {
       return "";
     }
 
@@ -181,14 +204,15 @@
       taipeiMonth,
       taipeiDay,
       taipeiHour,
-      taipeiMinute
+      taipeiMinute,
+      options.includeSeconds ? taipeiSecond : null
     );
   }
 
-  function normalizeDateTimeInputValue(value) {
-    return parseDisplayDateTimeValue(value)
+  function normalizeDateTimeInputValue(value, options = {}) {
+    return parseDisplayDateTimeValue(value, options)
       ? value
-      : formatDateTimeInputValueFromUtcIso(value);
+      : formatDateTimeInputValueFromUtcIso(value, options);
   }
 
   function formatUtcIsoDateTimeInputValue(value) {
@@ -198,16 +222,17 @@
     }
 
     const utcDate = new Date(
-      Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0) -
+      Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) -
         taipeiUtcOffsetMinutes * 60 * 1000
     );
     return formatUtcIsoDateTimeValue(utcDate);
   }
 
-  function installDateTimePicker(textInput) {
+  function installDateTimePicker(textInput, options = {}) {
     if (!(textInput instanceof HTMLInputElement)) {
       return;
     }
+    const includeSeconds = options.includeSeconds === true;
 
     const picker = document.createElement("div");
     const dateGroup = document.createElement("div");
@@ -218,6 +243,7 @@
     const dateInput = document.createElement("input");
     const hourInput = document.createElement("input");
     const minuteInput = document.createElement("input");
+    const secondInput = document.createElement("input");
 
     textInput.hidden = true;
     picker.className = "form-datetime-picker form-datetime-picker-inline";
@@ -229,28 +255,33 @@
     dateInput.type = "date";
     hourInput.type = "text";
     minuteInput.type = "text";
+    secondInput.type = "text";
     yearInput.inputMode = "numeric";
     monthInput.inputMode = "numeric";
     dayInput.inputMode = "numeric";
     hourInput.inputMode = "numeric";
     minuteInput.inputMode = "numeric";
+    secondInput.inputMode = "numeric";
     yearInput.maxLength = 4;
     monthInput.maxLength = 2;
     dayInput.maxLength = 2;
     hourInput.maxLength = 2;
     minuteInput.maxLength = 2;
+    secondInput.maxLength = 2;
     yearInput.className = "form-datetime-picker-date-part is-year";
     monthInput.className = "form-datetime-picker-date-part";
     dayInput.className = "form-datetime-picker-date-part";
     dateInput.className = "form-datetime-picker-date-native";
     hourInput.className = "form-datetime-picker-time-input";
     minuteInput.className = "form-datetime-picker-time-input";
+    secondInput.className = "form-datetime-picker-time-input";
     yearInput.setAttribute("aria-label", "年");
     monthInput.setAttribute("aria-label", "月");
     dayInput.setAttribute("aria-label", "日");
     dateInput.setAttribute("aria-label", "日期選擇器");
     hourInput.setAttribute("aria-label", "小時");
     minuteInput.setAttribute("aria-label", "分鐘");
+    secondInput.setAttribute("aria-label", "秒");
     dateGroup.append(
       yearInput,
       document.createTextNode("/"),
@@ -260,6 +291,9 @@
       dateInput
     );
     timeGroup.append(hourInput, document.createTextNode(":"), minuteInput);
+    if (includeSeconds) {
+      timeGroup.append(document.createTextNode(":"), secondInput);
+    }
     picker.append(dateGroup, timeGroup);
     textInput.insertAdjacentElement("afterend", picker);
     let isApplyingPickerValue = false;
@@ -293,28 +327,29 @@
     }
 
     function syncPickerControls() {
-      const normalizedDisplayValue = normalizeDateTimeInputValue(textInput.value);
+      const normalizedDisplayValue = normalizeDateTimeInputValue(textInput.value, { includeSeconds });
       if (normalizedDisplayValue && textInput.value !== normalizedDisplayValue) {
         textInput.value = normalizedDisplayValue;
       }
 
-      const value = parseDisplayDateTimeValue(normalizedDisplayValue || textInput.value) ||
-        parseDisplayDateTimeValue(formatCurrentDateTimeInputValue());
+      const value = parseDisplayDateTimeValue(normalizedDisplayValue || textInput.value, { includeSeconds }) ||
+        parseDisplayDateTimeValue(formatCurrentDateTimeInputValue({ includeSeconds }), { includeSeconds });
       const [dateValue, timeValue] = value.split("T");
       const [yearValue, monthValue, dayValue] = dateValue.split("-");
-      const [hourValue, minuteValue] = timeValue.split(":");
+      const [hourValue, minuteValue, secondValue = "00"] = timeValue.split(":");
       yearInput.value = yearValue;
       monthInput.value = monthValue;
       dayInput.value = dayValue;
       dateInput.value = dateValue;
       hourInput.value = hourValue;
       minuteInput.value = minuteValue;
+      secondInput.value = secondValue;
     }
 
     function getRestoreDisplayValue() {
-      return normalizeDateTimeInputValue(textInput.value)
-        ? normalizeDateTimeInputValue(textInput.value)
-        : formatCurrentDateTimeInputValue();
+      return normalizeDateTimeInputValue(textInput.value, { includeSeconds })
+        ? normalizeDateTimeInputValue(textInput.value, { includeSeconds })
+        : formatCurrentDateTimeInputValue({ includeSeconds });
     }
 
     function isPickerValueComplete() {
@@ -323,7 +358,8 @@
         monthInput.value.length === 2 &&
         dayInput.value.length === 2 &&
         hourInput.value.length === 2 &&
-        minuteInput.value.length === 2
+        minuteInput.value.length === 2 &&
+        (!includeSeconds || secondInput.value.length === 2)
       );
     }
 
@@ -333,7 +369,8 @@
         Number(monthInput.value),
         Number(dayInput.value),
         Number(hourInput.value),
-        Number(minuteInput.value)
+        Number(minuteInput.value),
+        includeSeconds ? Number(secondInput.value) : 0
       );
     }
 
@@ -355,15 +392,18 @@
       const dayValue = normalizeDatePart(dayInput.value);
       const hourValue = normalizeTimeValue(hourInput.value);
       const minuteValue = normalizeTimeValue(minuteInput.value);
+      const secondValue = normalizeTimeValue(secondInput.value);
       const dateValue = `${yearValue}-${monthValue}-${dayValue}`;
       yearInput.value = yearValue;
       monthInput.value = monthValue;
       dayInput.value = dayValue;
       hourInput.value = hourValue;
       minuteInput.value = minuteValue;
+      secondInput.value = secondValue;
       dateInput.value = dateValue;
-      textInput.value =
-        `${yearValue} / ${monthValue} / ${dayValue} ${hourValue}:${minuteValue}`;
+      textInput.value = includeSeconds
+        ? `${yearValue} / ${monthValue} / ${dayValue} ${hourValue}:${minuteValue}:${secondValue}`
+        : `${yearValue} / ${monthValue} / ${dayValue} ${hourValue}:${minuteValue}`;
       isApplyingPickerValue = true;
       textInput.dispatchEvent(new Event("input", { bubbles: true }));
       isApplyingPickerValue = false;
@@ -441,6 +481,9 @@
     syncInlinePicker();
     textInput.addEventListener("input", syncInlinePicker);
     const pickerPartInputs = [yearInput, monthInput, dayInput, hourInput, minuteInput];
+    if (includeSeconds) {
+      pickerPartInputs.push(secondInput);
+    }
 
     function handlePickerPartNavigation(event) {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
@@ -473,9 +516,11 @@
     dayInput.addEventListener("blur", () => normalizeAndApplyDateInput(dayInput));
     dateInput.addEventListener("input", handleNativeDateInput);
     hourInput.addEventListener("input", () => handleTimeInput(hourInput, minuteInput));
-    minuteInput.addEventListener("input", () => handleTimeInput(minuteInput));
+    minuteInput.addEventListener("input", () => handleTimeInput(minuteInput, includeSeconds ? secondInput : null));
+    secondInput.addEventListener("input", () => handleTimeInput(secondInput));
     hourInput.addEventListener("blur", () => normalizeAndApplyTimeInput(hourInput));
     minuteInput.addEventListener("blur", () => normalizeAndApplyTimeInput(minuteInput));
+    secondInput.addEventListener("blur", () => normalizeAndApplyTimeInput(secondInput));
   }
 
   window.iPlaygroundPortalDateTime = {
