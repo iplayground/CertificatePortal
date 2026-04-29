@@ -17,6 +17,9 @@
 | `GET` | `/api/v1/admin/events` | 查詢活動管理資料 | `application/json` |
 | `POST` | `/api/v1/admin/events` | 建立活動管理資料 | `application/json` |
 | `PUT` | `/api/v1/admin/events/{eventId}` | 更新單筆活動管理資料 | `application/json` |
+| `GET` | `/api/v1/admin/completion-certs` | 查詢單一活動的完訓證明清單 | `application/json` |
+| `POST` | `/api/v1/admin/completion-certs/import` | 匯入單一活動的 KKTIX 完訓證明 CSV | `application/json` |
+| `PUT` | `/api/v1/admin/completion-certs/{certid}` | 修改單筆完訓證明資料 | `application/json` |
 | `GET` | `/verify/{certId}` | 公開驗證頁面 | `text/plain` |
 
 ## 內部導向端點
@@ -33,12 +36,12 @@
 
 ### 呈現方式
 
-目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie；活動管理與首頁公開活動清單已串接 Cosmos DB，其餘文件資料流程仍逐步實作中。
+目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie；活動管理、首頁公開活動清單與完訓證明 CSV 匯入已串接 Cosmos DB，其餘文件資料流程仍逐步實作中。
 
-- 首頁 HTML 不同步查詢 Cosmos DB；頁面先載入後由前端呼叫 `GET /api/v1/events`，再依狀態為 `open` 的活動顯示活動清單。管理平台的活動管理已串接 Cosmos DB，部分其他管理頁面仍為前端暫存互動
+- 首頁 HTML 不同步查詢 Cosmos DB；頁面先載入後由前端呼叫 `GET /api/v1/events`，再依狀態為 `open` 的活動顯示活動清單。管理平台的活動管理與完訓證明清單已串接 Cosmos DB，營業稅繳稅證明頁仍為前端暫存互動
 - 公開驗證頁面目前為靜態純文字輸出
-- 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓名單與繳稅證明的後端上傳處理與持久化流程尚未串接
-- 完訓證明頁目前已有前端 CSV 解析與頁面暫存清單，用於管理介面流程示意
+- 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓證明 CSV 由後端解析、驗證並寫入 Cosmos DB；營業稅繳稅證明的後端上傳處理與持久化流程尚未串接
+- 完訓證明頁目前已有後端 CSV 匯入、活動篩選、清單載入與單筆資料修改流程
 - 營業稅繳稅證明頁目前已有前端單筆 PDF、PNG 或 JPG/JPEG 新增與頁面暫存清單，用於管理介面流程示意；目前不支援 WebP
 
 ### 表單輸入規則
@@ -109,6 +112,7 @@
 - 登入後的文件管理平台目前位於 `/portal/dashboard`
 - 文件管理平台以 iframe 載入歡迎頁、`活動管理`、`完訓證明` 與 `營業稅繳稅證明` 四個獨立頁面
 - 進入 `/portal/dashboard` 後，伺服器會在背景預先初始化活動管理使用的 Cosmos DB container client，降低第一次進入活動管理時才初始化 SDK 與 credential chain 的延遲
+- 進入 `/portal/dashboard` 後，前端會透過 `portal-event-cache.js` 預載 `GET /api/v1/admin/events`，並將活動清單暫存在同一瀏覽器分頁的 `sessionStorage`；各 iframe 子頁進入時可先用快取渲染，再直接呼叫 `GET /api/v1/admin/events` 取得最新活動清單並回寫快取
 - 左側功能清單固定依序顯示 `活動管理`、`完訓證明` 與 `營業稅繳稅證明`
 - 左側功能清單說明文字：`活動與文件設定`、`清單與資料上傳`、`PDF/PNG/JPG 上傳與管理`
 
@@ -212,22 +216,24 @@ status: 尚未串接實際驗證資料
 - 作為 dashboard 右側 iframe 的完訓證明頁
 - 頁面標題不顯示額外的左上角小字
 - 主畫面提供完訓證明資料的清單檢視區
-- CSV 匯入目前由前端解析並暫存在頁面狀態，尚未送出到後端
-- CSV 匯入後的清單列預設為 `未簽到`，下載按鈕停用
-- 同一活動再次匯入 CSV 時，會以新的暫存清單取代該活動既有暫存清單
-- 清單欄位包含報名序號、票種、姓名、Email、簽到狀態與操作
+- 完訓證明資料依活動 `eventId` 從 `GET /api/v1/admin/completion-certs?eventId=<eventId>` 載入
+- CSV 匯入會呼叫 `POST /api/v1/admin/completion-certs/import`，由後端解析 KKTIX CSV、過濾非白名單欄位，並寫入 Cosmos DB `completionCerts`
+- CSV 匯入後的清單列預設為 `未簽到`，下載按鈕停用；`issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 在會眾申請並完成產生檔案前為 `null`
+- 同一活動再次匯入 CSV 時，會以穩定的 `eventId + number + kktixId` 產生文件 ID 並 upsert 到同一批 Cosmos DB 資料
+- 清單欄位包含報名序號、ID、Badge Name、姓名、Email、票種、簽到狀態與操作
+- 清單操作提供下載與修改；修改可更新 Badge Name、姓名、Email 與票種，報名序號與 KKTIX ID 作為識別欄位不直接修改
 - 清單表格標題列置中，資料列內容維持欄位閱讀對齊
 - 清單上方提供目前活動全部資料的批次設定，可設為 `已簽到` 或 `未簽到`
 - 完訓證明清單不提供選取列功能，批次設定一律套用至目前活動全部資料
 - 每列提供可雙向切換的簽到狀態開關
 - 每列在操作欄提供 `下載` 按鈕
 - 清單上方提供活動篩選欄位；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單並直接套用篩選
+- 活動篩選與上傳視窗活動選擇會先使用 portal 分頁內的活動清單快取渲染，再直接呼叫 `GET /api/v1/admin/events` 更新畫面與快取；快取只作為先顯示用途，不作為權威資料來源
 - 標題列右上方提供 `上傳完訓證明資料` 按鈕
 - 點擊 `上傳完訓證明資料` 後開啟中央上傳視窗
 - 上傳視窗可選擇匯入資料所屬活動，預設帶入目前清單篩選活動
 - 上傳視窗僅接受 CSV 檔，並使用管理平台風格的檔案選取區
 - 若直接開啟完訓證明子頁，點擊上傳按鈕後會使用頁內中央上傳視窗作為 fallback
-- 現階段尚未串接後端資料來源、永久儲存或實際檔案上傳流程
 
 ### `/portal/dashboard/tax-receipts`
 
@@ -239,6 +245,7 @@ status: 尚未串接實際驗證資料
 - 營業稅繳稅證明沒有停用狀態，只要完成上傳即一律可下載
 - 每列在操作欄提供 `下載`、`修改` 與 `刪除` 按鈕
 - 清單上方提供活動篩選欄位；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單並直接套用篩選
+- 活動篩選與上傳視窗活動選擇會先使用 portal 分頁內的活動清單快取渲染，再直接呼叫 `GET /api/v1/admin/events` 更新畫面與快取；快取只作為先顯示用途，不作為權威資料來源
 - 標題列右上方提供 `新增繳稅證明` 按鈕
 - 點擊 `新增繳稅證明` 後開啟中央上傳視窗
 - 上傳視窗可選擇資料所屬活動，預設帶入目前清單篩選活動
@@ -272,6 +279,7 @@ status: 尚未串接實際驗證資料
 - `完訓證明` 的文件類型代碼為 `completionCert`
 - 只有勾選 `完訓證明` 時，才顯示 `完訓證明開放下載時間` 欄位；此欄位僅設定開放下載時間，不設定截止日期
 - `營業稅繳稅證明` 的文件類型代碼為 `taxReceipt`，管理端說明文字為 `開放協會 407 收據聯影本供下載`
+- 活動管理頁進入時會先使用 portal 分頁內的活動清單快取渲染，接著直接呼叫 `GET /api/v1/admin/events` 取得最新資料；API 成功後會更新畫面並回寫快取
 - 活動清單載入會呼叫 `GET /api/v1/admin/events`，由後端驗證管理者 session 後查詢 Cosmos DB，並依 `updatedAt` 由新到舊排序
 - 建立活動會呼叫 `POST /api/v1/admin/events`，由後端驗證管理者 session、同源請求與 CSRF token 後寫入 Cosmos DB
 - 建立活動請求必須帶 `Idempotency-Key` header；同一管理者使用相同 key 重試時會對應同一筆活動 id，避免因網路重送建立重複資料
@@ -352,6 +360,130 @@ status: 尚未串接實際驗證資料
 - Request JSON 格式與建立活動相同
 - Response JSON 格式與建立活動相同，`createdAt` 與 `createdBy` 保持原值，`updatedAt` 與 `updatedBy` 會更新
 
+### `GET /api/v1/admin/completion-certs`
+
+- 查詢單一活動的完訓證明清單，query string 必須提供 `eventId`
+- 只接受已登入且通過授權的管理者 session，並檢查同源 `Origin` 或 `Referer`
+- 讀取 Cosmos DB `completionCerts` container，partition key 為 `/eventId`
+
+Request example:
+
+```text
+GET /api/v1/admin/completion-certs?eventId=evt_20260425_ipg
+```
+
+Response example:
+
+```json
+{
+  "completionCerts": [
+    {
+      "id": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+      "eventId": "evt_20260425_ipg",
+      "number": 1,
+      "kktixId": "KKTIX-001",
+      "badgeName": "Ming",
+      "ticketName": "一般票",
+      "name": "王小明",
+      "email": "ming@example.com",
+      "attendanceStatus": "notCheckedIn",
+      "certStatus": "notIssued",
+      "issuedPdfBlobName": null,
+      "verificationTokenHash": null,
+      "issuedAt": null,
+      "createdAt": "2026-04-28T06:02:00Z"
+    }
+  ]
+}
+```
+
+### `POST /api/v1/admin/completion-certs/import`
+
+- 匯入單一活動的 KKTIX CSV，後端只寫入白名單欄位
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
+- 不保留原始 CSV 檔案；匯入後直接 upsert 到 Cosmos DB `completionCerts`
+
+Request JSON example:
+
+```json
+{
+  "eventId": "evt_20260425_ipg",
+  "csvText": "報名序號,票種,Email,Id,你是誰，ID 或具有鑑識度的名稱 Name on Badge\n1,一般票,ming@example.com,KKTIX-001,Ming"
+}
+```
+
+Response JSON example:
+
+```json
+{
+  "completionCerts": [
+    {
+      "id": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+      "eventId": "evt_20260425_ipg",
+      "number": 1,
+      "kktixId": "KKTIX-001",
+      "badgeName": "Ming",
+      "ticketName": "一般票",
+      "name": "王小明",
+      "email": "ming@example.com",
+      "attendanceStatus": "notCheckedIn",
+      "certStatus": "notIssued",
+      "issuedPdfBlobName": null,
+      "verificationTokenHash": null,
+      "issuedAt": null,
+      "createdAt": "2026-04-28T06:02:00Z"
+    }
+  ],
+  "summary": {
+    "imported": 1
+  }
+}
+```
+
+### `PUT /api/v1/admin/completion-certs/{certid}`
+
+- 修改單筆完訓證明清單資料
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
+- 目前可修改欄位為 `badgeName`、`name`、`email`、`ticketName`
+- `number` 與 `kktixId` 是資料識別的一部分，不在此端點直接修改
+
+Request JSON example:
+
+```json
+{
+  "eventId": "evt_20260425_ipg",
+  "badgeName": "Ming",
+  "name": "王小明",
+  "email": "ming@example.com",
+  "ticketName": "一般票"
+}
+```
+
+Response JSON example:
+
+```json
+{
+  "completionCert": {
+    "id": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+    "eventId": "evt_20260425_ipg",
+    "number": 1,
+    "kktixId": "KKTIX-001",
+    "badgeName": "Ming",
+    "ticketName": "一般票",
+    "name": "王小明",
+    "email": "ming@example.com",
+    "attendanceStatus": "notCheckedIn",
+    "certStatus": "notIssued",
+    "issuedPdfBlobName": null,
+    "verificationTokenHash": null,
+    "issuedAt": null,
+    "createdAt": "2026-04-28T06:02:00Z"
+  }
+}
+```
+
 ## 靜態資產
 
 目前頁面透過下列路徑載入樣式、互動與品牌素材：
@@ -360,6 +492,7 @@ status: 尚未串接實際驗證資料
 | --- | --- | --- |
 | `GET` | `/assets/portal.css` | 管理平台登入頁與管理中心共用樣式 |
 | `GET` | `/assets/portal-login.js` | 管理平台登入入口的連結互動腳本 |
+| `GET` | `/assets/portal-event-cache.js` | 管理平台活動清單分頁快取與跨頁更新事件腳本 |
 | `GET` | `/assets/portal-dashboard.js` | 管理中心頁面互動腳本 |
 | `GET` | `/assets/portal-dashboard-welcome.js` | 管理中心歡迎頁互動腳本 |
 | `GET` | `/assets/portal-dashboard-completion-certs.js` | 完訓證明頁清單與 CSV 匯入腳本 |

@@ -23,6 +23,11 @@ ASSET_DEFINITIONS: dict[str, tuple[Path, str, bool]] = {
         "application/javascript",
         True,
     ),
+    "portal-event-cache.js": (
+        STATIC_DIR / "portal-event-cache.js",
+        "application/javascript",
+        True,
+    ),
     "portal-dashboard-completion-certs.js": (
         STATIC_DIR / "portal-dashboard-completion-certs.js",
         "application/javascript",
@@ -82,4 +87,5 @@ def static_asset(req: func.HttpRequest) -> func.HttpResponse:
         status_code=200,
         mimetype=mimetype,
         charset="utf-8" if is_text else None,
+        headers={"Cache-Control": "no-store"},
     )

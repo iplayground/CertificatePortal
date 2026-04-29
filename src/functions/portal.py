@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import csv
 import hashlib
 import hmac
 import json
@@ -32,6 +33,17 @@ from src.shared.portal_auth import (
     resolve_portal_access,
 )
 from src.shared.datetime_values import parse_utc_iso_datetime
+from src.shared.completion_store import (
+    CompletionStoreConfigurationError,
+    CompletionStoreOperationError,
+    build_completion_cert_document,
+    build_completion_cert_id,
+    get_completion_records_container,
+    list_completion_cert_documents,
+    read_completion_cert_document,
+    replace_completion_cert_document,
+    upsert_completion_cert_documents,
+)
 from src.shared.event_store import (
     EventStoreConfigurationError,
     EventStoreOperationError,
@@ -69,6 +81,31 @@ PORTAL_API_CSRF_HEADER_NAME = "X-Portal-CSRF-Token"
 PORTAL_API_IDEMPOTENCY_HEADER_NAME = "Idempotency-Key"
 PORTAL_ALLOWED_EVENT_STATUSES = frozenset({"open", "unlisted"})
 PORTAL_ALLOWED_EVENT_DOCUMENT_TYPES = frozenset({"completionCert", "taxReceipt"})
+PORTAL_COMPLETION_CSV_ALIASES = {
+    "badgeName": ("你是誰，ID 或具有鑑識度的名稱 Name on Badge",),
+    "email": ("Email", "email"),
+    "kktixId": ("Id",),
+    "name": ("姓名 Full Name",),
+    "number": ("報名序號",),
+    "ticketName": ("票種",),
+}
+PORTAL_COMPLETION_CSV_REQUIRED_FIELDS = frozenset(
+    {"badgeName", "email", "kktixId", "number", "ticketName"}
+)
+PORTAL_COMPLETION_CSV_FIELD_LABELS = {
+    "badgeName": "Badge Name",
+    "email": "Email",
+    "kktixId": "Id",
+    "name": "姓名 Full Name",
+    "number": "報名序號",
+    "ticketName": "票種",
+}
+PORTAL_COMPLETION_CERT_MUTABLE_FIELDS = frozenset(
+    {"badgeName", "email", "name", "ticketName"}
+)
+PORTAL_COMPLETION_CERT_REQUIRED_MUTABLE_FIELDS = frozenset(
+    {"badgeName", "email", "ticketName"}
+)
 PORTAL_LOGIN_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_login.html"
 PORTAL_DASHBOARD_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_dashboard.html"
 PORTAL_DASHBOARD_WELCOME_TEMPLATE_PATH = (
@@ -356,6 +393,21 @@ def build_portal_events_json_payload() -> dict[str, Any]:
     return {"events": [normalize_portal_event_for_api(event) for event in events]}
 
 
+def read_portal_event(event_id: str) -> dict[str, Any]:
+    try:
+        event = get_events_container().read_item(item=event_id, partition_key=event_id)
+    except Exception as exc:
+        status_code = getattr(exc, "status_code", None)
+        if status_code == 404:
+            raise EventStoreOperationError("找不到指定活動。") from exc
+        raise
+
+    if not isinstance(event, dict):
+        raise EventStoreOperationError("活動資料格式不合法。")
+
+    return event
+
+
 def normalize_portal_event_for_api(event: dict[str, Any]) -> dict[str, Any]:
     event_status = str(event.get("status", "")).strip()
     return {
@@ -367,6 +419,218 @@ def normalize_portal_event_for_api(event: dict[str, Any]) -> dict[str, Any]:
             event.get("completionCertDownloadStartsAt") or ""
         ).strip(),
     }
+
+
+def normalize_completion_cert_for_api(document: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(document.get("id", "")).strip(),
+        "eventId": str(document.get("eventId", "")).strip(),
+        "number": normalize_completion_cert_number(document.get("number")),
+        "kktixId": str(document.get("kktixId", "")).strip(),
+        "badgeName": str(document.get("badgeName", "")).strip(),
+        "ticketName": str(document.get("ticketName", "")).strip(),
+        "name": str(document.get("name", "")).strip(),
+        "email": str(document.get("email", "")).strip(),
+        "attendanceStatus": str(document.get("attendanceStatus", "")).strip()
+        or "notCheckedIn",
+        "certStatus": str(document.get("certStatus", "")).strip() or "notIssued",
+        "issuedPdfBlobName": document.get("issuedPdfBlobName"),
+        "verificationTokenHash": document.get("verificationTokenHash"),
+        "issuedAt": document.get("issuedAt"),
+        "createdAt": str(document.get("createdAt", "")).strip(),
+    }
+
+
+def normalize_completion_cert_number(value: Any) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return 0
+
+
+def parse_completion_csv_payload(
+    payload: Any,
+) -> tuple[dict[str, Any] | None, str | None, dict[str, Any] | None]:
+    if not isinstance(payload, dict):
+        return None, "請提供 JSON 物件。", None
+
+    event_id = str(payload.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return None, "活動識別碼不合法。", None
+
+    csv_text = str(payload.get("csvText", "")).lstrip("\ufeff")
+    if not csv_text.strip():
+        return None, "請提供 CSV 內容。", None
+
+    try:
+        rows = [
+            (line_number, [field.strip() for field in row])
+            for line_number, row in enumerate(csv.reader(csv_text.splitlines()), start=1)
+            if any(field.strip() for field in row)
+        ]
+    except csv.Error:
+        return None, "CSV 格式不合法。", None
+
+    if not rows:
+        return None, "CSV 沒有可匯入的資料。", None
+
+    _, headers = rows[0]
+    column_indexes = resolve_completion_csv_column_indexes(headers)
+    missing_fields = [
+        field_name
+        for field_name in sorted(PORTAL_COMPLETION_CSV_REQUIRED_FIELDS)
+        if column_indexes[field_name] < 0
+    ]
+    if missing_fields:
+        return (
+            None,
+            f"CSV 缺少必要欄位：{format_completion_csv_field_labels(missing_fields)}。",
+            None,
+        )
+
+    records: list[dict[str, Any]] = []
+    row_errors: list[dict[str, Any]] = []
+    for row_number, row in rows[1:]:
+        record = {
+            field_name: resolve_completion_csv_cell(row, column_index)
+            for field_name, column_index in column_indexes.items()
+        }
+        if not any(record.values()):
+            continue
+
+        missing_values = [
+            field_name
+            for field_name in sorted(PORTAL_COMPLETION_CSV_REQUIRED_FIELDS)
+            if not record[field_name]
+        ]
+        if missing_values:
+            missing_value_labels = build_completion_csv_field_labels(missing_values)
+            row_errors.append(
+                {
+                    "rowNumber": row_number,
+                    "fields": missing_value_labels,
+                    "message": (
+                        f"CSV 第 {row_number} 列缺少必要欄位值："
+                        f"{'、'.join(missing_value_labels)}。"
+                    ),
+                }
+            )
+            continue
+
+        if not record["number"].isdigit():
+            row_errors.append(
+                {
+                    "rowNumber": row_number,
+                    "fields": ["報名序號"],
+                    "message": f"CSV 第 {row_number} 列報名序號必須是整數。",
+                }
+            )
+            continue
+
+        record["number"] = int(record["number"])
+
+        records.append(record)
+
+    if row_errors:
+        return (
+            None,
+            f"CSV 有 {len(row_errors)} 筆資料需要修正，尚未匯入 DB。",
+            {"rowErrors": row_errors},
+        )
+
+    if not records:
+        return None, "CSV 沒有可匯入的資料。", None
+
+    return {"eventId": event_id, "records": records}, None, None
+
+
+def format_completion_csv_field_labels(field_names: list[str]) -> str:
+    return "、".join(build_completion_csv_field_labels(field_names))
+
+
+def build_completion_csv_field_labels(field_names: list[str]) -> list[str]:
+    return [
+        PORTAL_COMPLETION_CSV_FIELD_LABELS.get(field_name, field_name)
+        for field_name in field_names
+    ]
+
+
+def resolve_completion_csv_column_indexes(headers: list[str]) -> dict[str, int]:
+    return {
+        field_name: next(
+            (
+                headers.index(alias)
+                for alias in aliases
+                if alias in headers
+            ),
+            -1,
+        )
+        for field_name, aliases in PORTAL_COMPLETION_CSV_ALIASES.items()
+    }
+
+
+def resolve_completion_csv_cell(row: list[str], column_index: int) -> str:
+    if column_index < 0 or column_index >= len(row):
+        return ""
+    return row[column_index].strip()
+
+
+def build_completion_cert_documents_from_records(
+    *,
+    event_id: str,
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        build_completion_cert_document(
+            badge_name=record.get("badgeName", ""),
+            cert_id=build_completion_cert_id(
+                event_id=event_id,
+                number=record["number"],
+                kktix_id=record["kktixId"],
+            ),
+            email=record["email"],
+            event_id=event_id,
+            kktix_id=record["kktixId"],
+            name=record.get("name", ""),
+            number=record["number"],
+            ticket_name=record["ticketName"],
+        )
+        for record in records
+    ]
+
+
+def parse_completion_cert_update_payload(
+    payload: Any,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(payload, dict):
+        return None, "請提供 JSON 物件。"
+
+    event_id = str(payload.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return None, "活動識別碼不合法。"
+
+    updates = {
+        field_name: str(payload.get(field_name, "")).strip()
+        for field_name in PORTAL_COMPLETION_CERT_MUTABLE_FIELDS
+        if field_name in payload
+    }
+    if not updates:
+        return None, "請提供要修改的完訓證明資料。"
+
+    missing_fields = [
+        field_name
+        for field_name in sorted(PORTAL_COMPLETION_CERT_REQUIRED_MUTABLE_FIELDS)
+        if field_name in updates and not updates[field_name]
+    ]
+    if missing_fields:
+        return (
+            None,
+            f"完訓證明資料缺少必要欄位值："
+            f"{format_completion_csv_field_labels(missing_fields)}。",
+        )
+
+    return {"eventId": event_id, "updates": updates}, None
 
 
 def build_portal_event_row_html(event: dict[str, Any]) -> str:
@@ -443,9 +707,15 @@ def build_portal_api_error_response(
     status_code: int,
     code: str,
     message: str,
+    *,
+    details: dict[str, Any] | None = None,
 ) -> func.HttpResponse:
+    error_payload: dict[str, Any] = {"code": code, "message": message}
+    if details is not None:
+        error_payload["details"] = details
+
     return build_portal_api_json_response(
-        {"error": {"code": code, "message": message}},
+        {"error": error_payload},
         status_code=status_code,
     )
 
@@ -953,6 +1223,204 @@ def portal_admin_events_list_api(req: func.HttpRequest) -> func.HttpResponse:
     return build_portal_api_json_response(payload, status_code=200)
 
 
+@blueprint.function_name(name="portal_admin_completion_certs_list_api")
+@blueprint.route(
+    route="api/v1/admin/completion-certs",
+    methods=["GET"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_completion_certs_list_api(req: func.HttpRequest) -> func.HttpResponse:
+    access = require_portal_api_read_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    event_id = str(req.params.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_event_id",
+            "活動識別碼不合法。",
+        )
+
+    try:
+        documents = list_completion_cert_documents(
+            container=get_completion_records_container(),
+            event_id=event_id,
+        )
+    except CompletionStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_not_configured",
+            str(exc),
+        )
+    except CompletionStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {
+            "completionCerts": [
+                normalize_completion_cert_for_api(document)
+                for document in documents
+            ]
+        },
+        status_code=200,
+    )
+
+
+@blueprint.function_name(name="portal_admin_completion_certs_import_api")
+@blueprint.route(
+    route="api/v1/admin/completion-certs/import",
+    methods=["POST"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_completion_certs_import_api(req: func.HttpRequest) -> func.HttpResponse:
+    access = require_portal_api_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return build_portal_api_error_response(400, "invalid_json", "請提供合法 JSON。")
+
+    import_payload, payload_error, payload_error_details = parse_completion_csv_payload(payload)
+    if import_payload is None:
+        return build_portal_api_error_response(
+            400,
+            "invalid_completion_csv_payload",
+            payload_error or "完訓證明 CSV 資料格式不合法。",
+            details=payload_error_details,
+        )
+
+    event_id = import_payload["eventId"]
+    try:
+        read_portal_event(event_id)
+        documents = build_completion_cert_documents_from_records(
+            event_id=event_id,
+            records=import_payload["records"],
+        )
+        saved_documents = upsert_completion_cert_documents(
+            container=get_completion_records_container(),
+            documents=documents,
+        )
+        current_documents = list_completion_cert_documents(
+            container=get_completion_records_container(),
+            event_id=event_id,
+        )
+    except EventStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "event_store_not_configured",
+            str(exc),
+        )
+    except EventStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定活動。" else 503,
+            "event_not_found" if str(exc) == "找不到指定活動。" else "event_store_unavailable",
+            str(exc),
+        )
+    except CompletionStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_not_configured",
+            str(exc),
+        )
+    except CompletionStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {
+            "completionCerts": [
+                normalize_completion_cert_for_api(document)
+                for document in current_documents
+            ],
+            "summary": {"imported": len(saved_documents)},
+        },
+        status_code=200,
+    )
+
+
+@blueprint.function_name(name="portal_admin_completion_certs_update_api")
+@blueprint.route(
+    route="api/v1/admin/completion-certs/{certid}",
+    methods=["PUT"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_completion_certs_update_api(req: func.HttpRequest) -> func.HttpResponse:
+    access = require_portal_api_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    cert_id = str(req.route_params.get("certid", "")).strip()
+    if not cert_id.startswith("ccert_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_completion_cert_id",
+            "完訓證明資料識別碼不合法。",
+        )
+
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return build_portal_api_error_response(400, "invalid_json", "請提供合法 JSON。")
+
+    update_payload, payload_error = parse_completion_cert_update_payload(payload)
+    if update_payload is None:
+        return build_portal_api_error_response(
+            400,
+            "invalid_completion_cert_payload",
+            payload_error or "完訓證明資料格式不合法。",
+        )
+
+    event_id = update_payload["eventId"]
+    try:
+        container = get_completion_records_container()
+        document = read_completion_cert_document(
+            cert_id=cert_id,
+            container=container,
+            event_id=event_id,
+        )
+        if str(document.get("eventId", "")).strip() != event_id:
+            return build_portal_api_error_response(
+                404,
+                "completion_cert_not_found",
+                "找不到指定完訓證明資料。",
+            )
+
+        updated_document = {**document, **update_payload["updates"]}
+        saved_document = replace_completion_cert_document(
+            container=container,
+            document=updated_document,
+        )
+    except CompletionStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_not_configured",
+            str(exc),
+        )
+    except CompletionStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定完訓證明資料。" else 503,
+            "completion_cert_not_found"
+            if str(exc) == "找不到指定完訓證明資料。"
+            else "completion_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {"completionCert": normalize_completion_cert_for_api(saved_document)},
+        status_code=200,
+    )
+
+
 @blueprint.function_name(name="portal_dashboard_page")
 @blueprint.route(
     route="portal/dashboard",
@@ -1005,7 +1473,10 @@ def portal_dashboard_completion_certs_page(
         return access
 
     return build_portal_page_response(
-        load_portal_dashboard_completion_certs_template()
+        render_html_template(
+            load_portal_dashboard_completion_certs_template(),
+            build_portal_dashboard_context(req, access),
+        )
     )
 
 

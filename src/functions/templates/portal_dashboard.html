@@ -269,6 +269,14 @@
             >
           </label>
 
+          <div
+            class="document-upload-errors"
+            id="portal-completion-upload-errors"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></div>
+
           <div class="event-form-actions">
             <button class="secondary-button event-cancel-button" id="portal-completion-upload-cancel" type="button">取消</button>
             <button class="submit-button" id="portal-completion-upload-submit" type="button">上傳完訓證明資料</button>
@@ -392,6 +400,7 @@
     </div>
 
     <script src="/assets/portal-datetime-picker.js"></script>
+    <script src="/assets/portal-event-cache.js"></script>
     <script src="/assets/portal-dashboard.js"></script>
   </body>
 </html>

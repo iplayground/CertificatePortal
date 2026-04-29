@@ -39,22 +39,28 @@ const dashboardCompletionUploadFileInput = document.getElementById(
 const dashboardCompletionUploadFileName = document.getElementById(
   "portal-completion-upload-file-name"
 );
+const dashboardCompletionUploadErrors = document.getElementById(
+  "portal-completion-upload-errors"
+);
+const dashboardCompletionUploadDropzone = document.querySelector(
+  'label[for="portal-completion-upload-file"]'
+);
 const dashboardCompletionUploadEvent = document.getElementById(
   "portal-completion-upload-event"
 );
-const dashboardCompletionUploadEventSelect = document.getElementById(
+let dashboardCompletionUploadEventSelect = document.getElementById(
   "portal-completion-upload-event-select"
 );
-const dashboardCompletionUploadEventTrigger = document.getElementById(
+let dashboardCompletionUploadEventTrigger = document.getElementById(
   "portal-completion-upload-event-trigger"
 );
-const dashboardCompletionUploadEventValue = document.getElementById(
+let dashboardCompletionUploadEventValue = document.getElementById(
   "portal-completion-upload-event-value"
 );
-const dashboardCompletionUploadEventMenu = document.getElementById(
+let dashboardCompletionUploadEventMenu = document.getElementById(
   "portal-completion-upload-event-options"
 );
-const dashboardCompletionUploadEventOptions = Array.from(
+let dashboardCompletionUploadEventOptions = Array.from(
   document.querySelectorAll("#portal-completion-upload-event-options .custom-select-option")
 );
 const dashboardTaxUploadDialog = document.getElementById("portal-tax-upload-dialog");
@@ -75,15 +81,15 @@ const dashboardTaxUploadGeneratedAtInput = document.getElementById(
   "portal-tax-upload-generated-at"
 );
 const dashboardTaxUploadEvent = document.getElementById("portal-tax-upload-event");
-const dashboardTaxUploadEventSelect = document.getElementById(
+let dashboardTaxUploadEventSelect = document.getElementById(
   "portal-tax-upload-event-select"
 );
-const dashboardTaxUploadEventTrigger = document.getElementById(
+let dashboardTaxUploadEventTrigger = document.getElementById(
   "portal-tax-upload-event-trigger"
 );
-const dashboardTaxUploadEventValue = document.getElementById("portal-tax-upload-event-value");
-const dashboardTaxUploadEventMenu = document.getElementById("portal-tax-upload-event-options");
-const dashboardTaxUploadEventOptions = Array.from(
+let dashboardTaxUploadEventValue = document.getElementById("portal-tax-upload-event-value");
+let dashboardTaxUploadEventMenu = document.getElementById("portal-tax-upload-event-options");
+let dashboardTaxUploadEventOptions = Array.from(
   document.querySelectorAll("#portal-tax-upload-event-options .custom-select-option")
 );
 
@@ -93,6 +99,7 @@ const logoutUrl =
 const welcomePagePath = portalPage.dataset.welcomePagePath ?? "/portal/dashboard/welcome";
 const portalCsrfToken = portalPage.dataset.portalCsrfToken ?? "";
 const adminEventsApiPath = "/api/v1/admin/events";
+const adminCompletionCertsImportApiPath = "/api/v1/admin/completion-certs/import";
 const eventFormOpenMessageType = "ipg:event-form:open";
 const eventListRowBusyMessageType = "ipg:event-row:busy";
 const eventListRowUpsertMessageType = "ipg:event-row:upsert";
@@ -106,6 +113,7 @@ const defaultPageTitle = document.title;
 const defaultDashboardCompletionUploadFileName = "尚未選擇 CSV 檔案";
 const invalidDashboardCompletionUploadFileName = "請選擇 CSV 檔案";
 const failedDashboardCompletionUploadFileName = "CSV 檔案讀取失敗";
+const importingDashboardCompletionUploadFileName = "完訓證明資料匯入中...";
 const defaultDashboardCompletionUploadEventName = "";
 const emptyDashboardCompletionUploadEventName = "尚無活動資料";
 const defaultDashboardTaxUploadFileName = "尚未選擇 PDF 或圖檔";
@@ -130,6 +138,8 @@ let dashboardTaxUploadPreviousFocus = null;
 let dashboardTaxUploadDialogMode = "create";
 let dashboardTaxUploadEditingRowId = "";
 let dashboardTaxUploadCurrentFileName = "";
+let dashboardCompletionUploadEventsSignature = "";
+let dashboardTaxUploadEventsSignature = "";
 
 const {
   formatCurrentDateTimeInputValue,
@@ -472,6 +482,9 @@ async function submitDashboardEventForm() {
       throw new Error(responsePayload?.error?.message || "建立活動失敗，請稍後再試。");
     }
 
+    window.iPlaygroundPortalEvents?.upsertCachedEvent?.(responsePayload.event);
+    void loadDashboardCompletionUploadEvents();
+
     if (isEditMode) {
       postEventListMessage({
         type: eventListRowUpsertMessageType,
@@ -546,6 +559,217 @@ function getDashboardCompletionUploadEventName() {
   return defaultDashboardCompletionUploadEventName;
 }
 
+function normalizeDashboardCompletionUploadEvent(eventData) {
+  return {
+    id: typeof eventData?.id === "string" ? eventData.id : "",
+    name: typeof eventData?.name === "string" ? eventData.name.trim() : "",
+  };
+}
+
+function getDashboardCompletionUploadEventValue(eventData) {
+  return eventData.id;
+}
+
+function getDashboardCompletionUploadEventLabel(eventData) {
+  return eventData.name || eventData.id || "未命名活動";
+}
+
+function buildDashboardCompletionUploadEventOption(
+  eventData,
+  index,
+  applyValue,
+  closeSelect,
+  optionListRef
+) {
+  const option = document.createElement("button");
+  option.className = `custom-select-option${index === 0 ? " is-selected" : ""}`;
+  option.type = "button";
+  option.setAttribute("role", "option");
+  option.dataset.value = getDashboardCompletionUploadEventValue(eventData);
+  option.setAttribute("aria-selected", String(index === 0));
+  option.textContent = getDashboardCompletionUploadEventLabel(eventData);
+
+  option.addEventListener("click", () => {
+    applyValue(option.dataset.value ?? option.textContent?.trim() ?? "");
+    closeSelect({ blurTrigger: true });
+  });
+
+  option.addEventListener("keydown", (event) => {
+    const optionList = optionListRef();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSelect({ blurTrigger: true });
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      optionList[(index + 1) % optionList.length]?.focus();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      optionList[(index - 1 + optionList.length) % optionList.length]?.focus();
+      return;
+    }
+
+    if (event.key === "Tab") {
+      closeSelect();
+    }
+  });
+
+  return option;
+}
+
+function buildDashboardCompletionUploadEventSelect({
+  isSingleOption = false,
+}) {
+  const select = document.createElement("div");
+  select.className = `custom-select${isSingleOption ? " is-single-option" : ""}`;
+  select.id = "portal-completion-upload-event-select";
+
+  const trigger = document.createElement("button");
+  trigger.className = "custom-select-trigger";
+  trigger.id = "portal-completion-upload-event-trigger";
+  trigger.type = "button";
+  if (isSingleOption) {
+    trigger.setAttribute("aria-disabled", "true");
+    trigger.setAttribute("tabindex", "-1");
+  } else {
+    trigger.setAttribute("aria-haspopup", "listbox");
+  }
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute(
+    "aria-labelledby",
+    "portal-completion-upload-event-label portal-completion-upload-event-value"
+  );
+
+  const value = document.createElement("span");
+  value.className = "custom-select-value";
+  value.id = "portal-completion-upload-event-value";
+  value.textContent = emptyDashboardCompletionUploadEventName;
+
+  const menu = document.createElement("div");
+  menu.className = "custom-select-menu";
+  menu.id = "portal-completion-upload-event-options";
+  menu.role = "listbox";
+  menu.hidden = true;
+
+  trigger.append(value);
+  if (!isSingleOption) {
+    const caret = document.createElement("span");
+    caret.className = "select-caret";
+    caret.setAttribute("aria-hidden", "true");
+    trigger.append(caret);
+  }
+  select.append(trigger, menu);
+  return { menu, select, trigger, value };
+}
+
+function renderDashboardCompletionUploadEventSelect(events) {
+  if (!(dashboardCompletionUploadEvent instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const normalizedEvents = events
+    .map((eventData) => normalizeDashboardCompletionUploadEvent(eventData))
+    .filter((eventData) => getDashboardCompletionUploadEventValue(eventData));
+  const nextEventsSignature = JSON.stringify(normalizedEvents);
+
+  if (nextEventsSignature === dashboardCompletionUploadEventsSignature) {
+    return;
+  }
+
+  dashboardCompletionUploadEventsSignature = nextEventsSignature;
+
+  if (normalizedEvents.length === 0) {
+    if (dashboardCompletionUploadEventValue) {
+      dashboardCompletionUploadEventValue.textContent = emptyDashboardCompletionUploadEventName;
+    }
+    dashboardCompletionUploadEvent.value = "";
+    return;
+  }
+
+  const firstEventValue = getDashboardCompletionUploadEventValue(normalizedEvents[0] ?? {});
+  const uploadSelect = buildDashboardCompletionUploadEventSelect({
+    isSingleOption: normalizedEvents.length === 1,
+  });
+  dashboardCompletionUploadEventValue?.replaceWith(uploadSelect.select);
+  dashboardCompletionUploadEventSelect = uploadSelect.select;
+  dashboardCompletionUploadEventTrigger = uploadSelect.trigger;
+  dashboardCompletionUploadEventValue = uploadSelect.value;
+  dashboardCompletionUploadEventMenu = uploadSelect.menu;
+  dashboardCompletionUploadEventOptions = normalizedEvents.map((eventData, index) =>
+    buildDashboardCompletionUploadEventOption(
+      eventData,
+      index,
+      applyDashboardCompletionUploadEventValue,
+      closeDashboardCompletionUploadEventSelect,
+      () => dashboardCompletionUploadEventOptions
+    )
+  );
+  dashboardCompletionUploadEventMenu.replaceChildren(...dashboardCompletionUploadEventOptions);
+  dashboardCompletionUploadEventTrigger.addEventListener(
+    "click",
+    toggleDashboardCompletionUploadEventSelect
+  );
+  dashboardCompletionUploadEventTrigger.addEventListener(
+    "keydown",
+    handleDashboardCompletionUploadEventTriggerKeydown
+  );
+
+  applyDashboardCompletionUploadEventValue(getCompletionEventNameFromFrame() || firstEventValue);
+}
+
+async function loadDashboardCompletionUploadEvents() {
+  const eventCache = window.iPlaygroundPortalEvents;
+  const cachedEvents = eventCache?.getCachedEvents?.();
+  let cachedEventsSignature = "";
+
+  if (Array.isArray(cachedEvents)) {
+    cachedEventsSignature = JSON.stringify(
+      cachedEvents
+        .map((eventData) => normalizeDashboardCompletionUploadEvent(eventData))
+        .filter((eventData) => getDashboardCompletionUploadEventValue(eventData))
+    );
+    renderDashboardCompletionUploadEventSelect(cachedEvents);
+    renderDashboardTaxUploadEventSelect(cachedEvents);
+  }
+
+  try {
+    const response = await fetch(adminEventsApiPath, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    const responsePayload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(responsePayload?.error?.message || "活動清單載入失敗。");
+    }
+
+    const events = Array.isArray(responsePayload.events) ? responsePayload.events : [];
+    eventCache?.setCachedEvents?.(events);
+    const refreshedEventsSignature = JSON.stringify(
+      events
+        .map((eventData) => normalizeDashboardCompletionUploadEvent(eventData))
+        .filter((eventData) => getDashboardCompletionUploadEventValue(eventData))
+    );
+    if (refreshedEventsSignature !== cachedEventsSignature) {
+      renderDashboardCompletionUploadEventSelect(events);
+      renderDashboardTaxUploadEventSelect(events);
+    }
+  } catch (error) {
+    if (Array.isArray(cachedEvents)) {
+      return;
+    }
+    if (dashboardCompletionUploadEventValue) {
+      dashboardCompletionUploadEventValue.textContent =
+        error instanceof Error ? error.message : "活動清單載入失敗。";
+    }
+  }
+}
+
 function applyDashboardCompletionUploadEventValue(nextValue) {
   const normalizedValue = nextValue?.trim() || defaultDashboardCompletionUploadEventName;
 
@@ -554,8 +778,12 @@ function applyDashboardCompletionUploadEventValue(nextValue) {
   }
 
   if (dashboardCompletionUploadEventValue) {
+    const selectedOption = dashboardCompletionUploadEventOptions.find((item) => {
+      const optionValue = item.dataset.value ?? item.textContent?.trim() ?? "";
+      return optionValue === normalizedValue;
+    });
     dashboardCompletionUploadEventValue.textContent =
-      normalizedValue || emptyDashboardCompletionUploadEventName;
+      selectedOption?.textContent?.trim() || normalizedValue || emptyDashboardCompletionUploadEventName;
   }
 
   dashboardCompletionUploadEventOptions.forEach((item) => {
@@ -566,12 +794,22 @@ function applyDashboardCompletionUploadEventValue(nextValue) {
   });
 }
 
+function getFirstDashboardCompletionUploadEventValue() {
+  const firstOption = dashboardCompletionUploadEventOptions[0];
+  return firstOption?.dataset.value ?? firstOption?.textContent?.trim() ?? "";
+}
+
 function resetDashboardCompletionUploadDialog() {
   if (dashboardCompletionUploadFileInput instanceof HTMLInputElement) {
     dashboardCompletionUploadFileInput.value = "";
   }
 
-  applyDashboardCompletionUploadEventValue(getCompletionEventNameFromFrame());
+  clearDashboardCompletionUploadErrors();
+  applyDashboardCompletionUploadEventValue(
+    getCompletionEventNameFromFrame() ||
+      getDashboardCompletionUploadEventName() ||
+      getFirstDashboardCompletionUploadEventValue()
+  );
   updateDashboardCompletionUploadFileName();
 }
 
@@ -592,6 +830,7 @@ function updateDashboardCompletionUploadFileName() {
     return;
   }
 
+  clearDashboardCompletionUploadErrors();
   if (
     !(dashboardCompletionUploadFileInput instanceof HTMLInputElement) ||
     !(dashboardCompletionUploadFileInput.files instanceof FileList) ||
@@ -611,6 +850,47 @@ function updateDashboardCompletionUploadFileName() {
   dashboardCompletionUploadFileName.textContent = selectedFile.name;
 }
 
+function clearDashboardCompletionUploadErrors() {
+  if (!(dashboardCompletionUploadErrors instanceof HTMLElement)) {
+    return;
+  }
+
+  dashboardCompletionUploadErrors.replaceChildren();
+  dashboardCompletionUploadErrors.hidden = true;
+}
+
+function buildDashboardCompletionUploadImportError(responsePayload, fallbackMessage) {
+  const error = new Error(responsePayload?.error?.message || fallbackMessage);
+  error.rowErrors = Array.isArray(responsePayload?.error?.details?.rowErrors)
+    ? responsePayload.error.details.rowErrors
+    : [];
+  return error;
+}
+
+function showDashboardCompletionUploadError(error) {
+  if (!(dashboardCompletionUploadErrors instanceof HTMLElement)) {
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : failedDashboardCompletionUploadFileName;
+  const rowErrors = Array.isArray(error?.rowErrors) ? error.rowErrors : [];
+  const title = document.createElement("strong");
+  title.textContent = message;
+  dashboardCompletionUploadErrors.replaceChildren(title);
+
+  if (rowErrors.length > 0) {
+    const list = document.createElement("ul");
+    rowErrors.forEach((rowError) => {
+      const item = document.createElement("li");
+      item.textContent = rowError?.message || `CSV 第 ${rowError?.rowNumber ?? "?"} 列資料不合法。`;
+      list.append(item);
+    });
+    dashboardCompletionUploadErrors.append(list);
+  }
+
+  dashboardCompletionUploadErrors.hidden = false;
+}
+
 function getSelectedDashboardCompletionUploadFile() {
   if (
     !(dashboardCompletionUploadFileInput instanceof HTMLInputElement) ||
@@ -623,7 +903,74 @@ function getSelectedDashboardCompletionUploadFile() {
   return dashboardCompletionUploadFileInput.files[0];
 }
 
+function hasDraggedDashboardCompletionFiles(event) {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
+}
+
+function setDashboardCompletionUploadDragActive(isActive) {
+  dashboardCompletionUploadDropzone?.classList.toggle("is-drag-active", isActive);
+}
+
+function assignDashboardCompletionUploadFile(file) {
+  if (!(dashboardCompletionUploadFileInput instanceof HTMLInputElement)) {
+    return;
+  }
+
+  if (!isDashboardCompletionCsvFile(file)) {
+    dashboardCompletionUploadFileInput.value = "";
+    dashboardCompletionUploadFileName.textContent = invalidDashboardCompletionUploadFileName;
+    return;
+  }
+
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  dashboardCompletionUploadFileInput.files = transfer.files;
+  updateDashboardCompletionUploadFileName();
+}
+
+function handleDashboardCompletionUploadDrag(event) {
+  if (dashboardCompletionUploadDialog?.hidden || !hasDraggedDashboardCompletionFiles(event)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  setDashboardCompletionUploadDragActive(true);
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "copy";
+  }
+}
+
+function handleDashboardCompletionUploadDragEnd(event) {
+  if (dashboardCompletionUploadDialog?.hidden || !hasDraggedDashboardCompletionFiles(event)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  setDashboardCompletionUploadDragActive(false);
+}
+
+function handleDashboardCompletionUploadDrop(event) {
+  if (dashboardCompletionUploadDialog?.hidden || !hasDraggedDashboardCompletionFiles(event)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  setDashboardCompletionUploadDragActive(false);
+
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    assignDashboardCompletionUploadFile(file);
+  }
+}
+
 async function sendDashboardCompletionUploadFileToFrame() {
+  if (!(dashboardCompletionUploadSubmitButton instanceof HTMLButtonElement)) {
+    return;
+  }
+
   const selectedFile = getSelectedDashboardCompletionUploadFile();
   if (!selectedFile || !isDashboardCompletionCsvFile(selectedFile)) {
     updateDashboardCompletionUploadFileName();
@@ -631,23 +978,46 @@ async function sendDashboardCompletionUploadFileToFrame() {
     return;
   }
 
+  dashboardCompletionUploadSubmitButton.disabled = true;
+  clearDashboardCompletionUploadErrors();
+  if (dashboardCompletionUploadFileName) {
+    dashboardCompletionUploadFileName.textContent = importingDashboardCompletionUploadFileName;
+  }
+
   try {
     const csvText = await selectedFile.text();
+    const response = await fetch(adminCompletionCertsImportApiPath, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Portal-CSRF-Token": portalCsrfToken,
+      },
+      body: JSON.stringify({
+        csvText,
+        eventId: getDashboardCompletionUploadEventName(),
+      }),
+    });
+    const responsePayload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw buildDashboardCompletionUploadImportError(responsePayload, "完訓證明資料匯入失敗。");
+    }
     contentFrame.contentWindow?.postMessage(
       {
-        csvText,
-        eventName: getDashboardCompletionUploadEventName(),
-        fileName: selectedFile.name,
+        completionCerts: responsePayload.completionCerts,
+        eventId: getDashboardCompletionUploadEventName(),
         type: completionUploadImportMessageType,
       },
       window.location.origin
     );
     closeDashboardCompletionUploadDialog();
   } catch (error) {
-    void error;
     if (dashboardCompletionUploadFileName) {
-      dashboardCompletionUploadFileName.textContent = failedDashboardCompletionUploadFileName;
+      dashboardCompletionUploadFileName.textContent =
+        error instanceof Error ? error.message : failedDashboardCompletionUploadFileName;
     }
+    showDashboardCompletionUploadError(error);
+  } finally {
+    dashboardCompletionUploadSubmitButton.disabled = false;
   }
 }
 
@@ -683,6 +1053,7 @@ function closeDashboardCompletionUploadDialog({ confirmUnsaved = false } = {}) {
   }
 
   dashboardCompletionUploadDialog.hidden = true;
+  setDashboardCompletionUploadDragActive(false);
   closeDashboardCompletionUploadEventSelect();
   portalPage.classList.remove("has-event-dialog");
   pageShell?.removeAttribute("inert");
@@ -708,6 +1079,35 @@ function closeDashboardCompletionUploadEventSelect({ blurTrigger = false } = {})
 
 function canOpenDashboardCompletionUploadEventSelect() {
   return dashboardCompletionUploadEventOptions.length > 1;
+}
+
+function toggleDashboardCompletionUploadEventSelect() {
+  if (!canOpenDashboardCompletionUploadEventSelect()) {
+    return;
+  }
+
+  if (dashboardCompletionUploadEventSelect?.classList.contains("is-open")) {
+    closeDashboardCompletionUploadEventSelect({ blurTrigger: true });
+    return;
+  }
+
+  openDashboardCompletionUploadEventSelect();
+}
+
+function handleDashboardCompletionUploadEventTriggerKeydown(event) {
+  if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    if (!canOpenDashboardCompletionUploadEventSelect()) {
+      return;
+    }
+
+    openDashboardCompletionUploadEventSelect();
+    dashboardCompletionUploadEventOptions[0]?.focus();
+  }
+
+  if (event.key === "Escape") {
+    closeDashboardCompletionUploadEventSelect({ blurTrigger: true });
+  }
 }
 
 function openDashboardCompletionUploadEventSelect() {
@@ -745,6 +1145,187 @@ function getDashboardTaxUploadEventName() {
   return defaultDashboardTaxUploadEventName;
 }
 
+function normalizeDashboardTaxUploadEvent(eventData) {
+  return {
+    id: typeof eventData?.id === "string" ? eventData.id : "",
+    name: typeof eventData?.name === "string" ? eventData.name.trim() : "",
+  };
+}
+
+function getDashboardTaxUploadEventValue(eventData) {
+  return eventData.id;
+}
+
+function getDashboardTaxUploadEventLabel(eventData) {
+  return eventData.name || eventData.id || "未命名活動";
+}
+
+function resolveDashboardTaxUploadEventLabel(eventId) {
+  const selectedOption = dashboardTaxUploadEventOptions.find((item) => {
+    const optionValue = item.dataset.value ?? item.textContent?.trim() ?? "";
+    return optionValue === eventId;
+  });
+  return selectedOption?.textContent?.trim() || eventId || emptyDashboardTaxUploadEventName;
+}
+
+function buildDashboardTaxUploadEventOption(eventData, index) {
+  const option = document.createElement("button");
+  option.className = `custom-select-option${index === 0 ? " is-selected" : ""}`;
+  option.type = "button";
+  option.setAttribute("role", "option");
+  option.dataset.value = getDashboardTaxUploadEventValue(eventData);
+  option.setAttribute("aria-selected", String(index === 0));
+  option.textContent = getDashboardTaxUploadEventLabel(eventData);
+
+  option.addEventListener("click", () => {
+    applyDashboardTaxUploadEventValue(option.dataset.value ?? option.textContent?.trim() ?? "");
+    closeDashboardTaxUploadEventSelect({ blurTrigger: true });
+  });
+
+  option.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDashboardTaxUploadEventSelect({ blurTrigger: true });
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      dashboardTaxUploadEventOptions[
+        (index + 1) % dashboardTaxUploadEventOptions.length
+      ]?.focus();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      dashboardTaxUploadEventOptions[
+        (index - 1 + dashboardTaxUploadEventOptions.length) %
+          dashboardTaxUploadEventOptions.length
+      ]?.focus();
+      return;
+    }
+
+    if (event.key === "Tab") {
+      closeDashboardTaxUploadEventSelect();
+    }
+  });
+
+  return option;
+}
+
+function buildDashboardTaxUploadEventSelect({ isSingleOption = false }) {
+  const select = document.createElement("div");
+  select.className = `custom-select${isSingleOption ? " is-single-option" : ""}`;
+  select.id = "portal-tax-upload-event-select";
+
+  const trigger = document.createElement("button");
+  trigger.className = "custom-select-trigger";
+  trigger.id = "portal-tax-upload-event-trigger";
+  trigger.type = "button";
+  if (isSingleOption) {
+    trigger.setAttribute("aria-disabled", "true");
+    trigger.setAttribute("tabindex", "-1");
+  } else {
+    trigger.setAttribute("aria-haspopup", "listbox");
+  }
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute(
+    "aria-labelledby",
+    "portal-tax-upload-event-label portal-tax-upload-event-value"
+  );
+
+  const value = document.createElement("span");
+  value.className = "custom-select-value";
+  value.id = "portal-tax-upload-event-value";
+  value.textContent = emptyDashboardTaxUploadEventName;
+
+  const menu = document.createElement("div");
+  menu.className = "custom-select-menu";
+  menu.id = "portal-tax-upload-event-options";
+  menu.role = "listbox";
+  menu.hidden = true;
+
+  trigger.append(value);
+  if (!isSingleOption) {
+    const caret = document.createElement("span");
+    caret.className = "select-caret";
+    caret.setAttribute("aria-hidden", "true");
+    trigger.append(caret);
+  }
+  select.append(trigger, menu);
+  return { menu, select, trigger, value };
+}
+
+function renderDashboardTaxUploadEventSelect(events) {
+  if (!(dashboardTaxUploadEvent instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const normalizedEvents = events
+    .map((eventData) => normalizeDashboardTaxUploadEvent(eventData))
+    .filter((eventData) => getDashboardTaxUploadEventValue(eventData));
+  const nextEventsSignature = JSON.stringify(normalizedEvents);
+
+  if (nextEventsSignature === dashboardTaxUploadEventsSignature) {
+    return;
+  }
+
+  dashboardTaxUploadEventsSignature = nextEventsSignature;
+
+  if (normalizedEvents.length === 0) {
+    if (dashboardTaxUploadEventValue) {
+      dashboardTaxUploadEventValue.textContent = emptyDashboardTaxUploadEventName;
+    }
+    dashboardTaxUploadEvent.value = "";
+    return;
+  }
+
+  const firstEventValue = getDashboardTaxUploadEventValue(normalizedEvents[0] ?? {});
+  const uploadSelect = buildDashboardTaxUploadEventSelect({
+    isSingleOption: normalizedEvents.length === 1,
+  });
+  dashboardTaxUploadEventValue?.replaceWith(uploadSelect.select);
+  dashboardTaxUploadEventSelect = uploadSelect.select;
+  dashboardTaxUploadEventTrigger = uploadSelect.trigger;
+  dashboardTaxUploadEventValue = uploadSelect.value;
+  dashboardTaxUploadEventMenu = uploadSelect.menu;
+  dashboardTaxUploadEventOptions = normalizedEvents.map((eventData, index) =>
+    buildDashboardTaxUploadEventOption(eventData, index)
+  );
+  dashboardTaxUploadEventMenu.replaceChildren(...dashboardTaxUploadEventOptions);
+  dashboardTaxUploadEventTrigger.addEventListener("click", () => {
+    if (!canOpenDashboardTaxUploadEventSelect()) {
+      closeDashboardTaxUploadEventSelect({ blurTrigger: true });
+      return;
+    }
+
+    if (dashboardTaxUploadEventSelect?.classList.contains("is-open")) {
+      closeDashboardTaxUploadEventSelect({ blurTrigger: true });
+      return;
+    }
+
+    openDashboardTaxUploadEventSelect();
+  });
+  dashboardTaxUploadEventTrigger.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!canOpenDashboardTaxUploadEventSelect()) {
+        return;
+      }
+
+      openDashboardTaxUploadEventSelect();
+      dashboardTaxUploadEventOptions[0]?.focus();
+    }
+
+    if (event.key === "Escape") {
+      closeDashboardTaxUploadEventSelect({ blurTrigger: true });
+    }
+  });
+
+  applyDashboardTaxUploadEventValue(getTaxEventNameFromFrame() || firstEventValue);
+}
+
 function applyDashboardTaxUploadEventValue(nextValue) {
   const normalizedValue = nextValue?.trim() || defaultDashboardTaxUploadEventName;
 
@@ -753,7 +1334,8 @@ function applyDashboardTaxUploadEventValue(nextValue) {
   }
 
   if (dashboardTaxUploadEventValue) {
-    dashboardTaxUploadEventValue.textContent = normalizedValue || emptyDashboardTaxUploadEventName;
+    dashboardTaxUploadEventValue.textContent =
+      resolveDashboardTaxUploadEventLabel(normalizedValue);
   }
 
   dashboardTaxUploadEventOptions.forEach((item) => {
@@ -1053,39 +1635,26 @@ dashboardTaxUploadCancelButton?.addEventListener("click", () => {
 
 dashboardTaxUploadSubmitButton?.addEventListener("click", sendDashboardTaxUploadFileToFrame);
 
-dashboardCompletionUploadEventTrigger?.addEventListener("click", () => {
-  if (!canOpenDashboardCompletionUploadEventSelect()) {
-    return;
-  }
-
-  if (dashboardCompletionUploadEventSelect?.classList.contains("is-open")) {
-    closeDashboardCompletionUploadEventSelect({ blurTrigger: true });
-    return;
-  }
-
-  openDashboardCompletionUploadEventSelect();
-});
-
-dashboardCompletionUploadEventTrigger?.addEventListener("keydown", (event) => {
-  if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
-    event.preventDefault();
-    if (!canOpenDashboardCompletionUploadEventSelect()) {
-      return;
-    }
-
-    openDashboardCompletionUploadEventSelect();
-    dashboardCompletionUploadEventOptions[0]?.focus();
-  }
-
-  if (event.key === "Escape") {
-    closeDashboardCompletionUploadEventSelect({ blurTrigger: true });
-  }
-});
+dashboardCompletionUploadEventTrigger?.addEventListener(
+  "click",
+  toggleDashboardCompletionUploadEventSelect
+);
+dashboardCompletionUploadEventTrigger?.addEventListener(
+  "keydown",
+  handleDashboardCompletionUploadEventTriggerKeydown
+);
 
 dashboardCompletionUploadFileInput?.addEventListener(
   "change",
   updateDashboardCompletionUploadFileName
 );
+["dragenter", "dragover"].forEach((eventName) => {
+  document.addEventListener(eventName, handleDashboardCompletionUploadDrag);
+});
+["dragleave", "dragend"].forEach((eventName) => {
+  document.addEventListener(eventName, handleDashboardCompletionUploadDragEnd);
+});
+document.addEventListener("drop", handleDashboardCompletionUploadDrop);
 
 dashboardTaxUploadEventTrigger?.addEventListener("click", () => {
   if (!canOpenDashboardTaxUploadEventSelect()) {
@@ -1271,6 +1840,12 @@ window.addEventListener("message", (event) => {
   }
 });
 
+window.addEventListener("ipg:portal-events:updated", (event) => {
+  const events = Array.isArray(event.detail?.events) ? event.detail.events : [];
+  renderDashboardCompletionUploadEventSelect(events);
+  renderDashboardTaxUploadEventSelect(events);
+});
+
 document.addEventListener("click", (event) => {
   if (
     dashboardCompletionUploadEventSelect instanceof HTMLElement &&
@@ -1307,3 +1882,5 @@ document.addEventListener("keydown", (event) => {
 
 syncViewFromFrame();
 syncPageTitleFromFrame();
+void window.iPlaygroundPortalEvents?.preload?.();
+void loadDashboardCompletionUploadEvents();

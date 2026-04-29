@@ -138,3 +138,126 @@ partition key = <event-id>
 雖然活動清單查詢會跨 partition，但活動數量與管理端使用頻率都很低，初期接受這個取捨。單筆讀取與更新應使用 point read / replace，並以 `id` 作為 partition key。
 
 管理端進入 `/portal/dashboard` 後，伺服器會在背景預先初始化活動管理使用的 Cosmos DB container client；同一個 Functions worker 生命週期內會重用該 client，避免第一次進入活動管理時才承擔 SDK 與 credential chain 初始化成本。
+
+## 完訓證明 containers
+
+完訓證明目前採用兩個 Cosmos DB container：
+
+```text
+container: completionCerts
+partition key: /eventId
+
+container: completionCertRequests
+partition key: /eventId
+```
+
+`completionCerts` 是完訓證明完整清單。名稱沿用活動管理的文件類型代碼 `completionCert`。CSV 匯入資料、簽到狀態、發證狀態、下載檔案 metadata 與驗證 token hash 都記錄在同一筆資料中。CSV 上傳由 Python API 同步解析與寫入；目前預期單次約數百筆資料可在可接受時間內完成，因此不設計 DB 進度狀態或進度條。CSV 匯入當下尚未產生完訓證明檔案與驗證 token，因此 `issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 預設為 `null`；等會眾申請完訓證明且系統完成產生檔案後才回填。
+
+`completionCertRequests` 只記錄會眾是否申請資料調整、申請備註、審核狀態與通知狀態。這類資料不是完訓證明權威清單本身，因此獨立存放。
+
+目前不保留原始 CSV 檔案。產生後 PDF 應存放於 Blob Storage `issued-certs` container。Cosmos DB 只儲存完訓證明清單資料、狀態與產生後檔案的 blob 名稱，不儲存 CSV 原文或 PDF 二進位。
+
+### 完訓證明清單文件
+
+`completionCerts` 是完訓資格、簽到狀態與發證狀態的權威資料來源。公開驗證與證書生成不得信任使用者端傳入的宣稱內容，必須讀取這個 container。
+
+必要欄位：
+
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `id` | string | 完訓證明資料識別碼，格式 `ccert_<uuid-v5>` |
+| `eventId` | string | 活動識別碼，同時作為 partition key |
+| `number` | int | 報名序號 |
+| `kktixId` | string | KKTIX `Id` |
+| `badgeName` | string | Badge 顯示名稱 |
+| `ticketName` | string | 票種 |
+| `name` | string | 姓名 |
+| `email` | string | Email |
+| `attendanceStatus` | string | 簽到狀態 |
+| `certStatus` | string | 證書狀態 |
+| `issuedPdfBlobName` | string \| null | `issued-certs` 中的 PDF blob 名稱；CSV 匯入時為 null |
+| `verificationTokenHash` | string \| null | 公開驗證 token 的雜湊值；CSV 匯入時為 null，且不得存明文 token |
+| `issuedAt` | string \| null | 發證時間，UTC ISO 8601；CSV 匯入時為 null |
+| `createdAt` | string | 建立時間，UTC ISO 8601 |
+
+`attendanceStatus` 目前允許值：
+
+```text
+notCheckedIn
+checkedIn
+```
+
+`certStatus` 目前允許值：
+
+```text
+notIssued
+issued
+failed
+```
+
+目前 KKTIX CSV 白名單欄位：
+
+| 正規化欄位 | CSV 表頭 |
+| --- | --- |
+| `number` | `報名序號` |
+| `kktixId` | `Id` |
+| `badgeName` | `你是誰，ID 或具有鑑識度的名稱 Name on Badge` |
+| `name` | `姓名 Full Name` |
+| `email` | `Email` 或 `email` |
+| `ticketName` | `票種` |
+
+CSV 必要欄位僅有 `報名序號`、`Id`、`你是誰，ID 或具有鑑識度的名稱 Name on Badge`、`Email` 或 `email`、`票種`。`報名序號` 必須是整數。`姓名 Full Name` 可匯入但不是必要欄位，缺少時 `name` 以空字串儲存。
+
+其他 CSV 欄位不得寫入完訓證明文件，除非後續文件明確擴充白名單。
+
+CSV 匯入若有格式或欄位錯誤，API 應以機器可讀錯誤回應告知，不把 UI 進度或失敗列狀態寫入 Cosmos DB。若未來需要保留錯誤報告，可將去敏後的錯誤報告檔存入 Blob Storage，再於稽核文件中記錄其 blob 名稱。
+
+管理端查詢活動下的完訓證明清單：
+
+```sql
+SELECT c.id, c.number, c.kktixId, c.badgeName, c.name,
+       c.email, c.ticketName, c.attendanceStatus, c.certStatus
+FROM c
+WHERE c.eventId = @eventId
+ORDER BY c.number ASC
+```
+
+### 資料調整申請文件
+
+`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。
+
+必要欄位：
+
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `id` | string | 申請識別碼，格式 `ccreq_<uuid-v5>` |
+| `completionCertId` | string | 對應的完訓證明清單資料 |
+| `eventId` | string | 活動識別碼，同時作為 partition key |
+| `status` | string | 申請狀態 |
+| `requesterEmail` | string | 申請者 email |
+| `requesterNote` | string | 申請者備註 |
+| `reviewedBy` | string \| null | 審核管理者 |
+| `reviewedAt` | string \| null | 審核時間，UTC ISO 8601 |
+| `reviewCompletedNotifiedAt` | string \| null | 審核完畢通知時間，UTC ISO 8601 |
+| `reviewNote` | string \| null | 審核備註 |
+| `createdAt` | string | 建立時間，UTC ISO 8601 |
+| `updatedAt` | string | 最後更新時間，UTC ISO 8601 |
+
+`status` 目前允許值：
+
+```text
+pending
+approved
+rejected
+cancelled
+```
+
+管理端查詢活動下待審核申請：
+
+```sql
+SELECT c.id, c.completionCertId, c.status, c.requesterEmail,
+       c.requesterNote, c.createdAt
+FROM c
+WHERE c.eventId = @eventId AND c.status = 'pending'
+ORDER BY c.createdAt ASC
+```

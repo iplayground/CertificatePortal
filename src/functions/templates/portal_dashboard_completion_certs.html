@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="/assets/theme.css">
     <link rel="stylesheet" href="/assets/portal.css">
   </head>
-  <body class="portal-embedded-body">
+  <body class="portal-embedded-body" data-portal-csrf-token="{{portal_csrf_token}}">
     <main class="embedded-page-shell">
       <section class="content-card embedded-page-card document-workspace-card">
         <div class="event-management-header">
@@ -48,30 +48,31 @@
             <thead>
               <tr>
                 <th scope="col">報名序號</th>
-                <th scope="col">票種</th>
+                <th scope="col">ID</th>
+                <th scope="col">Badge Name</th>
                 <th scope="col">姓名</th>
                 <th scope="col">Email</th>
+                <th scope="col">票種</th>
                 <th scope="col">簽到狀態</th>
                 <th scope="col">操作</th>
               </tr>
             </thead>
             <tbody id="completion-cert-table-body">
               <tr class="document-empty-row" id="completion-cert-empty-row">
-                <td colspan="6">尚未串接完訓證明資料來源。</td>
+                <td colspan="8">完訓證明資料載入中...</td>
               </tr>
             </tbody>
           </table>
           <template id="completion-cert-row-template">
             <tr class="completion-cert-row">
-              <td data-field="registrationNumber"></td>
-              <td data-field="ticketType"></td>
-              <td data-field="attendeeName"></td>
+              <td data-field="number"></td>
+              <td data-field="kktixId"></td>
+              <td data-field="badgeName"></td>
+              <td data-field="name"></td>
               <td data-field="email"></td>
+              <td data-field="ticketName"></td>
               <td data-field="status">
                 <label class="event-status-switch-option document-row-status-switch">
-                  <span class="document-row-status-copy">
-                    <strong data-field="downloadStatus">未簽到</strong>
-                  </span>
                   <input
                     class="event-status-switch-input document-download-switch-input"
                     type="checkbox"
@@ -84,7 +85,10 @@
                 </label>
               </td>
               <td>
-                <button class="secondary-button document-download-button" type="button">下載</button>
+                <span class="document-row-actions">
+                  <button class="secondary-button document-download-button" type="button">下載</button>
+                  <button class="secondary-button document-edit-button" type="button">修改</button>
+                </span>
               </td>
             </tr>
           </template>
@@ -128,6 +132,14 @@
                 >
               </label>
 
+              <div
+                class="document-upload-errors"
+                id="completion-upload-errors"
+                role="status"
+                aria-live="polite"
+                hidden
+              ></div>
+
               <div class="event-form-actions">
                 <button class="secondary-button event-cancel-button" id="completion-upload-cancel" type="button">取消</button>
                 <button class="submit-button" id="completion-upload-submit" type="button">上傳完訓證明資料</button>
@@ -135,9 +147,64 @@
             </form>
           </section>
         </div>
+
+        <div
+          class="event-dialog-backdrop"
+          id="completion-edit-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="completion-edit-title"
+          hidden
+        >
+          <section class="event-dialog">
+            <header class="event-dialog-header">
+              <h2 id="completion-edit-title">修改完訓證明資料</h2>
+            </header>
+
+            <form class="event-form" aria-label="修改完訓證明資料">
+              <div class="field">
+                <span class="field-label">報名序號</span>
+                <div class="field-static-value" id="completion-edit-number">-</div>
+              </div>
+
+              <div class="field">
+                <span class="field-label">ID</span>
+                <div class="field-static-value" id="completion-edit-kktix-id">-</div>
+              </div>
+
+              <label class="field">
+                <span class="field-label">Badge Name</span>
+                <input id="completion-edit-badge-name" name="badgeName" type="text" autocomplete="off">
+              </label>
+
+              <label class="field">
+                <span class="field-label">姓名</span>
+                <input id="completion-edit-name" name="name" type="text" autocomplete="off">
+              </label>
+
+              <label class="field">
+                <span class="field-label">Email</span>
+                <input id="completion-edit-email" name="email" type="email" autocomplete="email">
+              </label>
+
+              <label class="field">
+                <span class="field-label">票種</span>
+                <input id="completion-edit-ticket-name" name="ticketName" type="text" autocomplete="off">
+              </label>
+
+              <div class="form-feedback is-error" id="completion-edit-feedback" role="status" aria-live="polite" hidden></div>
+
+              <div class="event-form-actions">
+                <button class="secondary-button event-cancel-button" id="completion-edit-cancel" type="button">取消</button>
+                <button class="submit-button" id="completion-edit-submit" type="button">儲存修改</button>
+              </div>
+            </form>
+          </section>
+        </div>
       </section>
     </main>
 
+    <script src="/assets/portal-event-cache.js"></script>
     <script src="/assets/portal-dashboard-completion-certs.js"></script>
   </body>
 </html>

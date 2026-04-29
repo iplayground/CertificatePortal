@@ -41,6 +41,12 @@ param cosmosDatabaseName string = 'ipg-certificate'
 @description('Cosmos DB container name for activity management events.')
 param cosmosEventsContainerName string = 'events'
 
+@description('Cosmos DB container name for completion certificate records.')
+param cosmosCompletionCertsContainerName string = 'completionCerts'
+
+@description('Cosmos DB container name for completion certificate requests.')
+param cosmosCompletionCertRequestsContainerName string = 'completionCertRequests'
+
 @description('Optional Microsoft Entra security group object IDs that should be able to inspect Cosmos DB data in Azure Portal. Avoid assigning individual users.')
 param cosmosPortalDataReaderPrincipalIds array = []
 
@@ -238,6 +244,38 @@ resource cosmosEventsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabas
   }
 }
 
+resource cosmosCompletionCertsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  name: cosmosCompletionCertsContainerName
+  parent: cosmosSqlDatabase
+  properties: {
+    resource: {
+      id: cosmosCompletionCertsContainerName
+      partitionKey: {
+        kind: 'Hash'
+        paths: [
+          '/eventId'
+        ]
+      }
+    }
+  }
+}
+
+resource cosmosCompletionCertRequestsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  name: cosmosCompletionCertRequestsContainerName
+  parent: cosmosSqlDatabase
+  properties: {
+    resource: {
+      id: cosmosCompletionCertRequestsContainerName
+      partitionKey: {
+        kind: 'Hash'
+        paths: [
+          '/eventId'
+        ]
+      }
+    }
+  }
+}
+
 resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   name: normalizedFunctionAppName
   location: location
@@ -294,6 +332,14 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'COSMOS_EVENTS_CONTAINER'
           value: cosmosEventsContainer.name
+        }
+        {
+          name: 'COSMOS_COMPLETION_CERTS_CONTAINER'
+          value: cosmosCompletionCertsContainer.name
+        }
+        {
+          name: 'COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER'
+          value: cosmosCompletionCertRequestsContainer.name
         }
         {
           name: 'PORTAL_GOOGLE_CLIENT_ID'
@@ -383,6 +429,8 @@ output cosmosAccountName string = cosmosAccount.name
 output cosmosDatabaseName string = cosmosSqlDatabase.name
 output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 output cosmosEventsContainerName string = cosmosEventsContainer.name
+output cosmosCompletionCertsContainerName string = cosmosCompletionCertsContainer.name
+output cosmosCompletionCertRequestsContainerName string = cosmosCompletionCertRequestsContainer.name
 output deploymentContainerName string = deploymentContainerName
 output deploymentContainerUrl string = '${storageAccount.properties.primaryEndpoints.blob}${deploymentContainerName}'
 output githubActionsIdentityClientId string = githubDeploymentIdentity.properties.clientId

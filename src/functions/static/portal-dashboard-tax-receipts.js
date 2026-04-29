@@ -11,11 +11,11 @@ const taxUploadTaxIdInput = document.getElementById("tax-upload-tax-id");
 const taxUploadAmountInput = document.getElementById("tax-upload-amount");
 const taxUploadGeneratedAtInput = document.getElementById("tax-upload-generated-at");
 const taxUploadEvent = document.getElementById("tax-upload-event");
-const taxUploadEventSelect = document.getElementById("tax-upload-event-select");
-const taxUploadEventTrigger = document.getElementById("tax-upload-event-trigger");
-const taxUploadEventValue = document.getElementById("tax-upload-event-value");
-const taxUploadEventMenu = document.getElementById("tax-upload-event-options");
-const taxUploadEventOptions = Array.from(
+let taxUploadEventSelect = document.getElementById("tax-upload-event-select");
+let taxUploadEventTrigger = document.getElementById("tax-upload-event-trigger");
+let taxUploadEventValue = document.getElementById("tax-upload-event-value");
+let taxUploadEventMenu = document.getElementById("tax-upload-event-options");
+let taxUploadEventOptions = Array.from(
   document.querySelectorAll("#tax-upload-event-options .custom-select-option")
 );
 const taxReceiptTableBody = document.getElementById("tax-receipt-table-body");
@@ -23,15 +23,16 @@ const taxReceiptEmptyRow = document.getElementById("tax-receipt-empty-row");
 const taxReceiptRowTemplate = document.getElementById("tax-receipt-row-template");
 const taxFilterForm = document.querySelector(".document-filter-form");
 const taxEventFilter = document.getElementById("tax-event-filter");
-const taxEventFilterSelect = document.getElementById("tax-event-filter-select");
-const taxEventFilterTrigger = document.getElementById("tax-event-filter-trigger");
-const taxEventFilterValue = document.getElementById("tax-event-filter-value");
-const taxEventFilterMenu = document.getElementById("tax-event-filter-options");
-const taxEventFilterOptions = Array.from(
+let taxEventFilterSelect = document.getElementById("tax-event-filter-select");
+let taxEventFilterTrigger = document.getElementById("tax-event-filter-trigger");
+let taxEventFilterValue = document.getElementById("tax-event-filter-value");
+let taxEventFilterMenu = document.getElementById("tax-event-filter-options");
+let taxEventFilterOptions = Array.from(
   document.querySelectorAll("#tax-event-filter-options .custom-select-option")
 );
 const taxReceiptUploadOpenMessageType = "ipg:tax-receipt-upload:open";
 const taxReceiptUploadImportMessageType = "ipg:tax-receipt-upload:import";
+const adminEventsApiPath = "/api/v1/admin/events";
 const defaultTaxUploadFileName = "尚未選擇 PDF 或圖檔";
 const invalidTaxUploadFileName = "請選擇 PDF、PNG 或 JPG 檔案";
 const failedTaxUploadFileName = "檔案讀取失敗";
@@ -48,6 +49,7 @@ let taxUploadPreviousFocus = null;
 let taxUploadDialogMode = "create";
 let taxUploadEditingRowId = "";
 let taxReceiptRows = [];
+let taxEventsSignature = "";
 
 const {
   formatCurrentDateTimeInputValue,
@@ -95,6 +97,264 @@ function getTaxUploadEventName() {
   return getTaxFilterEventName();
 }
 
+function normalizeTaxEvent(eventData) {
+  return {
+    id: typeof eventData?.id === "string" ? eventData.id : "",
+    name: typeof eventData?.name === "string" ? eventData.name.trim() : "",
+  };
+}
+
+function getTaxEventValue(eventData) {
+  return eventData.id;
+}
+
+function getTaxEventLabel(eventData) {
+  return eventData.name || eventData.id || "未命名活動";
+}
+
+function resolveTaxEventLabel(options, eventId) {
+  const selectedOption = options.find((item) => {
+    const optionValue = item.dataset.value ?? item.textContent?.trim() ?? "";
+    return optionValue === eventId;
+  });
+  return selectedOption?.textContent?.trim() || eventId || emptyTaxEventName;
+}
+
+function buildTaxEventOption(eventData, index, applyValue, closeSelect, optionListRef) {
+  const option = document.createElement("button");
+  option.className = `custom-select-option${index === 0 ? " is-selected" : ""}`;
+  option.type = "button";
+  option.setAttribute("role", "option");
+  option.dataset.value = getTaxEventValue(eventData);
+  option.setAttribute("aria-selected", String(index === 0));
+  option.textContent = getTaxEventLabel(eventData);
+
+  option.addEventListener("click", () => {
+    applyValue(option.dataset.value ?? option.textContent?.trim() ?? "");
+    closeSelect({ blurTrigger: true });
+  });
+
+  option.addEventListener("keydown", (event) => {
+    const optionList = optionListRef();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSelect({ blurTrigger: true });
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      optionList[(index + 1) % optionList.length]?.focus();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      optionList[(index - 1 + optionList.length) % optionList.length]?.focus();
+      return;
+    }
+
+    if (event.key === "Tab") {
+      closeSelect();
+    }
+  });
+
+  return option;
+}
+
+function buildTaxEventSelect({
+  describedBy,
+  isSingleOption = false,
+  menuId,
+  selectId,
+  triggerId,
+  valueId,
+}) {
+  const select = document.createElement("div");
+  select.className = `custom-select${isSingleOption ? " is-single-option" : ""}`;
+  select.id = selectId;
+
+  const trigger = document.createElement("button");
+  trigger.className = "custom-select-trigger";
+  trigger.id = triggerId;
+  trigger.type = "button";
+  if (isSingleOption) {
+    trigger.setAttribute("aria-disabled", "true");
+    trigger.setAttribute("tabindex", "-1");
+  } else {
+    trigger.setAttribute("aria-haspopup", "listbox");
+  }
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-labelledby", describedBy);
+
+  const value = document.createElement("span");
+  value.className = "custom-select-value";
+  value.id = valueId;
+  value.textContent = emptyTaxEventName;
+
+  const menu = document.createElement("div");
+  menu.className = "custom-select-menu";
+  menu.id = menuId;
+  menu.role = "listbox";
+  menu.hidden = true;
+
+  trigger.append(value);
+  if (!isSingleOption) {
+    const caret = document.createElement("span");
+    caret.className = "select-caret";
+    caret.setAttribute("aria-hidden", "true");
+    trigger.append(caret);
+  }
+  select.append(trigger, menu);
+  return { menu, select, trigger, value };
+}
+
+function renderTaxEventSelects(events) {
+  if (!(taxEventFilter instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const normalizedEvents = events
+    .map((eventData) => normalizeTaxEvent(eventData))
+    .filter((eventData) => getTaxEventValue(eventData));
+  const nextEventsSignature = JSON.stringify(normalizedEvents);
+
+  if (nextEventsSignature === taxEventsSignature) {
+    return;
+  }
+
+  taxEventsSignature = nextEventsSignature;
+
+  if (normalizedEvents.length === 0) {
+    if (taxEventFilterValue) {
+      taxEventFilterValue.textContent = emptyTaxEventName;
+    }
+    if (taxUploadEventValue) {
+      taxUploadEventValue.textContent = emptyTaxEventName;
+    }
+    taxEventFilter.value = "";
+    if (taxUploadEvent instanceof HTMLInputElement) {
+      taxUploadEvent.value = "";
+    }
+    renderTaxReceiptRows();
+    return;
+  }
+
+  const firstEventValue = getTaxEventValue(normalizedEvents[0] ?? {});
+  const currentEventValue = getTaxFilterEventName();
+  const nextEventValue = normalizedEvents.some(
+    (eventData) => getTaxEventValue(eventData) === currentEventValue
+  )
+    ? currentEventValue
+    : firstEventValue;
+  const isSingleOption = normalizedEvents.length === 1;
+
+  const filterSelect = buildTaxEventSelect({
+    describedBy: "tax-event-filter-label tax-event-filter-value",
+    isSingleOption,
+    menuId: "tax-event-filter-options",
+    selectId: "tax-event-filter-select",
+    triggerId: "tax-event-filter-trigger",
+    valueId: "tax-event-filter-value",
+  });
+  taxEventFilterValue?.replaceWith(filterSelect.select);
+  taxEventFilterSelect = filterSelect.select;
+  taxEventFilterTrigger = filterSelect.trigger;
+  taxEventFilterValue = filterSelect.value;
+  taxEventFilterMenu = filterSelect.menu;
+  taxEventFilterOptions = normalizedEvents.map((eventData, index) =>
+    buildTaxEventOption(
+      eventData,
+      index,
+      applyTaxEventFilterValue,
+      closeTaxEventFilterSelect,
+      () => taxEventFilterOptions
+    )
+  );
+  taxEventFilterMenu.replaceChildren(...taxEventFilterOptions);
+
+  const uploadSelect = buildTaxEventSelect({
+    describedBy: "tax-upload-event-label tax-upload-event-value",
+    isSingleOption,
+    menuId: "tax-upload-event-options",
+    selectId: "tax-upload-event-select",
+    triggerId: "tax-upload-event-trigger",
+    valueId: "tax-upload-event-value",
+  });
+  taxUploadEventValue?.replaceWith(uploadSelect.select);
+  taxUploadEventSelect = uploadSelect.select;
+  taxUploadEventTrigger = uploadSelect.trigger;
+  taxUploadEventValue = uploadSelect.value;
+  taxUploadEventMenu = uploadSelect.menu;
+  taxUploadEventOptions = normalizedEvents.map((eventData, index) =>
+    buildTaxEventOption(
+      eventData,
+      index,
+      applyTaxUploadEventValue,
+      closeTaxUploadEventSelect,
+      () => taxUploadEventOptions
+    )
+  );
+  taxUploadEventMenu.replaceChildren(...taxUploadEventOptions);
+
+  taxEventFilterTrigger.addEventListener("click", toggleTaxEventFilterSelect);
+  taxEventFilterTrigger.addEventListener("keydown", handleTaxEventFilterTriggerKeydown);
+  taxUploadEventTrigger.addEventListener("click", toggleTaxUploadEventSelect);
+  taxUploadEventTrigger.addEventListener("keydown", handleTaxUploadEventTriggerKeydown);
+
+  applyTaxEventFilterValue(nextEventValue);
+  applyTaxUploadEventValue(nextEventValue);
+}
+
+async function loadTaxEvents() {
+  const eventCache = window.iPlaygroundPortalEvents;
+  const cachedEvents = eventCache?.getCachedEvents?.();
+  let cachedEventsSignature = "";
+
+  if (Array.isArray(cachedEvents)) {
+    cachedEventsSignature = JSON.stringify(
+      cachedEvents
+        .map((eventData) => normalizeTaxEvent(eventData))
+        .filter((eventData) => getTaxEventValue(eventData))
+    );
+    renderTaxEventSelects(cachedEvents);
+  }
+
+  try {
+    const response = await fetch(adminEventsApiPath, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    const responsePayload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(responsePayload?.error?.message || "活動清單載入失敗。");
+    }
+
+    const events = Array.isArray(responsePayload.events) ? responsePayload.events : [];
+    eventCache?.setCachedEvents?.(events);
+    const refreshedEventsSignature = JSON.stringify(
+      events
+        .map((eventData) => normalizeTaxEvent(eventData))
+        .filter((eventData) => getTaxEventValue(eventData))
+    );
+    if (refreshedEventsSignature !== cachedEventsSignature) {
+      renderTaxEventSelects(events);
+    }
+  } catch (error) {
+    if (Array.isArray(cachedEvents)) {
+      return;
+    }
+    if (taxEventFilterValue) {
+      taxEventFilterValue.textContent =
+        error instanceof Error ? error.message : "活動清單載入失敗。";
+    }
+    if (taxUploadEventValue) {
+      taxUploadEventValue.textContent = "活動清單載入失敗。";
+    }
+  }
+}
+
 function applyTaxUploadEventValue(nextValue) {
   const normalizedValue = nextValue?.trim() || defaultTaxEventName;
 
@@ -103,7 +363,7 @@ function applyTaxUploadEventValue(nextValue) {
   }
 
   if (taxUploadEventValue) {
-    taxUploadEventValue.textContent = normalizedValue || emptyTaxEventName;
+    taxUploadEventValue.textContent = resolveTaxEventLabel(taxUploadEventOptions, normalizedValue);
   }
 
   taxUploadEventOptions.forEach((item) => {
@@ -491,7 +751,7 @@ function applyTaxEventFilterValue(nextValue, { renderRows = true } = {}) {
   }
 
   if (taxEventFilterValue) {
-    taxEventFilterValue.textContent = normalizedValue;
+    taxEventFilterValue.textContent = resolveTaxEventLabel(taxEventFilterOptions, normalizedValue);
   }
 
   taxEventFilterOptions.forEach((item) => {
@@ -540,6 +800,36 @@ function openTaxEventFilterSelect() {
   }
 }
 
+function toggleTaxEventFilterSelect() {
+  if (taxEventFilterOptions.length <= 1) {
+    closeTaxEventFilterSelect({ blurTrigger: true });
+    return;
+  }
+
+  if (taxEventFilterSelect?.classList.contains("is-open")) {
+    closeTaxEventFilterSelect({ blurTrigger: true });
+    return;
+  }
+
+  openTaxEventFilterSelect();
+}
+
+function handleTaxEventFilterTriggerKeydown(event) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    if (taxEventFilterOptions.length <= 1) {
+      return;
+    }
+    openTaxEventFilterSelect();
+    taxEventFilterOptions[0]?.focus();
+    return;
+  }
+
+  if (event.key === "Escape") {
+    closeTaxEventFilterSelect({ blurTrigger: true });
+  }
+}
+
 function closeTaxUploadEventSelect({ blurTrigger = false } = {}) {
   taxUploadEventSelect?.classList.remove("is-open");
   taxUploadEventTrigger?.setAttribute("aria-expanded", "false");
@@ -564,6 +854,36 @@ function openTaxUploadEventSelect() {
 
   if (taxUploadEventMenu) {
     taxUploadEventMenu.hidden = false;
+  }
+}
+
+function toggleTaxUploadEventSelect() {
+  if (taxUploadEventOptions.length <= 1) {
+    closeTaxUploadEventSelect({ blurTrigger: true });
+    return;
+  }
+
+  if (taxUploadEventSelect?.classList.contains("is-open")) {
+    closeTaxUploadEventSelect({ blurTrigger: true });
+    return;
+  }
+
+  openTaxUploadEventSelect();
+}
+
+function handleTaxUploadEventTriggerKeydown(event) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    if (taxUploadEventOptions.length <= 1) {
+      return;
+    }
+    openTaxUploadEventSelect();
+    taxUploadEventOptions[0]?.focus();
+    return;
+  }
+
+  if (event.key === "Escape") {
+    closeTaxUploadEventSelect({ blurTrigger: true });
   }
 }
 
@@ -750,10 +1070,16 @@ window.addEventListener("message", (event) => {
   });
 });
 
+window.addEventListener("ipg:portal-events:updated", (event) => {
+  const events = Array.isArray(event.detail?.events) ? event.detail.events : [];
+  renderTaxEventSelects(events);
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && taxUploadDialog && !taxUploadDialog.hidden) {
     closeTaxUploadDialog({ confirmUnsaved: true });
   }
 });
 
+void loadTaxEvents();
 renderTaxReceiptRows();

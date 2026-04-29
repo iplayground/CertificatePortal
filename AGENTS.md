@@ -193,3 +193,4 @@ scripts/
 - 若需要執行 `git commit`，commit message 必須使用 Conventional Commits，格式為 `<type>: <summary>`。
 - `type` 必須使用英文，並遵循 Conventional Commits 慣例，例如 `build`、`chore`、`ci`、`docs`、`feat`、`fix`、`perf`、`refactor`、`revert`、`style`、`test` 等；應優先選擇最精確的 type。
 - `summary` 與 body 預設應以台灣繁體中文撰寫；除非使用者明確指定其他語言。
+- 使用本機 `python` 指令前必須先確認版本；此環境的 `python` 有可能指向 Python 2 或其他過舊 runtime。需要 Python 3 功能時，應明確使用已確認版本的指令，例如 `python3` 或專案指定的 Python 3.13 runtime。

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from http.cookies import SimpleCookie
 from typing import Any
 
@@ -10,6 +11,9 @@ from src.functions.assets import static_asset
 from src.functions.portal import (
     PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR,
     build_portal_csrf_token,
+    portal_admin_completion_certs_import_api,
+    portal_admin_completion_certs_list_api,
+    portal_admin_completion_certs_update_api,
     portal_admin_events_create_api,
     portal_admin_events_update_api,
     portal_dashboard_completion_certs_page,
@@ -100,6 +104,10 @@ class FakeEventsContainer:
 
     def read_item(self, item: str, partition_key: str) -> dict[str, Any]:
         assert item == partition_key
+        if item not in self.items:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
         return self.items[item]
 
     def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -108,12 +116,63 @@ class FakeEventsContainer:
         return body
 
 
+class FakeCompletionCertsContainer:
+    def __init__(self) -> None:
+        self.items: dict[str, dict[str, Any]] = {}
+
+    def read_item(self, item: str, partition_key: str) -> dict[str, Any]:
+        document = self.items.get(item)
+        if document is None or document["eventId"] != partition_key:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        return document
+
+    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]:
+        if item not in self.items:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        self.items[item] = body
+        return body
+
+    def upsert_item(self, body: dict[str, Any]) -> dict[str, Any]:
+        self.items[body["id"]] = body
+        return body
+
+    def query_items(
+        self,
+        query: str,
+        *,
+        parameters: list[dict[str, Any]] | None = None,
+        partition_key: str | None = None,
+        enable_cross_partition_query: bool,
+    ) -> list[dict[str, Any]]:
+        assert "WHERE c.eventId = @eventId" in query
+        assert not enable_cross_partition_query
+        event_id = next(
+            parameter["value"]
+            for parameter in parameters or []
+            if parameter["name"] == "@eventId"
+        )
+        assert partition_key == event_id
+        return sorted(
+            [
+                item
+                for item in self.items.values()
+                if item["eventId"] == event_id
+            ],
+            key=lambda item: item["number"],
+        )
+
+
 def build_authorized_portal_api_request(
     monkeypatch: pytest.MonkeyPatch,
     *,
     body: bytes = b"",
     method: str = "POST",
     origin: str = "http://localhost:7075",
+    params: dict[str, str] | None = None,
     url: str = "http://localhost:7075/api/v1/admin/events",
     route_params: dict[str, str] | None = None,
 ) -> func.HttpRequest:
@@ -131,6 +190,7 @@ def build_authorized_portal_api_request(
             "Origin": origin,
             "X-Portal-CSRF-Token": token,
         },
+        params=params,
         route_params=route_params,
     )
 
@@ -401,6 +461,356 @@ def test_portal_admin_events_list_api_returns_events_without_blocking_page_rende
     assert '"status":"open"' in body
     assert '"documentTypes":["completionCert","taxReceipt"]' in body
     assert '"completionCertDownloadStartsAt":"2026-04-27T12:38:00Z"' in body
+
+
+def test_portal_admin_events_list_api_includes_unlisted_and_non_completion_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr(
+        "src.functions.portal.list_event_documents",
+        lambda **_: [
+            {
+                "id": "evt_unlisted",
+                "name": "下架活動",
+                "status": "unlisted",
+                "documentTypes": ["taxReceipt"],
+                "completionCertDownloadStartsAt": "",
+            },
+            {
+                "id": "evt_open",
+                "name": "開放活動",
+                "status": "open",
+                "documentTypes": [],
+                "completionCertDownloadStartsAt": "",
+            },
+        ],
+    )
+    request = build_authorized_portal_api_request(monkeypatch, method="GET")
+
+    response = portal_admin_events_create_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"id":"evt_unlisted"' in body
+    assert '"name":"下架活動"' in body
+    assert '"status":"unlisted"' in body
+    assert '"documentTypes":["taxReceipt"]' in body
+    assert '"id":"evt_open"' in body
+    assert '"name":"開放活動"' in body
+
+
+def test_portal_admin_completion_certs_import_api_writes_kktix_csv_to_cosmos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_1"] = {
+        "id": "evt_1",
+        "name": "iPlayground 2026",
+    }
+    fake_completion_container = FakeCompletionCertsContainer()
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_events_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "csvText": (
+                    "不需要欄位,Email,你是誰，ID 或具有鑑識度的名稱 Name on Badge,"
+                    "票種,Id,報名序號\n"
+                    "ignore,ming@example.com,Ming,一般票,KKTIX-001,1"
+                ),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        url="http://localhost:7075/api/v1/admin/completion-certs/import",
+    )
+
+    response = portal_admin_completion_certs_import_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"summary":{"imported":1}' in body
+    assert len(fake_completion_container.items) == 1
+    completion_cert = next(iter(fake_completion_container.items.values()))
+    assert completion_cert["id"].startswith("ccert_")
+    assert completion_cert["eventId"] == "evt_1"
+    assert completion_cert["number"] == 1
+    assert completion_cert["ticketName"] == "一般票"
+    assert completion_cert["name"] == ""
+    assert completion_cert["email"] == "ming@example.com"
+    assert completion_cert["kktixId"] == "KKTIX-001"
+    assert completion_cert["badgeName"] == "Ming"
+    assert completion_cert["attendanceStatus"] == "notCheckedIn"
+    assert completion_cert["certStatus"] == "notIssued"
+    assert completion_cert["issuedPdfBlobName"] is None
+    assert completion_cert["verificationTokenHash"] is None
+    assert completion_cert["issuedAt"] is None
+    assert "不需要欄位" not in completion_cert
+
+
+def test_portal_admin_completion_certs_import_api_rejects_unknown_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_missing",
+                "csvText": (
+                    "報名序號,票種,Email,Id,"
+                    "你是誰，ID 或具有鑑識度的名稱 Name on Badge\n"
+                    "1,一般票,ming@example.com,KKTIX-001,Ming"
+                ),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        url="http://localhost:7075/api/v1/admin/completion-certs/import",
+    )
+
+    response = portal_admin_completion_certs_import_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 404
+    assert "event_not_found" in body
+
+
+def test_portal_admin_completion_certs_import_api_rejects_missing_required_csv_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "csvText": "報名序號,Email\nREG-001,ming@example.com",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        url="http://localhost:7075/api/v1/admin/completion-certs/import",
+    )
+
+    response = portal_admin_completion_certs_import_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 400
+    assert "CSV 缺少必要欄位：Badge Name、Id、票種" in body
+
+
+def test_portal_admin_completion_certs_import_api_rejects_missing_required_csv_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "csvText": (
+                    "報名序號,票種,姓名 Full Name,Email,Id,"
+                    "你是誰，ID 或具有鑑識度的名稱 Name on Badge\n"
+                    "REG-001,,王小明,,KKTIX-001,Ming\n"
+                    "REG-002,一般票,,hui@example.com,,"
+                ),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        url="http://localhost:7075/api/v1/admin/completion-certs/import",
+    )
+
+    response = portal_admin_completion_certs_import_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 400
+    payload = json.loads(body)
+    assert payload["error"]["message"] == "CSV 有 2 筆資料需要修正，尚未匯入 DB。"
+    assert payload["error"]["details"]["rowErrors"] == [
+        {
+            "rowNumber": 2,
+            "fields": ["Email", "票種"],
+            "message": "CSV 第 2 列缺少必要欄位值：Email、票種。",
+        },
+        {
+            "rowNumber": 3,
+            "fields": ["Badge Name", "Id"],
+            "message": "CSV 第 3 列缺少必要欄位值：Badge Name、Id。",
+        },
+    ]
+    assert fake_completion_container.items == {}
+
+
+def test_portal_admin_completion_certs_import_api_rejects_non_integer_number(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "csvText": (
+                    "報名序號,票種,Email,Id,"
+                    "你是誰，ID 或具有鑑識度的名稱 Name on Badge\n"
+                    "REG-001,一般票,ming@example.com,KKTIX-001,Ming"
+                ),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        url="http://localhost:7075/api/v1/admin/completion-certs/import",
+    )
+
+    response = portal_admin_completion_certs_import_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 400
+    payload = json.loads(body)
+    assert payload["error"]["details"]["rowErrors"] == [
+        {
+            "rowNumber": 2,
+            "fields": ["報名序號"],
+            "message": "CSV 第 2 列報名序號必須是整數。",
+        },
+    ]
+    assert fake_completion_container.items == {}
+
+
+def test_portal_admin_completion_certs_list_api_returns_event_partition_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "",
+        "ticketName": "一般票",
+        "name": "王小華",
+        "email": "hua@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "notIssued",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        method="GET",
+        url="http://localhost:7075/api/v1/admin/completion-certs",
+        params={"eventId": "evt_1"},
+    )
+
+    response = portal_admin_completion_certs_list_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"completionCerts"' in body
+    assert '"number":2' in body
+    assert '"attendanceStatus":"checkedIn"' in body
+
+
+def test_portal_admin_completion_certs_update_api_updates_mutable_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Old Badge",
+        "ticketName": "一般票",
+        "name": "王小華",
+        "email": "hua@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "notIssued",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "badgeName": "New Badge",
+                "email": "new@example.com",
+                "name": "",
+                "number": 999,
+                "ticketName": "VIP",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"certid": "ccert_2"},
+        url="http://localhost:7075/api/v1/admin/completion-certs/ccert_2",
+    )
+
+    response = portal_admin_completion_certs_update_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"completionCert"' in body
+    assert fake_completion_container.items["ccert_2"]["number"] == 2
+    assert fake_completion_container.items["ccert_2"]["kktixId"] == "KKTIX-002"
+    assert fake_completion_container.items["ccert_2"]["badgeName"] == "New Badge"
+    assert fake_completion_container.items["ccert_2"]["email"] == "new@example.com"
+    assert fake_completion_container.items["ccert_2"]["name"] == ""
+    assert fake_completion_container.items["ccert_2"]["ticketName"] == "VIP"
+
+
+def test_portal_admin_completion_certs_update_api_rejects_empty_required_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "badgeName": "",
+                "email": "new@example.com",
+                "ticketName": "VIP",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"certid": "ccert_2"},
+        url="http://localhost:7075/api/v1/admin/completion-certs/ccert_2",
+    )
+
+    response = portal_admin_completion_certs_update_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 400
+    assert "完訓證明資料缺少必要欄位值：Badge Name" in body
 
 
 def test_portal_login_page_shows_group_auth_setup_message_when_group_authorization_is_not_configured(
@@ -794,8 +1204,12 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'href="/assets/portal.css"' in body
     assert 'href="/assets/favicon.png"' in body
     assert 'src="/assets/portal-datetime-picker.js"' in body
+    assert 'src="/assets/portal-event-cache.js"' in body
     assert 'src="/assets/portal-dashboard.js"' in body
     assert body.index('src="/assets/portal-datetime-picker.js"') < body.index(
+        'src="/assets/portal-event-cache.js"'
+    )
+    assert body.index('src="/assets/portal-event-cache.js"') < body.index(
         'src="/assets/portal-dashboard.js"'
     )
     assert 'data-portal-account-storage-key="portalSignedInAccount"' not in body
@@ -1157,28 +1571,38 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert 'class="document-bulk-actions"' in body
     assert 'class="secondary-button document-bulk-action"' in body
     assert "簽到狀態" in body
-    assert "未簽到" in body
-    assert "已簽到" in body
     assert "不可下載" not in body
     assert "可下載" not in body
     assert "報名序號" in body
+    assert '<th scope="col">ID</th>' in body
+    assert '<th scope="col">Badge Name</th>' in body
     assert "票種" in body
+    assert body.index("<th scope=\"col\">Email</th>") < body.index("<th scope=\"col\">票種</th>")
+    assert body.index('data-field="email"') < body.index('data-field="ticketName"')
     assert "操作" in body
     assert "下載" in body
+    assert "修改" in body
     assert 'id="completion-cert-row-template"' in body
     assert 'id="completion-cert-table-body"' in body
     assert 'id="completion-cert-empty-row"' in body
+    assert 'class="document-row-actions"' in body
     assert 'class="secondary-button document-download-button"' in body
+    assert 'class="secondary-button document-edit-button"' in body
     assert 'class="document-row-checkbox"' not in body
     assert 'class="event-status-switch-option document-row-status-switch"' in body
     assert 'class="event-status-switch-input document-download-switch-input"' in body
     assert 'data-action="toggle-downloadable"' in body
-    assert 'data-field="downloadStatus"' in body
+    assert 'data-field="downloadStatus"' not in body
     assert 'data-field="downloadState"' not in body
     assert 'aria-label="切換簽到狀態"' in body
-    assert 'data-field="ticketType"' in body
-    assert 'colspan="6"' in body
+    assert 'data-field="kktixId"' in body
+    assert 'data-field="badgeName"' in body
+    assert 'data-field="ticketName"' in body
+    assert 'colspan="8"' in body
     assert "上傳完訓證明資料" in body
+    assert 'id="completion-edit-dialog"' in body
+    assert "修改完訓證明資料" in body
+    assert "儲存修改" in body
     assert 'class="document-filter-form"' in body
     assert 'aria-label="完訓證明資料篩選"' in body
     assert '<th scope="col">活動</th>' not in body
@@ -1219,12 +1643,18 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert 'id="completion-upload-dialog"' in body
     assert 'aria-modal="true"' in body
     assert 'id="completion-upload-cancel"' in body
+    assert 'src="/assets/portal-event-cache.js"' in body
     assert 'src="/assets/portal-dashboard-completion-certs.js"' in body
+    assert body.index('src="/assets/portal-event-cache.js"') < body.index(
+        'src="/assets/portal-dashboard-completion-certs.js"'
+    )
     assert "document-workspace-grid" not in body
     assert "上傳資料" not in body
     assert '<p class="panel-kicker">完訓證明</p>' not in body
     assert "清單檢視" not in body
-    assert "尚未串接完訓證明資料來源" in body
+    assert "完訓證明資料載入中..." in body
+    assert "目前活動尚無完訓證明資料。請先上傳完訓證明 CSV。" not in body
+    assert "尚未串接完訓證明資料來源" not in body
     assert "尚無活動資料" in body
     assert "獨立工作頁" not in body
 
@@ -1333,8 +1763,12 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert "還有其他檔案要上傳" in body
     assert "尚未選擇 PDF 或圖檔" in body
     assert 'src="/assets/portal-datetime-picker.js"' in body
+    assert 'src="/assets/portal-event-cache.js"' in body
     assert 'src="/assets/portal-dashboard-tax-receipts.js"' in body
     assert body.index('src="/assets/portal-datetime-picker.js"') < body.index(
+        'src="/assets/portal-event-cache.js"'
+    )
+    assert body.index('src="/assets/portal-event-cache.js"') < body.index(
         'src="/assets/portal-dashboard-tax-receipts.js"'
     )
     assert "CSV" not in body
@@ -1429,6 +1863,15 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert 'for="event-completion-download-starts-at"' not in body
     assert 'id="event-completion-download-starts-at"' in body
     assert 'name="completionCertDownloadStartsAt"' in body
+    assert 'src="/assets/portal-datetime-picker.js"' in body
+    assert 'src="/assets/portal-event-cache.js"' in body
+    assert 'src="/assets/portal-dashboard-events.js"' in body
+    assert body.index('src="/assets/portal-datetime-picker.js"') < body.index(
+        'src="/assets/portal-event-cache.js"'
+    )
+    assert body.index('src="/assets/portal-event-cache.js"') < body.index(
+        'src="/assets/portal-dashboard-events.js"'
+    )
 
 
 def test_portal_css_asset_returns_expected_content_type() -> None:
@@ -1472,6 +1915,7 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".metric-section-heading" in body
     assert ".event-management-card" in body
     assert ".custom-select-trigger" in body
+    assert ".custom-select.is-single-option .custom-select-trigger" in body
     assert ".custom-select-menu" in body
     assert ".custom-select-option" in body
     assert ".field-static-value" in body
@@ -1487,7 +1931,6 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".document-selection-cell" not in body
     assert ".document-row-checkbox" not in body
     assert ".document-row-status-switch" in body
-    assert ".document-row-status-copy" in body
     assert ".document-download-switch-input" in body
     assert ".required-field-mark" not in body
     assert ".document-filter-submit" not in body
@@ -1501,6 +1944,7 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert "-webkit-user-select: none;" in body
     assert ".document-upload-form" in body
     assert ".document-upload-dropzone" in body
+    assert ".document-upload-dropzone.is-drag-active" in body
     assert ".document-upload-input" in body
     assert ".document-upload-copy" in body
     assert ".document-upload-file-name" in body
@@ -1637,6 +2081,28 @@ def test_page_alert_js_asset_returns_expected_content_type() -> None:
     assert "pageAlert.dataset.pageAlertDismissDelay" in body
 
 
+def test_portal_event_cache_js_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/portal-event-cache.js",
+            route_params={"asset_name": "portal-event-cache.js"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert 'const adminEventsApiPath = "/api/v1/admin/events"' in body
+    assert "sessionStorage" in body
+    assert "ipg:portal:events:v1" in body
+    assert "iPlaygroundPortalEvents" in body
+    assert "getCachedEvents" in body
+    assert "preload" in body
+    assert "refresh" in body
+    assert "upsertCachedEvent" in body
+    assert "ipg:portal-events:updated" in body
+
+
 def test_portal_datetime_picker_js_asset_returns_expected_content_type() -> None:
     response = static_asset(
         build_request(
@@ -1766,13 +2232,27 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "getCompletionEventNameFromFrame" in body
     assert "applyDashboardCompletionUploadEventValue" in body
     assert "getDashboardCompletionUploadEventName" in body
+    assert "loadDashboardCompletionUploadEvents" in body
+    assert "renderDashboardCompletionUploadEventSelect" in body
+    assert "fetch(adminEventsApiPath" in body
+    assert "portal-completion-upload-event-options" in body
+    assert "portal-completion-upload-event-select" in body
+    assert "getFirstDashboardCompletionUploadEventValue" in body
+    assert "isSingleOption" in body
     assert "openDashboardCompletionUploadEventSelect" in body
     assert "closeDashboardCompletionUploadEventSelect" in body
     assert "sendDashboardCompletionUploadFileToFrame" in body
+    assert "handleDashboardCompletionUploadDrop" in body
+    assert "assignDashboardCompletionUploadFile" in body
+    assert "document.addEventListener(\"drop\", handleDashboardCompletionUploadDrop)" in body
+    assert "new DataTransfer()" in body
     assert "completionUploadImportMessageType" in body
     assert "ipg:completion-upload:import" in body
-    assert "eventName: getDashboardCompletionUploadEventName()" in body
+    assert "adminCompletionCertsImportApiPath" in body
+    assert "完訓證明資料匯入中..." in body
+    assert "eventId: getDashboardCompletionUploadEventName()" in body
     assert "selectedFile.text()" in body
+    assert "\"X-Portal-CSRF-Token\": portalCsrfToken" in body
     assert "contentFrame.contentWindow?.postMessage" in body
     assert '.endsWith(".csv")' in body
     assert "openDashboardTaxUploadDialog" in body
@@ -1867,7 +2347,10 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "button.dataset.viewPath" in body
     assert 'window.location.assign(logoutUrl)' in body
     assert 'window.location.assign(portalEntryPath)' in body
-    assert "sessionStorage" not in body
+    assert "window.iPlaygroundPortalEvents" in body
+    assert "preload" in body
+    assert "upsertCachedEvent" in body
+    assert "renderDashboardTaxUploadEventSelect" in body
 
 
 def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_type() -> None:
@@ -1893,22 +2376,47 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "isCompletionCsvFile" in body
     assert "completionUploadImportMessageType" in body
     assert "ipg:completion-upload:import" in body
+    assert "完訓證明資料匯入中..." in body
     assert "getCompletionUploadEventName" in body
     assert "applyCompletionUploadEventValue" in body
+    assert "getFirstCompletionUploadEventValue" in body
+    assert "loadingCompletionCertRowsMessage" in body
+    assert "emptyCompletionCertRowsMessage" in body
+    assert "isLoadingCompletionCertRows = true" in body
+    assert "isLoadingCompletionCertRows = false" in body
     assert "openCompletionUploadEventSelect" in body
     assert "closeCompletionUploadEventSelect" in body
     assert "getVisibleCompletionCertRows" in body
-    assert "message.eventName" in body
+    assert "message.eventId" in body
+    assert "message.completionCerts" in body
     assert "parseCompletionCsv" in body
     assert "buildCompletionCertRows" in body
+    assert "姓名 Full Name" in body
+    assert "你是誰，ID 或具有鑑識度的名稱 Name on Badge" in body
+    assert "kktixId" in body
+    assert "badgeName" in body
+    assert '"Id"' in body
+    assert "Email" in body
+    assert "email" in body
+    assert "票券編號" not in body
+    assert "票券名稱" not in body
+    assert "訂購人姓名" not in body
+    assert "電子信箱" not in body
     assert "renderCompletionCertRows" in body
     assert "importCompletionCsvText" in body
+    assert "handleCompletionUploadDrop" in body
+    assert "assignCompletionUploadFile" in body
+    assert "document.addEventListener(\"drop\", handleCompletionUploadDrop)" in body
     assert "setCompletionRowDownloadState" in body
+    assert "openCompletionEditDialog" in body
+    assert "submitCompletionEditDialog" in body
+    assert 'document.getElementById("completion-edit-dialog")' in body
+    assert 'document.getElementById("completion-edit-submit")' in body
+    assert "encodeURIComponent(rowData.id)" in body
+    assert "method: \"PUT\"" in body
     assert "setCompletionSelectionForAllRows" not in body
     assert "applyDownloadableStateToSelection" not in body
     assert "applyDownloadableStateToCurrentActivity" in body
-    assert "未簽到" in body
-    assert "已簽到" in body
     assert "不可下載" not in body
     assert "可下載" not in body
     assert '.endsWith(".csv")' in body
@@ -1930,7 +2438,10 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "confirmCompletionUploadDialogClose" in body
     assert "資料尚未存檔，確定要取消嗎？" in body
     assert 'event.key === "Escape"' in body
-    assert "sessionStorage" not in body
+    assert "window.iPlaygroundPortalEvents" in body
+    assert "getCachedEvents" in body
+    assert "refresh" in body
+    assert "ipg:portal-events:updated" in body
 
 
 def test_portal_dashboard_tax_receipts_js_asset_returns_expected_content_type() -> None:
@@ -1999,7 +2510,9 @@ def test_portal_dashboard_tax_receipts_js_asset_returns_expected_content_type() 
     assert "停用" not in body
     assert "CSV" not in body
     assert ".csv" not in body
-    assert "sessionStorage" not in body
+    assert "window.iPlaygroundPortalEvents" in body
+    assert "renderTaxEventSelects" in body
+    assert "loadTaxEvents" in body
 
 
 def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> None:
@@ -2081,6 +2594,10 @@ def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> Non
     assert "eventCreateDialog.hidden = false" in body
     assert "eventCode" not in body
     assert 'event.key === "Escape"' in body
+    assert "window.iPlaygroundPortalEvents" in body
+    assert "getCachedEvents" in body
+    assert "refresh" in body
+    assert "upsertCachedEvent" in body
 
 
 def test_favicon_asset_returns_expected_content_type_for_portal_pages() -> None:

@@ -33,6 +33,7 @@ let eventCreatePreviousFocus = null;
 let eventDialogMode = "create";
 let eventDialogInitialState = "";
 let eventEditingId = "";
+let eventRowsSignature = "";
 
 const {
   formatCurrentDateTimeInputValue,
@@ -413,6 +414,8 @@ function renderEventRows(events) {
     return;
   }
 
+  eventRowsSignature = JSON.stringify(events);
+
   if (events.length === 0) {
     renderEventEmptyRow("尚未建立活動。");
     return;
@@ -449,7 +452,17 @@ function insertPendingEventRow(eventData) {
 }
 
 async function loadEventRows() {
-  renderEventEmptyRow("活動載入中。");
+  const eventCache = window.iPlaygroundPortalEvents;
+  const cachedEvents = eventCache?.getCachedEvents?.();
+  let cachedEventsSignature = "";
+
+  if (Array.isArray(cachedEvents)) {
+    const events = cachedEvents.map((eventData) => normalizeLoadedEvent(eventData));
+    cachedEventsSignature = JSON.stringify(events);
+    renderEventRows(events);
+  } else {
+    renderEventEmptyRow("活動載入中。");
+  }
 
   try {
     const response = await fetch(adminEventsApiPath, {
@@ -462,11 +475,17 @@ async function loadEventRows() {
       throw new Error(responsePayload?.error?.message || "活動清單載入失敗。");
     }
 
-    const events = Array.isArray(responsePayload.events)
-      ? responsePayload.events.map((eventData) => normalizeLoadedEvent(eventData))
-      : [];
-    renderEventRows(events);
+    const responseEvents = Array.isArray(responsePayload.events) ? responsePayload.events : [];
+    eventCache?.setCachedEvents?.(responseEvents);
+    const events = responseEvents.map((eventData) => normalizeLoadedEvent(eventData));
+    const refreshedEventsSignature = JSON.stringify(events);
+    if (refreshedEventsSignature !== cachedEventsSignature) {
+      renderEventRows(events);
+    }
   } catch (error) {
+    if (Array.isArray(cachedEvents)) {
+      return;
+    }
     renderEventEmptyRow(error instanceof Error ? error.message : "活動清單載入失敗。");
   }
 }
@@ -567,6 +586,7 @@ async function submitEventForm() {
     }
 
     const savedEvent = responsePayload.event;
+    window.iPlaygroundPortalEvents?.upsertCachedEvent?.(savedEvent);
 
     if (isEditMode) {
       upsertEventRow(savedEvent);
@@ -641,6 +661,16 @@ eventCompletionDocumentTypeOption?.addEventListener("click", (event) => {
   }
 
   toggleCompletionCertDocumentType();
+});
+
+window.addEventListener("ipg:portal-events:updated", (event) => {
+  const events = Array.isArray(event.detail?.events)
+    ? event.detail.events.map((eventData) => normalizeLoadedEvent(eventData))
+    : [];
+  const nextEventsSignature = JSON.stringify(events);
+  if (nextEventsSignature !== eventRowsSignature) {
+    renderEventRows(events);
+  }
 });
 
 void loadEventRows();

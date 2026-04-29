@@ -1051,6 +1051,12 @@ form {
   cursor: default;
 }
 
+.custom-select.is-single-option .custom-select-trigger {
+  justify-content: flex-start;
+  padding-right: 16px;
+  cursor: default;
+}
+
 .custom-select-value {
   min-width: 0;
   overflow: hidden;
@@ -1181,15 +1187,15 @@ form {
   border-bottom: 0;
 }
 
-.document-download-button {
-  padding-inline: 14px;
-}
-
 .document-row-actions {
   display: inline-flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
+}
+
+.completion-cert-row .document-row-actions {
+  flex-wrap: nowrap;
 }
 
 .document-delete-button {
@@ -1236,10 +1242,16 @@ form {
 }
 
 .document-upload-dropzone:hover,
-.document-upload-dropzone:focus-within {
+.document-upload-dropzone:focus-within,
+.document-upload-dropzone.is-drag-active {
   border-color: rgba(81, 121, 254, 0.72);
   background: rgba(255, 255, 255, 0.78);
   box-shadow: 0 18px 34px rgba(81, 121, 254, 0.1);
+}
+
+.document-upload-dropzone.is-drag-active {
+  border-style: solid;
+  outline: 3px solid rgba(81, 121, 254, 0.16);
 }
 
 .document-upload-copy {
@@ -1281,6 +1293,39 @@ form {
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.document-upload-errors {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--theme-feedback-error-border);
+  border-radius: 12px;
+  background: var(--theme-feedback-error-bg);
+  color: var(--theme-feedback-error-color);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.document-upload-errors[hidden] {
+  display: none;
+}
+
+.document-upload-errors strong {
+  font-weight: 900;
+}
+
+.document-upload-errors ul {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  margin: 0;
+  padding-left: 1.2rem;
+  overflow: auto;
+}
+
+.document-upload-errors li {
+  padding-left: 2px;
 }
 
 .document-detail-grid {

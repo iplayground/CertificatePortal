@@ -20,7 +20,7 @@ Resource Group、Region 與 Function App 名稱由 Bicep 參數或 GitHub Action
 
 `functionAppName` 必須保持 Azure 全域唯一，並會同時影響 Function App 名稱、預設公開網址，以及衍生出的 Storage Account、Application Insights、Log Analytics 與 GitHub 部署身分命名。
 
-若未明確提供 `cosmosAccountName`，Bicep 會依 `functionAppName` 與 Resource Group 產生全域唯一的 Cosmos DB account 名稱。`cosmosDatabaseName` 預設為 `ipg-certificate`。目前已建立活動管理用的 `events` container，partition key 為 `/id`。資料模型與欄位規則請參考 [cosmos-data-model.md](cosmos-data-model.md)。
+若未明確提供 `cosmosAccountName`，Bicep 會依 `functionAppName` 與 Resource Group 產生全域唯一的 Cosmos DB account 名稱。`cosmosDatabaseName` 預設為 `ipg-certificate`。目前已建立活動管理用的 `events` container，以及完訓證明用的 `completionCerts` 與 `completionCertRequests` containers。資料模型與欄位規則請參考 [cosmos-data-model.md](cosmos-data-model.md)。
 
 因為 Cosmos DB account 停用 local auth，Azure Portal 的 Data Explorer 也需要 Cosmos native RBAC。Azure RBAC 的 `Owner` 或 `Contributor` 可管理 account，但不會自動取得 Cosmos 資料面讀取權限。
 
@@ -97,7 +97,10 @@ az functionapp config appsettings set \
 - `issued-certs`
 - 1 個 Azure Cosmos DB for NoSQL serverless account，使用 Session consistency，並停用 local auth
 - 1 個 Cosmos DB SQL database，預設名稱 `ipg-certificate`
-- 1 個 Cosmos DB SQL container `events`，partition key 為 `/id`
+- 3 個 Cosmos DB SQL containers
+- `events`，partition key 為 `/id`
+- `completionCerts`，partition key 為 `/eventId`
+- `completionCertRequests`，partition key 為 `/eventId`
 - 1 個 Log Analytics Workspace
 - 1 個 Application Insights
 - 1 個 GitHub Actions 專用 user-assigned managed identity
@@ -175,8 +178,8 @@ gh workflow list -R iplayground/CertificatePortal
 - Cosmos DB：Azure Cosmos DB for NoSQL serverless account
 - Cosmos DB local auth：停用，Function App 以 system-assigned managed identity 取得 database 範圍的 Cosmos DB Built-in Data Contributor 權限
 - Cosmos Portal inspection：可透過 `cosmosPortalDataReaderPrincipalIds` 為管理者安全群組授與 account 範圍 Cosmos DB Built-in Data Reader
-- Cosmos app settings：`COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME` 與 `COSMOS_EVENTS_CONTAINER` 由 Bicep 寫入 Function App
-- Cosmos containers：`events` 使用 `/id` 作為 partition key，供活動管理資料使用
+- Cosmos app settings：`COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER` 與 `COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER` 由 Bicep 寫入 Function App
+- Cosmos containers：`events` 使用 `/id` 作為 partition key，供活動管理資料使用；完訓證明 containers 依 [cosmos-data-model.md](cosmos-data-model.md) 使用 `/eventId`
 
 ## 注意事項
 
