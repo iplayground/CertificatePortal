@@ -6,6 +6,7 @@ from functools import lru_cache
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
+from src.shared.cosmos_options import build_public_lookup_cosmos_timeout_options
 from src.shared.event_store import utc_now_iso
 
 
@@ -14,13 +15,13 @@ COMPLETION_CERT_REQUEST_NAMESPACE = "io.iplayground.ipg-certificate.completion-c
 
 
 class CompletionContainer(Protocol):
-    def create_item(self, body: dict[str, Any]) -> dict[str, Any]: ...
+    def create_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
 
-    def read_item(self, item: str, partition_key: str) -> dict[str, Any]: ...
+    def read_item(self, item: str, partition_key: str, **kwargs: Any) -> dict[str, Any]: ...
 
-    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]: ...
+    def replace_item(self, item: str, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
 
-    def upsert_item(self, body: dict[str, Any]) -> dict[str, Any]: ...
+    def upsert_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
 
     def query_items(
         self,
@@ -29,6 +30,7 @@ class CompletionContainer(Protocol):
         parameters: list[dict[str, Any]] | None = None,
         partition_key: str | None = None,
         enable_cross_partition_query: bool,
+        **kwargs: Any,
     ) -> Any: ...
 
 
@@ -142,7 +144,7 @@ def list_completion_cert_documents(
                 "目前身分沒有 Cosmos DB 完訓證明容器讀取權限。請確認本機或服務身分"
                 "已具備 Cosmos DB SQL Data Reader 或 Data Contributor 權限。"
             ) from exc
-        raise
+        raise CompletionStoreOperationError("完訓證明資料查詢暫時失敗。") from exc
 
 
 def read_completion_cert_document(
@@ -165,6 +167,57 @@ def read_completion_cert_document(
 
     if not isinstance(document, dict):
         raise CompletionStoreOperationError("完訓證明資料格式不合法。")
+
+    return document
+
+
+def find_completion_cert_document_for_public_lookup(
+    *,
+    container: CompletionContainer,
+    email: str,
+    event_id: str,
+    number: int,
+) -> dict[str, Any] | None:
+    normalized_email = email.strip().lower()
+    try:
+        documents = list(
+            container.query_items(
+                query=(
+                    "SELECT TOP 1 c.id, c.eventId, c.number, c.email, c.certStatus, "
+                    "c.issuedPdfBlobName FROM c WHERE c.eventId = @eventId "
+                    "AND c.number = @number"
+                ),
+                parameters=[
+                    {"name": "@eventId", "value": event_id},
+                    {"name": "@number", "value": number},
+                ],
+                partition_key=event_id,
+                enable_cross_partition_query=False,
+                **build_public_lookup_cosmos_timeout_options(),
+            )
+        )
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise CompletionStoreOperationError(
+                "Cosmos DB 完訓證明容器不存在。請確認 COSMOS_COMPLETION_CERTS_CONTAINER "
+                "是否指向已建立的資源。"
+            ) from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise CompletionStoreOperationError(
+                "目前身分沒有 Cosmos DB 完訓證明容器讀取權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Reader 或 Data Contributor 權限。"
+            ) from exc
+        raise
+
+    document = next(
+        (
+            candidate
+            for candidate in documents
+            if isinstance(candidate, dict)
+            and str(candidate.get("email", "")).strip().lower() == normalized_email
+        ),
+        None,
+    )
 
     return document
 

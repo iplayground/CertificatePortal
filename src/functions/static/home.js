@@ -1,8 +1,10 @@
 const homePage = document.body;
 const htmlRoot = document.documentElement;
 const homePageI18nScript = document.getElementById("home-page-i18n");
+const documentRequestForm = document.getElementById("document-request-form");
 const previewAction = document.getElementById("preview-action");
 const feedback = document.getElementById("form-feedback");
+const pageLoadingOverlay = document.getElementById("page-loading-overlay");
 const registrationNumber = document.getElementById("registration-number");
 const attendeeName = document.getElementById("attendee-name");
 const email = document.getElementById("email");
@@ -49,9 +51,17 @@ let currentLocale = homePage.dataset.currentLocale ?? "zh-TW";
 const localeCookieName = homePage.dataset.localeCookieName ?? "ipg_locale";
 const localeCookieMaxAge = Number.parseInt(homePage.dataset.localeCookieMaxAge ?? "31536000", 10);
 const eventsApiPath = homePage.dataset.eventsApiPath ?? "/api/v1/events";
+const documentLookupApiPath = homePage.dataset.documentLookupApiPath ?? "/api/v1/document-lookup";
+const lookupBlockedStorageKey = "ipg_document_lookup_blocked_until";
+const lookupBlockedClientCacheMs = 60 * 60 * 1000;
 let emptyNameText = homePage.dataset.emptyNameText ?? "未填寫姓名";
 let emptyEmailText = homePage.dataset.emptyEmailText ?? "未填寫 email";
 let previewFeedbackTemplate = homePage.dataset.previewFeedbackTemplate ?? "";
+let lookupNotFoundMessage = homePage.dataset.lookupNotFoundMessage ?? "查不到符合條件的文件，請確認資料後再試。";
+let lookupBlockedMessage = homePage.dataset.lookupBlockedMessage ?? "查詢失敗次數過多，已暫停查詢 24 小時。";
+let lookupUnavailableMessage = homePage.dataset.lookupUnavailableMessage ?? "目前暫時無法查詢文件，請稍後再試。";
+let lookupPendingMessage = homePage.dataset.lookupPendingMessage ?? "查詢中，請稍候。";
+let isLookupInProgress = false;
 const { installDateTimePicker } = window.iPlaygroundPortalDateTime ?? {};
 
 function parseHomePageI18n() {
@@ -425,7 +435,7 @@ function updateFeedbackCopy(initialFeedbackText) {
     return;
   }
 
-  const name = attendeeName.value.trim() || emptyNameText;
+  const name = attendeeName?.value.trim() || emptyNameText;
   const emailValue = email.value.trim() || emptyEmailText;
   feedback.textContent = formatPreviewMessage(previewFeedbackTemplate, {
     eventName: eventNameInput.value,
@@ -472,7 +482,176 @@ function isUserDataComplete() {
 }
 
 function updatePreviewActionState() {
-  previewAction.disabled = !isUserDataComplete();
+  previewAction.disabled = isLookupInProgress || !isUserDataComplete();
+}
+
+function setLookupBusy(isBusy) {
+  isLookupInProgress = isBusy;
+  documentRequestForm.classList.toggle("is-lookup-busy", isBusy);
+  homePage.classList.toggle("is-lookup-busy", isBusy);
+  documentRequestForm.setAttribute("aria-busy", String(isBusy));
+  if (pageLoadingOverlay) {
+    pageLoadingOverlay.hidden = !isBusy;
+  }
+
+  documentRequestForm
+    .querySelectorAll("input, button, select, textarea")
+    .forEach((control) => {
+      if (!("disabled" in control)) {
+        return;
+      }
+
+      if (isBusy) {
+        control.dataset.lookupWasDisabled = String(control.disabled);
+        control.disabled = true;
+        return;
+      }
+
+      control.disabled = control.dataset.lookupWasDisabled === "true";
+      delete control.dataset.lookupWasDisabled;
+    });
+
+  updatePreviewActionState();
+}
+
+function buildDocumentLookupPayload() {
+  const documentType = documentTypeInput.value.trim();
+  const payload = {
+    documentType,
+    eventId: eventNameInput.dataset.eventId ?? "",
+  };
+
+  if (documentType === "completionCert") {
+    payload.registrationNumber = registrationNumber.value.trim();
+    payload.email = email.value.trim();
+    return payload;
+  }
+
+  if (documentType === "taxReceipt") {
+    payload.businessTaxId = businessTaxId.value.trim();
+    payload.generatedAt = generatedAt.value.trim();
+  }
+
+  return payload;
+}
+
+function resolveLookupFailureMessage(payload) {
+  const code = payload?.error?.code;
+  const message = payload?.error?.message;
+  if (code === "lookup_blocked") {
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+
+    return lookupBlockedMessage;
+  }
+
+  if (code === "lookup_unavailable") {
+    return lookupUnavailableMessage;
+  }
+
+  return lookupNotFoundMessage;
+}
+
+function showLookupFeedback(message, tone = "success") {
+  feedback.hidden = false;
+  feedback.classList.add("is-active");
+  feedback.classList.toggle("is-success", tone === "success");
+  feedback.classList.toggle("is-error", tone === "error");
+  feedback.textContent = message;
+}
+
+function readClientLookupBlockedUntil() {
+  try {
+    const value = window.localStorage.getItem(lookupBlockedStorageKey);
+    if (!value) {
+      return null;
+    }
+
+    const timestamp = Number.parseInt(value, 10);
+    if (!Number.isFinite(timestamp)) {
+      window.localStorage.removeItem(lookupBlockedStorageKey);
+      return null;
+    }
+
+    if (timestamp <= Date.now()) {
+      window.localStorage.removeItem(lookupBlockedStorageKey);
+      return null;
+    }
+
+    return timestamp;
+  } catch {
+    return null;
+  }
+}
+
+function rememberClientLookupBlock() {
+  try {
+    window.localStorage.setItem(
+      lookupBlockedStorageKey,
+      String(Date.now() + lookupBlockedClientCacheMs),
+    );
+  } catch {
+    return;
+  }
+}
+
+function clearClientLookupBlock() {
+  try {
+    window.localStorage.removeItem(lookupBlockedStorageKey);
+  } catch {
+    return;
+  }
+}
+
+async function submitDocumentLookup() {
+  if (readClientLookupBlockedUntil() !== null) {
+    showLookupFeedback(lookupBlockedMessage, "error");
+    return;
+  }
+
+  updatePreviewActionState();
+  if (previewAction.disabled) {
+    return;
+  }
+
+  const documentLookupPayload = buildDocumentLookupPayload();
+  setLookupBusy(true);
+
+  try {
+    const response = await fetch(documentLookupApiPath, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(documentLookupPayload),
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      if (payload?.error?.code === "lookup_blocked") {
+        rememberClientLookupBlock();
+      }
+      showLookupFeedback(resolveLookupFailureMessage(payload), "error");
+      return;
+    }
+
+    clearClientLookupBlock();
+    const name = attendeeName?.value.trim() || emptyNameText;
+    const emailValue = email.value.trim() || emptyEmailText;
+    showLookupFeedback(formatPreviewMessage(previewFeedbackTemplate, {
+      eventName: eventNameInput.value,
+      documentType: resolveDocumentTypeLabel(documentTypeInput.value),
+      attendeeName: name,
+      email: emailValue,
+    }));
+  } catch {
+    showLookupFeedback(lookupUnavailableMessage, "error");
+  } finally {
+    setLookupBusy(false);
+  }
 }
 
 function applyHomePageLocale(nextLocale) {
@@ -555,7 +734,7 @@ function applyHomePageLocale(nextLocale) {
     registrationNumber.placeholder = homePageCopy.registration_number_placeholder;
   }
 
-  if (typeof homePageCopy.attendee_name_placeholder === "string") {
+  if (attendeeName && typeof homePageCopy.attendee_name_placeholder === "string") {
     attendeeName.placeholder = homePageCopy.attendee_name_placeholder;
   }
 
@@ -584,6 +763,28 @@ function applyHomePageLocale(nextLocale) {
   if (typeof homePageCopy.preview_feedback_template === "string") {
     previewFeedbackTemplate = homePageCopy.preview_feedback_template;
     homePage.dataset.previewFeedbackTemplate = previewFeedbackTemplate;
+  }
+
+  if (typeof homePageCopy.lookup_not_found_message === "string") {
+    lookupNotFoundMessage = homePageCopy.lookup_not_found_message;
+    homePage.dataset.lookupNotFoundMessage = lookupNotFoundMessage;
+  }
+
+  if (typeof homePageCopy.lookup_blocked_message === "string") {
+    lookupBlockedMessage = homePageCopy.lookup_blocked_message;
+    homePage.dataset.lookupBlockedMessage = lookupBlockedMessage;
+  }
+
+  if (typeof homePageCopy.lookup_unavailable_message === "string") {
+    lookupUnavailableMessage = homePageCopy.lookup_unavailable_message;
+    homePage.dataset.lookupUnavailableMessage = lookupUnavailableMessage;
+  }
+
+  if (typeof homePageCopy.lookup_pending_message === "string") {
+    lookupPendingMessage = homePageCopy.lookup_pending_message;
+    homePage.dataset.lookupPendingMessage = lookupPendingMessage;
+    const pageLoadingText = pageLoadingOverlay?.querySelector(".page-loading-text");
+    updateTextContent(pageLoadingText, lookupPendingMessage);
   }
 
   closeLocaleMenu({ blurTrigger: true });
@@ -973,26 +1174,16 @@ document.addEventListener("click", (event) => {
   }
 });
 
-previewAction.addEventListener("click", () => {
-  updatePreviewActionState();
-  if (previewAction.disabled) {
-    return;
-  }
-
-  const name = attendeeName.value.trim() || emptyNameText;
-  const emailValue = email.value.trim() || emptyEmailText;
-
-  feedback.hidden = false;
-  feedback.classList.add("is-active");
-  feedback.textContent = formatPreviewMessage(previewFeedbackTemplate, {
-    eventName: eventNameInput.value,
-    documentType: resolveDocumentTypeLabel(documentTypeInput.value),
-    attendeeName: name,
-    email: emailValue,
-  });
+documentRequestForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void submitDocumentLookup();
 });
 
-[registrationNumber, attendeeName, email, businessTaxId, generatedAt].forEach((input) => {
+previewAction.addEventListener("click", () => {
+  void submitDocumentLookup();
+});
+
+[registrationNumber, attendeeName, email, businessTaxId, generatedAt].filter(Boolean).forEach((input) => {
   input.addEventListener("input", updatePreviewActionState);
 });
 if (typeof installDateTimePicker === "function") {

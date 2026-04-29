@@ -30,11 +30,15 @@
     "generated_at_label": "Generated at",
     "generated_at_placeholder": "---- / -- / -- --:--:--",
     "preview_action_label": "Look Up Documents",
+    "lookup_not_found_message": "No matching document was found. Please check your information and try again.",
+    "lookup_blocked_message": "Too many failed lookups. Lookup is paused for 24 hours.",
+    "lookup_unavailable_message": "Document lookup is temporarily unavailable. Please try again later.",
+    "lookup_pending_message": "Looking up documents. Please wait.",
     "copyright_notice": "All website content and related materials are owned by Taipei Elite Software Developer Association (77212283). Unauthorized reproduction, redistribution, or commercial use is prohibited.",
     "empty_name_text": "Name not provided",
     "empty_email_text": "Email not provided",
     "meta_image_alt": "iPlayground document request identity mark",
-    "preview_feedback_template": "Lookup details: Event: {eventName}; document type: {documentType}; registrant name: {attendeeName}; email: {email}."
+    "preview_feedback_template": "Lookup details: Event: {eventName}; document type: {documentType}; email: {email}."
   },
   "verify_page": {
     "title": "iPlayground Certificate Verification",

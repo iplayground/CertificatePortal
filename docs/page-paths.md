@@ -14,6 +14,7 @@
 | `GET` | `/portal/dashboard/tax-receipts` | dashboard iframe 的營業稅繳稅證明頁 | `text/html` |
 | `GET` | `/portal/dashboard/events` | dashboard iframe 的活動管理頁 | `text/html` |
 | `GET` | `/api/v1/events` | 公開首頁可申請活動清單 | `application/json` |
+| `POST` | `/api/v1/document-lookup` | 公開首頁文件查詢 | `application/json` |
 | `GET` | `/api/v1/admin/events` | 查詢活動管理資料 | `application/json` |
 | `POST` | `/api/v1/admin/events` | 建立活動管理資料 | `application/json` |
 | `PUT` | `/api/v1/admin/events/{eventId}` | 更新單筆活動管理資料 | `application/json` |
@@ -90,6 +91,55 @@
   ]
 }
 ```
+
+### `POST /api/v1/document-lookup`
+
+- 首頁按下 `查詢文件` 時呼叫，用於查詢目前選取活動與文件類型下是否有符合條件的文件。
+- 查詢送出後，首頁會顯示覆蓋整個 window viewport 的黑色半透明 loading 遮罩；遮罩中央以純白區塊包住 loading 指示與查詢中文字，並阻擋語系切換、表單操作與頁面捲動，直到查詢完成。
+- 此 API 為公開查詢端點，不要求 API Key、管理者 session、同源請求或 CSRF token。
+- 查詢失敗時只回覆通用錯誤，不指出哪個欄位不符，也不提示剩餘嘗試次數。
+- IP 限制只使用 `X-Forwarded-For` 的第一個值；正式 Azure Functions 環境預期由 Azure 前端提供此 header，本機 `func start` 直連不會自動產生。若第一個值包含來源 port，例如 `198.51.100.25:54321` 或 `[2001:db8::25]:54321`，後端會先移除 port 再寫入 `publicLookupAttempts`。
+- 若請求沒有 `X-Forwarded-For`，API 仍會查詢文件，但不讀寫 `publicLookupAttempts`，避免將所有無來源 IP 的請求寫成同一筆 `unknown` 紀錄。
+- 同一 IP 在 24 小時內連續查詢失敗 5 次後封鎖查詢 24 小時；封鎖時間從開始封鎖時計算。
+- 封鎖期間回覆 `429` 與通用封鎖訊息，訊息不得提到 IP；若後端可取得封鎖到期時間，滿 1 小時以上以小時計算並無條件進位，不足 1 小時以分鐘計算並無條件進位，不足 1 分鐘顯示 1 分鐘，且不查詢文件資料。
+- 查詢 IP 是否被封鎖與寫入失敗計次時，Cosmos DB 最多等待 5 秒；若提前回應就立即使用結果，若逾時則不得讓首頁無限卡住。
+- 後端可用 Functions worker 本機記憶體快取已封鎖 IP 的 attempt id，用於封鎖期間快速短路 Cosmos DB；此快取只能作為額外封鎖捷徑，不能取代 Cosmos DB 的權威紀錄，且本機快取期限不得超過 1 小時。
+- 首頁可用 `localStorage` 快取「已被封鎖」狀態以減少重整後的等待感，但此快取只作為使用者體驗提示，不得作為後端安全判斷依據，期限不得超過 1 小時，且必須在到期、格式不合法或查詢成功時清除，避免永久性上鎖。
+- 目前只串接 `completionCert` 的查詢判斷；`taxReceipt` 後端持久化尚未完成前會視為查不到。
+
+Request JSON 範例：
+
+```json
+{
+  "documentType": "completionCert",
+  "eventId": "evt_550e8400-e29b-41d4-a716-446655440000",
+  "registrationNumber": "100",
+  "email": "attendee@example.com"
+}
+```
+
+查不到文件的 Response JSON 範例：
+
+```json
+{
+  "error": {
+    "code": "document_not_found",
+    "message": "查不到符合條件的文件，請確認資料後再試。"
+  }
+}
+```
+
+封鎖時的 Response JSON 範例：
+
+```json
+{
+  "error": {
+    "code": "lookup_blocked",
+    "message": "查詢失敗次數過多，已暫停查詢 24 小時。"
+  }
+}
+```
+
 ### 語系規則
 
 - 首頁與公開驗證頁支援 `zh-TW` 與 `en-US`
@@ -152,9 +202,10 @@
 - 文件類型在活動載入完成前隱藏；活動載入完成且有活動時，依所選活動的 `documentTypes` 顯示可申請文件
 - 文件類型只有一個時以靜態欄位顯示，不顯示下拉三角；多個文件類型時使用自訂下拉元件
 - 首頁文件類型顯示文字納入 i18n，表單值使用穩定文件類型代碼：`completionCert`、`taxReceipt`
-- 首頁依文件類型顯示申請資料欄位：`完訓證明` 需要報名序號、報名人姓名與 `email`；`營業稅繳稅證明` 需要統編與產製時間
+- 首頁依文件類型顯示申請資料欄位：`完訓證明` 需要報名序號與 `email`；`營業稅繳稅證明` 需要統編與產製時間
 - `營業稅繳稅證明` 的產製時間使用共用日期時間選擇器的秒數模式，顯示年、月、日、時、分、秒
 - 查詢文件按鈕在目前可見申請資料欄位未完整填寫前維持停用
+- 查詢文件送出後使用滿版 loading 遮罩鎖住整個 window，避免等待期間切換語系或調整表單資料
 - 顯示頁尾版權聲明
 
 ### `/verify/{certId}`

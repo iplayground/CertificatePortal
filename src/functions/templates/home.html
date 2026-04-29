@@ -29,9 +29,14 @@
     data-empty-name-text="{{empty_name_text}}"
     data-empty-email-text="{{empty_email_text}}"
     data-preview-feedback-template="{{preview_feedback_template}}"
+    data-lookup-not-found-message="{{lookup_not_found_message}}"
+    data-lookup-blocked-message="{{lookup_blocked_message}}"
+    data-lookup-unavailable-message="{{lookup_unavailable_message}}"
+    data-lookup-pending-message="{{lookup_pending_message}}"
     data-locale-cookie-name="{{locale_cookie_name}}"
     data-locale-cookie-max-age="{{locale_cookie_max_age}}"
     data-events-api-path="{{events_api_path}}"
+    data-document-lookup-api-path="{{document_lookup_api_path}}"
   >
     <div class="shell">
       <main class="hero">
@@ -115,24 +120,6 @@
                 >
               </div>
 
-              <div class="field" id="attendee-name-field" data-user-data-field data-document-types="completionCert" hidden>
-                <span id="attendee-name-label" class="field-label">{{attendee_name_label}}</span>
-                <input
-                  id="attendee-name"
-                  name="attendeeName"
-                  type="text"
-                  autocomplete="off"
-                  data-1p-ignore="true"
-                  data-op-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  data-protonpass-ignore="true"
-                  data-form-type="other"
-                  aria-labelledby="attendee-name-label"
-                  placeholder="{{attendee_name_placeholder}}"
-                >
-              </div>
-
               <div class="field" id="email-field" data-user-data-field data-document-types="completionCert" hidden>
                 <span id="email-label" class="field-label">{{email_label}}</span>
                 <input
@@ -205,6 +192,12 @@
       <footer class="site-footer">
         <small id="copyright-notice">{{copyright_notice}}</small>
       </footer>
+    </div>
+    <div class="page-loading-overlay" id="page-loading-overlay" aria-live="polite" aria-atomic="true" hidden>
+      <div class="page-loading-panel">
+        <div class="page-loading-indicator" aria-hidden="true"></div>
+        <div class="page-loading-text">{{lookup_pending_message}}</div>
+      </div>
     </div>
 
     <script id="home-page-i18n" type="application/json">{{{home_page_i18n_json}}}</script>

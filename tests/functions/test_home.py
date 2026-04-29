@@ -1,27 +1,182 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
 import azure.functions as func
 import pytest
 
 from src.functions.assets import static_asset
-from src.functions.home import home_page, public_events_list_api
+from src.functions.home import (
+    build_document_lookup_blocked_message,
+    home_page,
+    public_document_lookup_api,
+    public_events_list_api,
+    resolve_public_lookup_client_ip,
+)
 from src.shared.event_store import EventStoreOperationError
+from src.shared.public_lookup_store import (
+    PublicLookupStoreOperationError,
+    build_public_lookup_attempt_id,
+    clear_public_lookup_local_block,
+    remember_public_lookup_block,
+)
+
+
+@pytest.fixture(autouse=True)
+def clear_public_lookup_cache() -> None:
+    attempt_id = build_public_lookup_attempt_id("203.0.113.10")
+    clear_public_lookup_local_block(attempt_id=attempt_id)
+    yield
+    clear_public_lookup_local_block(attempt_id=attempt_id)
 
 
 def build_request(
     url: str,
     *,
+    method: str = "GET",
+    body: bytes = b"",
     headers: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
     route_params: dict[str, str] | None = None,
 ) -> func.HttpRequest:
     return func.HttpRequest(
-        method="GET",
+        method=method,
         url=url,
         headers=headers or {},
-        params={},
+        params=params or {},
         route_params=route_params or {},
-        body=b"",
+        body=body,
     )
+
+
+class FakeLookupAttemptsContainer:
+    def __init__(self) -> None:
+        self.items: dict[str, dict[str, Any]] = {}
+        self.timeout_options: list[dict[str, Any]] = []
+
+    def read_item(self, item: str, partition_key: str, **kwargs: Any) -> dict[str, Any]:
+        assert item == partition_key
+        self.timeout_options.append(kwargs)
+        if item not in self.items:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+
+        return self.items[item]
+
+    def upsert_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        self.timeout_options.append(kwargs)
+        self.items[body["id"]] = body
+        return body
+
+
+class FailingLookupAttemptsContainer(FakeLookupAttemptsContainer):
+    def read_item(self, item: str, partition_key: str, **kwargs: Any) -> dict[str, Any]:
+        raise PublicLookupStoreOperationError("attempt store unavailable")
+
+    def upsert_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise PublicLookupStoreOperationError("attempt store unavailable")
+
+
+class FakeCompletionCertsContainer:
+    def __init__(self, items: list[dict[str, Any]] | None = None) -> None:
+        self.items = items or []
+        self.timeout_options: list[dict[str, Any]] = []
+
+    def query_items(
+        self,
+        query: str,
+        *,
+        parameters: list[dict[str, Any]] | None = None,
+        partition_key: str | None = None,
+        enable_cross_partition_query: bool,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        assert "SELECT TOP 1" in query
+        assert "LOWER(c.email)" not in query
+        assert "AND c.number = @number" in query
+        assert not enable_cross_partition_query
+        self.timeout_options.append(kwargs)
+        parameter_values = {
+            parameter["name"]: parameter["value"]
+            for parameter in parameters or []
+        }
+        assert partition_key == parameter_values["@eventId"]
+
+        return [
+            item
+            for item in self.items
+            if item["eventId"] == parameter_values["@eventId"]
+            and item["number"] == parameter_values["@number"]
+        ][:1]
+
+
+def build_document_lookup_request(
+    *,
+    body: dict[str, Any],
+    ip_address: str = "203.0.113.10",
+) -> func.HttpRequest:
+    return build_request(
+        "http://localhost:7075/api/v1/document-lookup",
+        method="POST",
+        body=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-Forwarded-For": ip_address,
+        },
+    )
+
+
+def test_resolve_public_lookup_client_ip_uses_forwarded_for() -> None:
+    request = build_request(
+        "http://localhost:7075/api/v1/document-lookup",
+        headers={
+            "X-Forwarded-For": "198.51.100.25, 10.0.0.1",
+        },
+    )
+
+    assert resolve_public_lookup_client_ip(request) == "198.51.100.25"
+
+
+def test_resolve_public_lookup_client_ip_removes_ipv4_port() -> None:
+    request = build_request(
+        "http://localhost:7075/api/v1/document-lookup",
+        headers={
+            "X-Forwarded-For": "198.51.100.25:54321, 10.0.0.1",
+        },
+    )
+
+    assert resolve_public_lookup_client_ip(request) == "198.51.100.25"
+
+
+def test_resolve_public_lookup_client_ip_removes_bracketed_ipv6_port() -> None:
+    request = build_request(
+        "http://localhost:7075/api/v1/document-lookup",
+        headers={
+            "X-Forwarded-For": "[2001:db8::25]:54321, 10.0.0.1",
+        },
+    )
+
+    assert resolve_public_lookup_client_ip(request) == "2001:db8::25"
+
+
+def test_resolve_public_lookup_client_ip_keeps_unbracketed_ipv6() -> None:
+    request = build_request(
+        "http://localhost:7075/api/v1/document-lookup",
+        headers={
+            "X-Forwarded-For": "2001:db8::25, 10.0.0.1",
+        },
+    )
+
+    assert resolve_public_lookup_client_ip(request) == "2001:db8::25"
+
+
+def test_resolve_public_lookup_client_ip_returns_none_without_forwarded_for() -> None:
+    request = build_request("http://localhost:7075/api/v1/document-lookup")
+
+    assert resolve_public_lookup_client_ip(request) is None
 
 
 def test_home_page_returns_html_with_expected_fields() -> None:
@@ -37,12 +192,11 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "iPlayground 文件申請入口" in body
     assert "文件申請 - iPlayground" in body
     assert "報名序號" in body
-    assert "報名人姓名" in body
     assert "統編" in body
     assert "產製時間" in body
     assert "會眾姓名" not in body
     assert 'id="registration-number"' in body
-    assert 'id="attendee-name"' in body
+    assert 'id="attendee-name"' not in body
     assert 'id="email"' in body
     assert 'id="business-tax-id"' in body
     assert 'id="generated-at"' in body
@@ -52,10 +206,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
         '<div class="field" id="registration-number-field" '
         'data-user-data-field data-document-types="completionCert" hidden>'
     ) in body
-    assert (
-        '<div class="field" id="attendee-name-field" '
-        'data-user-data-field data-document-types="completionCert" hidden>'
-    ) in body
+    assert 'id="attendee-name-field"' not in body
     assert (
         '<div class="field" id="email-field" '
         'data-user-data-field data-document-types="completionCert" hidden>'
@@ -69,17 +220,21 @@ def test_home_page_returns_html_with_expected_fields() -> None:
         'data-user-data-field data-document-types="taxReceipt" hidden>'
     ) in body
     assert '<button class="primary-action" type="button" id="preview-action" disabled>查詢文件</button>' in body
+    assert 'data-lookup-pending-message="查詢中，請稍候。"' in body
+    assert 'id="page-loading-overlay"' in body
+    assert 'class="page-loading-panel"' in body
+    assert 'class="page-loading-indicator"' in body
+    assert '<div class="page-loading-text">查詢中，請稍候。</div>' in body
     assert 'autocomplete="name"' not in body
     assert 'autocomplete="email"' not in body
-    assert body.count('autocomplete="off"') == 5
-    assert body.count('data-1p-ignore="true"') == 5
-    assert body.count('data-op-ignore="true"') == 5
-    assert body.count('data-lpignore="true"') == 5
-    assert body.count('data-bwignore="true"') == 5
-    assert body.count('data-protonpass-ignore="true"') == 5
-    assert body.count('data-form-type="other"') == 5
+    assert body.count('autocomplete="off"') == 4
+    assert body.count('data-1p-ignore="true"') == 4
+    assert body.count('data-op-ignore="true"') == 4
+    assert body.count('data-lpignore="true"') == 4
+    assert body.count('data-bwignore="true"') == 4
+    assert body.count('data-protonpass-ignore="true"') == 4
+    assert body.count('data-form-type="other"') == 4
     assert "請輸入報名序號" in body
-    assert "請輸入您的報名人姓名" in body
     assert "請輸入統一編號" in body
     assert "---- / -- / -- --:--:--" in body
     assert 'data-current-locale="zh-TW"' in body
@@ -169,7 +324,7 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert "Choose the event and document type for your request." in body
     assert "then enter the registrant name and email" not in body
     assert "Registration number" in body
-    assert "Registrant name" in body
+    assert 'id="attendee-name"' not in body
     assert "Tax ID" in body
     assert "Generated at" in body
     assert "Document type" in body
@@ -325,6 +480,347 @@ def test_public_events_list_api_returns_json_error_when_event_store_is_unavailab
     assert '"code":"event_store_unavailable"' in body
 
 
+def test_public_document_lookup_api_returns_generic_failure_and_records_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts_container = FakeLookupAttemptsContainer()
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: attempts_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "missing@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 404
+    assert response.mimetype == "application/json"
+    assert '"code":"document_not_found"' in body
+    assert "查不到符合條件的文件" in body
+    assert "email" not in body.lower()
+    assert "registration" not in body.lower()
+    assert len(attempts_container.items) == 1
+    assert next(iter(attempts_container.items.values()))["failureCount"] == 1
+    assert next(iter(attempts_container.items.values()))["blockedUntil"] is None
+
+
+def test_public_document_lookup_api_skips_attempt_record_without_forwarded_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts_container = FakeLookupAttemptsContainer()
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: attempts_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(),
+    )
+
+    response = public_document_lookup_api(
+        build_request(
+            "http://localhost:7075/api/v1/document-lookup",
+            method="POST",
+            body=json.dumps(
+                {
+                    "documentType": "completionCert",
+                    "eventId": "evt_1",
+                    "registrationNumber": "100",
+                    "email": "missing@example.com",
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 404
+    assert '"code":"document_not_found"' in body
+    assert attempts_container.items == {}
+
+
+def test_public_document_lookup_api_blocks_ip_after_fifth_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts_container = FakeLookupAttemptsContainer()
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: attempts_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(),
+    )
+
+    responses = [
+        public_document_lookup_api(
+            build_document_lookup_request(
+                body={
+                    "documentType": "completionCert",
+                    "eventId": "evt_1",
+                    "registrationNumber": "100",
+                    "email": "missing@example.com",
+                },
+            )
+        )
+        for _ in range(5)
+    ]
+    blocked_body = responses[-1].get_body().decode("utf-8")
+    attempt_document = next(iter(attempts_container.items.values()))
+
+    assert [response.status_code for response in responses] == [404, 404, 404, 404, 429]
+    assert '"code":"lookup_blocked"' in blocked_body
+    assert "暫停查詢 24 小時" in blocked_body
+    assert "IP" not in blocked_body
+    assert "剩" not in blocked_body
+    assert attempt_document["ipAddress"] == "203.0.113.10"
+    assert attempt_document["failureCount"] == 5
+    assert attempt_document["blockedUntil"] is not None
+
+
+def test_build_document_lookup_blocked_message_uses_remaining_hours() -> None:
+    message = build_document_lookup_blocked_message(
+        {"blockedUntil": "2999-04-29T00:04:00Z"}
+    )
+
+    assert message.startswith("查詢失敗次數過多，已暫停查詢 ")
+    assert message.endswith(" 小時。")
+    assert "IP" not in message
+
+
+def test_build_document_lookup_blocked_message_uses_ceiled_minutes_under_one_hour() -> None:
+    blocked_until = (datetime.now(timezone.utc) + timedelta(minutes=12, seconds=1)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+    message = build_document_lookup_blocked_message({"blockedUntil": blocked_until})
+
+    assert message == "查詢失敗次數過多，已暫停查詢 13 分鐘。"
+
+
+def test_build_document_lookup_blocked_message_uses_one_minute_under_one_minute() -> None:
+    blocked_until = (datetime.now(timezone.utc) + timedelta(seconds=30)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+    message = build_document_lookup_blocked_message({"blockedUntil": blocked_until})
+
+    assert message == "查詢失敗次數過多，已暫停查詢 1 分鐘。"
+
+
+def test_public_document_lookup_api_keeps_blocked_ip_from_querying(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts_container = FakeLookupAttemptsContainer()
+    attempt_id = build_public_lookup_attempt_id("203.0.113.10")
+    attempts_container.items[attempt_id] = {
+        "id": attempt_id,
+        "ipAddress": "203.0.113.10",
+        "failureCount": 5,
+        "firstFailedAt": "2026-04-29T00:00:00Z",
+        "lastFailedAt": "2026-04-29T00:04:00Z",
+        "blockedUntil": "2999-04-29T00:04:00Z",
+        "updatedAt": "2026-04-29T00:04:00Z",
+    }
+
+    def fail_if_querying_completion_records() -> object:
+        raise AssertionError("blocked IP should not query completion records")
+
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: attempts_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        fail_if_querying_completion_records,
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 429
+    assert '"code":"lookup_blocked"' in body
+
+
+def test_public_document_lookup_api_does_not_block_on_attempt_store_read_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: FailingLookupAttemptsContainer(),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "missing@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 404
+    assert '"code":"document_not_found"' in body
+
+
+def test_public_document_lookup_api_does_not_block_success_on_attempt_store_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: FailingLookupAttemptsContainer(),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(
+            [
+                {
+                    "id": "ccert_1",
+                    "eventId": "evt_1",
+                    "number": 100,
+                    "email": "Ming@example.com",
+                    "certStatus": "issued",
+                    "issuedPdfBlobName": "issued/ccert_1.pdf",
+                }
+            ]
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert body == '{"document":{"status":"found","documentType":"completionCert"}}'
+
+
+def test_public_document_lookup_api_uses_local_block_cache_before_cosmos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt_id = build_public_lookup_attempt_id("203.0.113.10")
+    remember_public_lookup_block(
+        attempt_id=attempt_id,
+        attempt_document={
+            "id": attempt_id,
+            "blockedUntil": "2999-04-29T00:04:00Z",
+        },
+    )
+
+    def fail_if_querying_lookup_attempts() -> object:
+        raise AssertionError("locally cached block should not query Cosmos")
+
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        fail_if_querying_lookup_attempts,
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 429
+    assert '"code":"lookup_blocked"' in body
+
+
+def test_public_document_lookup_api_resets_failures_after_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts_container = FakeLookupAttemptsContainer()
+    attempts_container.upsert_item(
+        {
+            "id": build_public_lookup_attempt_id("203.0.113.10"),
+            "ipAddress": "203.0.113.10",
+            "failureCount": 3,
+            "firstFailedAt": "2026-04-29T00:00:00Z",
+            "lastFailedAt": "2026-04-29T00:03:00Z",
+            "blockedUntil": None,
+            "updatedAt": "2026-04-29T00:03:00Z",
+        }
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: attempts_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(
+            [
+                {
+                    "id": "ccert_1",
+                    "eventId": "evt_1",
+                    "number": 100,
+                    "email": "Ming@example.com",
+                    "certStatus": "issued",
+                    "issuedPdfBlobName": "issued/ccert_1.pdf",
+                }
+            ]
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+    attempt_document = next(iter(attempts_container.items.values()))
+
+    assert response.status_code == 200
+    assert body == '{"document":{"status":"found","documentType":"completionCert"}}'
+    assert attempt_document["ipAddress"] == "203.0.113.10"
+    assert attempt_document["failureCount"] == 0
+    assert attempt_document["blockedUntil"] is None
+
+
 def test_home_page_prefers_cookie_locale_over_accept_language() -> None:
     response = home_page(
         build_request(
@@ -409,6 +905,16 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert "border-radius: 0;" in body
     assert 'url("/assets/language_icon.svg")' in body
     assert "margin-inline: auto;" in body
+    assert ".feedback.is-error" in body
+    assert "var(--theme-feedback-error-color)" in body
+    assert ".page-loading-overlay" in body
+    assert "position: fixed;" in body
+    assert "width: 100vw;" in body
+    assert "min-height: 100vh;" in body
+    assert "background: rgba(0, 0, 0, 0.64);" in body
+    assert ".page-loading-panel" in body
+    assert "background: #fff;" in body
+    assert "@keyframes page-loading-spin" in body
 
 
 def test_theme_css_asset_returns_expected_content_type() -> None:
@@ -465,8 +971,27 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "updateUserDataFieldsForDocumentType" in body
     assert "isUserDataComplete" in body
     assert "updatePreviewActionState" in body
-    assert "previewAction.disabled = !isUserDataComplete()" in body
-    assert "[registrationNumber, attendeeName, email, businessTaxId, generatedAt].forEach" in body
+    assert "previewAction.disabled = isLookupInProgress || !isUserDataComplete()" in body
+    assert "setLookupBusy(true)" in body
+    assert "setLookupBusy(false)" in body
+    assert "pageLoadingOverlay.hidden = !isBusy" in body
+    assert 'homePage.classList.toggle("is-lookup-busy", isBusy)' in body
+    assert 'querySelectorAll("input, button, select, textarea")' in body
+    assert "submitDocumentLookup" in body
+    assert "fetch(documentLookupApiPath" in body
+    assert "resolveLookupFailureMessage" in body
+    assert "lookup_blocked" in body
+    assert 'showLookupFeedback(resolveLookupFailureMessage(payload), "error")' in body
+    assert 'showLookupFeedback(lookupUnavailableMessage, "error")' in body
+    assert "lookupBlockedStorageKey" in body
+    assert "lookupBlockedClientCacheMs = 60 * 60 * 1000" in body
+    assert "readClientLookupBlockedUntil" in body
+    assert "rememberClientLookupBlock" in body
+    assert "window.localStorage.setItem" in body
+    assert "window.localStorage.removeItem" in body
+    assert "lookup_not_found_message" in body
+    assert "lookup_pending_message" in body
+    assert "[registrationNumber, attendeeName, email, businessTaxId, generatedAt].filter(Boolean).forEach" in body
     assert 'input.addEventListener("input", updatePreviewActionState)' in body
     assert "installDateTimePicker" in body
     assert "window.iPlaygroundPortalDateTime" in body

@@ -149,6 +149,9 @@ partition key: /eventId
 
 container: completionCertRequests
 partition key: /eventId
+
+container: publicLookupAttempts
+partition key: /id
 ```
 
 `completionCerts` 是完訓證明完整清單。名稱沿用活動管理的文件類型代碼 `completionCert`。CSV 匯入資料、簽到狀態、發證狀態、下載檔案 metadata 與驗證 token hash 都記錄在同一筆資料中。CSV 上傳由 Python API 同步解析與寫入；目前預期單次約數百筆資料可在可接受時間內完成，因此不設計 DB 進度狀態或進度條。CSV 匯入當下尚未產生完訓證明檔案與驗證 token，因此 `issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 預設為 `null`；等會眾申請完訓證明且系統完成產生檔案後才回填。
@@ -278,3 +281,35 @@ FROM c
 WHERE c.eventId = @eventId AND c.status = 'pending'
 ORDER BY c.createdAt ASC
 ```
+
+## 公開查詢限制 container
+
+`publicLookupAttempts` 記錄公開文件查詢的連續失敗狀態，用於降低暴力嘗試。此 container 會儲存 Azure Functions 收到的 `X-Forwarded-For` 第一個 IP，並在寫入前移除常見的來源 port 格式，例如 `198.51.100.25:54321` 或 `[2001:db8::25]:54321`，供營運稽核與安全追蹤使用；`id` 使用由該 IP 穩定產生的 UUIDv5，讓後端仍可用 point read 取得單一 IP 的查詢限制狀態。若請求沒有 `X-Forwarded-For`，後端會照常查詢文件，但不會建立或更新 `publicLookupAttempts` 文件，避免把本機或特殊環境的請求共同寫成 `unknown`。
+
+```text
+container: publicLookupAttempts
+partition key: /id
+```
+
+必要欄位：
+
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `id` | string | `lookup_<uuid-v5>`；由 IP 穩定產生，同時作為 partition key |
+| `ipAddress` | string | 原始 IP 位址 |
+| `failureCount` | int | 目前 24 小時失敗視窗內的連續失敗次數 |
+| `firstFailedAt` | string \| null | 目前失敗視窗的第一次失敗時間，UTC ISO 8601 |
+| `lastFailedAt` | string \| null | 最近一次失敗時間，UTC ISO 8601 |
+| `blockedUntil` | string \| null | 封鎖到期時間，UTC ISO 8601；未封鎖時為 null |
+| `updatedAt` | string | 最後更新時間，UTC ISO 8601 |
+
+規則：
+
+- IP 來源只使用 `X-Forwarded-For` 的第一個值，並移除 IPv4 `host:port` 與 bracketed IPv6 `[host]:port` 的 port；本機 `func start` 直連通常不會自動帶此 header，需由測試請求自行明確提供。
+- 同一 IP 在 24 小時內連續查詢失敗 5 次後，`blockedUntil` 設為開始封鎖時間加 24 小時。
+- 封鎖期間公開查詢 API 直接回覆封鎖錯誤，不查詢文件資料。
+- 對使用者顯示的封鎖訊息不得提到 IP；若可取得 `blockedUntil`，滿 1 小時以上以小時計算並無條件進位，不足 1 小時以分鐘計算並無條件進位，不足 1 分鐘顯示 1 分鐘。
+- 查詢成功時，將 `failureCount` 歸零並清除 `firstFailedAt`、`lastFailedAt` 與 `blockedUntil`。
+- 對使用者顯示的失敗訊息不得指出哪個欄位錯誤，也不得提示剩餘嘗試次數。
+- 此 container 只供公開查詢限制使用；公開查詢流程對此 container 的 point read 與 upsert 最多等待 5 秒，若 Cosmos DB 提前回應就立即使用結果，避免 Cosmos DB 延遲讓首頁查詢長時間卡住。
+- Functions worker 可在記憶體中快取已封鎖 attempt id 與 `blockedUntil`，讓封鎖期間的後續查詢不必每次讀取 Cosmos DB；此快取不得用於放行，只能用於提早拒絕，且即使 DB 文件異常帶有更遠的 `blockedUntil`，本機快取也不得超過 1 小時。

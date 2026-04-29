@@ -47,6 +47,9 @@ param cosmosCompletionCertsContainerName string = 'completionCerts'
 @description('Cosmos DB container name for completion certificate requests.')
 param cosmosCompletionCertRequestsContainerName string = 'completionCertRequests'
 
+@description('Cosmos DB container name for public document lookup attempt tracking.')
+param cosmosPublicLookupAttemptsContainerName string = 'publicLookupAttempts'
+
 @description('Optional Microsoft Entra security group object IDs that should be able to inspect Cosmos DB data in Azure Portal. Avoid assigning individual users.')
 param cosmosPortalDataReaderPrincipalIds array = []
 
@@ -276,6 +279,22 @@ resource cosmosCompletionCertRequestsContainer 'Microsoft.DocumentDB/databaseAcc
   }
 }
 
+resource cosmosPublicLookupAttemptsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  name: cosmosPublicLookupAttemptsContainerName
+  parent: cosmosSqlDatabase
+  properties: {
+    resource: {
+      id: cosmosPublicLookupAttemptsContainerName
+      partitionKey: {
+        kind: 'Hash'
+        paths: [
+          '/id'
+        ]
+      }
+    }
+  }
+}
+
 resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   name: normalizedFunctionAppName
   location: location
@@ -340,6 +359,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER'
           value: cosmosCompletionCertRequestsContainer.name
+        }
+        {
+          name: 'COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER'
+          value: cosmosPublicLookupAttemptsContainer.name
         }
         {
           name: 'PORTAL_GOOGLE_CLIENT_ID'
@@ -431,6 +454,7 @@ output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 output cosmosEventsContainerName string = cosmosEventsContainer.name
 output cosmosCompletionCertsContainerName string = cosmosCompletionCertsContainer.name
 output cosmosCompletionCertRequestsContainerName string = cosmosCompletionCertRequestsContainer.name
+output cosmosPublicLookupAttemptsContainerName string = cosmosPublicLookupAttemptsContainer.name
 output deploymentContainerName string = deploymentContainerName
 output deploymentContainerUrl string = '${storageAccount.properties.primaryEndpoints.blob}${deploymentContainerName}'
 output githubActionsIdentityClientId string = githubDeploymentIdentity.properties.clientId
