@@ -19,6 +19,7 @@ let completionUploadEventOptions = Array.from(
   document.querySelectorAll("#completion-upload-event-options .custom-select-option")
 );
 const completionCertTableBody = document.getElementById("completion-cert-table-body");
+const completionCertTable = completionCertTableBody?.closest("table");
 const completionCertEmptyRow = document.getElementById("completion-cert-empty-row");
 const completionCertRowTemplate = document.getElementById(
   "completion-cert-row-template"
@@ -82,6 +83,7 @@ let completionEditPreviousFocus = null;
 let completionEditRowId = "";
 let completionCertRows = [];
 let isLoadingCompletionCertRows = true;
+let isUpdatingCompletionBulkAttendance = false;
 let completionEventsSignature = "";
 let completionCurrentPage = 1;
 
@@ -788,7 +790,7 @@ function getCompletionEditInputValue(element) {
 }
 
 function openCompletionEditDialog(rowData) {
-  if (!completionEditDialog) {
+  if (!completionEditDialog || isUpdatingCompletionBulkAttendance) {
     return;
   }
 
@@ -832,9 +834,17 @@ function normalizeEditedCompletionCert(rowData) {
   return normalizeCompletionCertRow(rowData);
 }
 
-function showCompletionPageAlert({ message, title, tone }) {
+function updateCompletionCertRow(rowData) {
+  const updatedRow = normalizeEditedCompletionCert(rowData);
+  completionCertRows = completionCertRows.map((row) =>
+    row.id === updatedRow.id ? updatedRow : row
+  );
+  return updatedRow;
+}
+
+function showCompletionPageAlert({ dismissDelay = 6000, message, title, tone }) {
   window.iPlaygroundPageAlert?.show({
-    dismissDelay: 6000,
+    dismissDelay,
     message,
     title,
     tone,
@@ -878,10 +888,7 @@ async function submitCompletionEditDialog() {
       throw new Error(responsePayload?.error?.message || "完訓證明資料修改失敗。");
     }
 
-    const updatedRow = normalizeEditedCompletionCert(responsePayload.completionCert);
-    completionCertRows = completionCertRows.map((row) =>
-      row.id === updatedRow.id ? updatedRow : row
-    );
+    updateCompletionCertRow(responsePayload.completionCert);
     renderCompletionCertRows();
     closeCompletionEditDialog();
     showCompletionPageAlert({
@@ -901,28 +908,72 @@ async function submitCompletionEditDialog() {
 function applyCompletionRowDownloadState(rowElement, rowData) {
   const switchInput = rowElement.querySelector('[data-action="toggle-downloadable"]');
   const downloadButton = rowElement.querySelector(".document-download-button");
+  const editButton = rowElement.querySelector(".document-edit-button");
 
   rowElement.classList.toggle("is-downloadable", rowData.isDownloadable);
   rowElement.classList.toggle("is-blocked", !rowData.isDownloadable);
 
   if (switchInput instanceof HTMLInputElement) {
     switchInput.checked = rowData.isDownloadable;
+    switchInput.disabled = isUpdatingCompletionBulkAttendance;
   }
 
   if (downloadButton instanceof HTMLButtonElement) {
-    downloadButton.disabled = !rowData.isDownloadable;
+    downloadButton.disabled = isUpdatingCompletionBulkAttendance || !rowData.isDownloadable;
   }
+
+  if (editButton instanceof HTMLButtonElement) {
+    editButton.disabled = isUpdatingCompletionBulkAttendance;
+  }
+}
+
+function updateCompletionTableBusyState() {
+  if (completionCertTable instanceof HTMLTableElement) {
+    completionCertTable.classList.toggle(
+      "is-bulk-updating",
+      isUpdatingCompletionBulkAttendance
+    );
+    completionCertTable.setAttribute(
+      "aria-busy",
+      String(isUpdatingCompletionBulkAttendance)
+    );
+  }
+}
+
+async function updateCompletionRowAttendanceStatus(rowData, isDownloadable) {
+  const response = await fetch(
+    `${adminCompletionCertsApiPath}/${encodeURIComponent(rowData.id)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Portal-CSRF-Token": portalCsrfToken,
+      },
+      body: JSON.stringify({
+        attendanceStatus: isDownloadable ? "checkedIn" : "notCheckedIn",
+        eventId: rowData.eventId,
+      }),
+    }
+  );
+  const responsePayload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(responsePayload?.error?.message || "簽到狀態更新失敗。");
+  }
+
+  return updateCompletionCertRow(responsePayload.completionCert);
 }
 
 function updateCompletionBulkActionControls() {
   const visibleRows = getVisibleCompletionCertRows();
   const hasVisibleRows = visibleRows.length > 0;
   if (completionBulkDownloadableButton instanceof HTMLButtonElement) {
-    completionBulkDownloadableButton.disabled = !hasVisibleRows;
+    completionBulkDownloadableButton.disabled =
+      isUpdatingCompletionBulkAttendance || !hasVisibleRows;
   }
 
   if (completionBulkBlockedButton instanceof HTMLButtonElement) {
-    completionBulkBlockedButton.disabled = !hasVisibleRows;
+    completionBulkBlockedButton.disabled =
+      isUpdatingCompletionBulkAttendance || !hasVisibleRows;
   }
 }
 
@@ -940,25 +991,57 @@ function updateCompletionPaginationControls(visibleRows) {
   }
 
   if (completionPagePrevButton instanceof HTMLButtonElement) {
-    completionPagePrevButton.disabled = !shouldShowPagination || completionCurrentPage <= 1;
+    completionPagePrevButton.disabled =
+      isUpdatingCompletionBulkAttendance || !shouldShowPagination || completionCurrentPage <= 1;
   }
 
   if (completionPageNextButton instanceof HTMLButtonElement) {
     completionPageNextButton.disabled =
-      !shouldShowPagination || completionCurrentPage >= pageCount;
+      isUpdatingCompletionBulkAttendance || !shouldShowPagination || completionCurrentPage >= pageCount;
   }
 }
 
-function setCompletionRowDownloadState(rowId, isDownloadable) {
+async function setCompletionRowDownloadState(rowId, isDownloadable) {
+  if (isUpdatingCompletionBulkAttendance) {
+    return;
+  }
+
   const rowData = completionCertRows.find((row) => row.id === rowId);
   if (!rowData) {
     return;
   }
 
-  rowData.isDownloadable = isDownloadable;
+  const previousIsDownloadable = rowData.isDownloadable;
   const rowElement = completionCertTableBody?.querySelector(`[data-row-id="${rowId}"]`);
-  if (rowElement instanceof HTMLTableRowElement) {
-    applyCompletionRowDownloadState(rowElement, rowData);
+  const switchInput = rowElement?.querySelector('[data-action="toggle-downloadable"]');
+  if (switchInput instanceof HTMLInputElement) {
+    switchInput.disabled = true;
+  }
+
+  try {
+    await updateCompletionRowAttendanceStatus(rowData, isDownloadable);
+    renderCompletionCertRows();
+    showCompletionPageAlert({
+      dismissDelay: 3000,
+      message: "簽到狀態已更新。",
+      title: "更新成功",
+      tone: "success",
+    });
+  } catch (error) {
+    rowData.isDownloadable = previousIsDownloadable;
+    if (rowElement instanceof HTMLTableRowElement) {
+      applyCompletionRowDownloadState(rowElement, rowData);
+    }
+    showCompletionPageAlert({
+      dismissDelay: 3000,
+      message: error instanceof Error ? error.message : "簽到狀態更新失敗。",
+      title: "更新失敗",
+      tone: "error",
+    });
+  } finally {
+    if (switchInput instanceof HTMLInputElement) {
+      switchInput.disabled = false;
+    }
   }
 }
 
@@ -976,6 +1059,8 @@ function renderCompletionCertRows() {
   ) {
     return;
   }
+
+  updateCompletionTableBusyState();
 
   completionCertTableBody
     .querySelectorAll(".completion-cert-row")
@@ -1132,10 +1217,53 @@ async function importSelectedCompletionCsvFile() {
   }
 }
 
-function applyDownloadableStateToCurrentActivity(isDownloadable) {
-  getVisibleCompletionCertRows().forEach((row) => {
-    setCompletionRowDownloadState(row.id, isDownloadable);
-  });
+async function applyDownloadableStateToCurrentActivity(isDownloadable) {
+  if (isUpdatingCompletionBulkAttendance) {
+    return;
+  }
+
+  const eventId = getCompletionFilterEventName();
+  const rowsToUpdate = getVisibleCompletionCertRows().filter(
+    (row) => row.isDownloadable !== isDownloadable
+  );
+  if (!rowsToUpdate.length) {
+    return;
+  }
+
+  isUpdatingCompletionBulkAttendance = true;
+  renderCompletionCertRows();
+
+  try {
+    const updateResults = await Promise.allSettled(
+      rowsToUpdate.map((row) => updateCompletionRowAttendanceStatus(row, isDownloadable))
+    );
+    const failedUpdate = updateResults.find((result) => result.status === "rejected");
+    if (failedUpdate) {
+      throw failedUpdate.reason;
+    }
+    renderCompletionCertRows();
+    showCompletionPageAlert({
+      dismissDelay: 3000,
+      message: `已更新 ${rowsToUpdate.length} 筆簽到狀態。`,
+      title: "更新成功",
+      tone: "success",
+    });
+  } catch (error) {
+    if (eventId) {
+      await loadCompletionCertRows(eventId);
+    } else {
+      renderCompletionCertRows();
+    }
+    showCompletionPageAlert({
+      dismissDelay: 3000,
+      message: error instanceof Error ? error.message : "簽到狀態批次更新失敗。",
+      title: "更新失敗",
+      tone: "error",
+    });
+  } finally {
+    isUpdatingCompletionBulkAttendance = false;
+    renderCompletionCertRows();
+  }
 }
 
 function confirmCompletionUploadDialogClose() {

@@ -1010,7 +1010,8 @@ form {
 }
 
 .document-bulk-action:disabled,
-.document-download-button:disabled {
+.document-download-button:disabled,
+.document-page-button:disabled {
   background: rgba(100, 116, 139, 0.14);
   color: rgba(100, 116, 139, 0.72);
   cursor: not-allowed;
@@ -1250,6 +1251,31 @@ form {
 
 .completion-cert-row .document-row-actions {
   flex-wrap: nowrap;
+}
+
+.completion-cert-table.is-bulk-updating .completion-cert-row {
+  opacity: 0.58;
+}
+
+.completion-cert-table.is-bulk-updating .completion-cert-row td {
+  background: rgba(100, 116, 139, 0.06);
+}
+
+.completion-cert-table.is-bulk-updating .event-status-switch-option,
+.completion-cert-table.is-bulk-updating .document-row-actions {
+  cursor: not-allowed;
+}
+
+.completion-cert-table.is-bulk-updating .event-status-switch-track,
+.event-status-switch-input:disabled + .event-status-switch-track {
+  background: rgba(100, 116, 139, 0.18);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.completion-cert-table.is-bulk-updating .event-status-switch-thumb,
+.event-status-switch-input:disabled + .event-status-switch-track .event-status-switch-thumb {
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: none;
 }
 
 .document-pagination {

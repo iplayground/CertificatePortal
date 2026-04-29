@@ -224,13 +224,14 @@ status: 尚未串接實際驗證資料
 - 每列在操作欄提供 `下載` 與 `修改` 按鈕
 - 修改視窗可更新姓名、公司名與 Email；報名序號、KKTIX ID、Badge Name 與票種不直接修改
 - 修改視窗將報名序號、ID 與票種放在同一排，且 Badge Name 與票種為唯讀顯示
-- 修改成功後顯示共用 page alert 成功提示
+- 修改成功後顯示共用 page alert 成功提示；共用 alert 預設 6 秒後自動關閉
 - 清單表格標題列置中，標題與資料列皆維持單行
 - 完訓證明表格使用固定欄寬避免換頁時欄寬跳動，過長內容以 `…` 截斷
 - 完訓證明清單每頁最多顯示 10 筆；超過 10 筆時顯示上一頁、目前頁碼與下一頁控制
-- 清單上方提供目前活動全部資料的批次設定，可設為 `已簽到` 或 `未簽到`
+- 清單上方提供目前活動全部資料的批次設定，可設為 `已簽到` 或 `未簽到`，並逐筆呼叫 `PUT /api/v1/admin/completion-certs/{certid}` 將 `attendanceStatus` 寫回 Cosmos DB
 - 完訓證明清單不提供選取列功能，批次設定一律套用至目前活動全部資料
-- 每列提供可雙向切換的簽到狀態開關
+- 批次簽到狀態更新進行中時，完訓證明表格會進入 `aria-busy` 狀態並顯示停用樣式；列內簽到開關、下載、修改、分頁與批次按鈕皆停用，避免管理者同時編輯資料
+- 每列提供可雙向切換的簽到狀態開關，切換後會呼叫 `PUT /api/v1/admin/completion-certs/{certid}` 將 `attendanceStatus` 寫回 Cosmos DB；簽到狀態更新成功或失敗 alert 會在 3 秒後自動關閉
 - 清單上方提供活動篩選欄位；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單並直接套用篩選
 - 活動篩選與上傳視窗活動選擇會先使用 portal 分頁內的活動清單快取渲染，再直接呼叫 `GET /api/v1/admin/events` 更新畫面與快取；快取只作為先顯示用途，不作為權威資料來源
 - 標題列右上方提供 `上傳完訓證明資料` 按鈕
@@ -452,7 +453,8 @@ Response JSON example:
 - 修改單筆完訓證明清單資料
 - 只接受已登入且通過授權的管理者 session
 - 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
-- 目前可修改欄位為 `name`、`organization`、`email`
+- 目前可修改欄位為 `name`、`organization`、`email`、`attendanceStatus`
+- `attendanceStatus` 只接受 `checkedIn` 或 `notCheckedIn`
 - `number`、`kktixId`、`badgeName` 與 `ticketName` 不在此端點直接修改
 
 Request JSON example:
@@ -462,7 +464,8 @@ Request JSON example:
   "eventId": "evt_20260425_ipg",
   "name": "王小明",
   "organization": "iPlayground",
-  "email": "ming@example.com"
+  "email": "ming@example.com",
+  "attendanceStatus": "checkedIn"
 }
 ```
 
@@ -480,7 +483,7 @@ Response JSON example:
     "name": "王小明",
     "organization": "iPlayground",
     "email": "ming@example.com",
-    "attendanceStatus": "notCheckedIn",
+    "attendanceStatus": "checkedIn",
     "certStatus": "notIssued",
     "issuedPdfBlobName": null,
     "verificationTokenHash": null,

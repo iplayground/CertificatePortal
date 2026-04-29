@@ -106,10 +106,13 @@ PORTAL_COMPLETION_CSV_FIELD_LABELS = {
     "ticketName": "票種",
 }
 PORTAL_COMPLETION_CERT_MUTABLE_FIELDS = frozenset(
-    {"email", "name", "organization"}
+    {"attendanceStatus", "email", "name", "organization"}
 )
 PORTAL_COMPLETION_CERT_REQUIRED_MUTABLE_FIELDS = frozenset(
     {"email"}
+)
+PORTAL_COMPLETION_CERT_ALLOWED_ATTENDANCE_STATUSES = frozenset(
+    {"checkedIn", "notCheckedIn"}
 )
 PORTAL_LOGIN_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_login.html"
 PORTAL_DASHBOARD_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_dashboard.html"
@@ -636,6 +639,13 @@ def parse_completion_cert_update_payload(
             f"完訓證明資料缺少必要欄位值："
             f"{format_completion_csv_field_labels(missing_fields)}。",
         )
+
+    attendance_status = updates.get("attendanceStatus")
+    if (
+        attendance_status is not None
+        and attendance_status not in PORTAL_COMPLETION_CERT_ALLOWED_ATTENDANCE_STATUSES
+    ):
+        return None, "簽到狀態不合法。"
 
     return {"eventId": event_id, "updates": updates}, None
 

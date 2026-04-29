@@ -804,6 +804,7 @@ def test_portal_admin_completion_certs_update_api_updates_mutable_fields(
         monkeypatch,
         body=json.dumps(
             {
+                "attendanceStatus": "notCheckedIn",
                 "eventId": "evt_1",
                 "badgeName": "New Badge",
                 "email": "new@example.com",
@@ -830,7 +831,55 @@ def test_portal_admin_completion_certs_update_api_updates_mutable_fields(
     assert fake_completion_container.items["ccert_2"]["email"] == "new@example.com"
     assert fake_completion_container.items["ccert_2"]["name"] == ""
     assert fake_completion_container.items["ccert_2"]["organization"] == "新公司"
+    assert fake_completion_container.items["ccert_2"]["attendanceStatus"] == "notCheckedIn"
     assert fake_completion_container.items["ccert_2"]["ticketName"] == "一般票"
+
+
+def test_portal_admin_completion_certs_update_api_rejects_invalid_attendance_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Old Badge",
+        "ticketName": "一般票",
+        "name": "王小華",
+        "organization": "舊公司",
+        "email": "hua@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "notIssued",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "attendanceStatus": "maybe",
+                "eventId": "evt_1",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"certid": "ccert_2"},
+        url="http://localhost:7075/api/v1/admin/completion-certs/ccert_2",
+    )
+
+    response = portal_admin_completion_certs_update_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 400
+    assert "簽到狀態不合法" in body
+    assert fake_completion_container.items["ccert_2"]["attendanceStatus"] == "checkedIn"
 
 
 def test_portal_admin_completion_certs_update_api_rejects_empty_required_fields(
@@ -2031,7 +2080,10 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert "text-overflow: ellipsis;" in body
     assert ".document-download-button" in body
     assert ".document-download-button:disabled" in body
+    assert ".document-page-button:disabled" in body
     assert ".document-row-actions" in body
+    assert ".completion-cert-table.is-bulk-updating .completion-cert-row" in body
+    assert ".event-status-switch-input:disabled + .event-status-switch-track" in body
     assert ".document-delete-button" in body
     assert ".document-upload-continue-option" in body
     assert ".form-checkbox-option.document-upload-continue-option" in body
@@ -2513,6 +2565,10 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "assignCompletionUploadFile" in body
     assert "document.addEventListener(\"drop\", handleCompletionUploadDrop)" in body
     assert "setCompletionRowDownloadState" in body
+    assert "isUpdatingCompletionBulkAttendance" in body
+    assert "updateCompletionTableBusyState" in body
+    assert "\"is-bulk-updating\"" in body
+    assert "\"aria-busy\"" in body
     assert "openCompletionEditDialog" in body
     assert "submitCompletionEditDialog" in body
     assert 'document.getElementById("completion-edit-dialog")' in body
@@ -2528,6 +2584,8 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "setCompletionSelectionForAllRows" not in body
     assert "applyDownloadableStateToSelection" not in body
     assert "applyDownloadableStateToCurrentActivity" in body
+    assert "switchInput.disabled = isUpdatingCompletionBulkAttendance" in body
+    assert "editButton.disabled = isUpdatingCompletionBulkAttendance" in body
     assert "不可下載" not in body
     assert "可下載" not in body
     assert '.endsWith(".csv")' in body

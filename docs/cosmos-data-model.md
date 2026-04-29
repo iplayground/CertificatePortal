@@ -188,6 +188,8 @@ notCheckedIn
 checkedIn
 ```
 
+管理端完訓證明頁的單筆簽到狀態開關與目前活動全部資料批次設定，皆會透過 `PUT /api/v1/admin/completion-certs/{certid}` 更新 `attendanceStatus`。批次更新期間前端會鎖定清單互動，避免同時編輯造成畫面狀態與 DB 狀態分歧。
+
 `certStatus` 目前允許值：
 
 ```text
