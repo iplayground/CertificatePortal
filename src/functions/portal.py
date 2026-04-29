@@ -87,10 +87,14 @@ PORTAL_COMPLETION_CSV_ALIASES = {
     "kktixId": ("Id",),
     "name": ("姓名 Full Name",),
     "number": ("報名序號",),
+    "organization": ("服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)",),
     "ticketName": ("票種",),
 }
 PORTAL_COMPLETION_CSV_REQUIRED_FIELDS = frozenset(
     {"badgeName", "email", "kktixId", "number", "ticketName"}
+)
+PORTAL_COMPLETION_CSV_REQUIRED_COLUMNS = frozenset(
+    {*PORTAL_COMPLETION_CSV_REQUIRED_FIELDS, "name", "organization"}
 )
 PORTAL_COMPLETION_CSV_FIELD_LABELS = {
     "badgeName": "Badge Name",
@@ -98,13 +102,14 @@ PORTAL_COMPLETION_CSV_FIELD_LABELS = {
     "kktixId": "Id",
     "name": "姓名 Full Name",
     "number": "報名序號",
+    "organization": "公司名",
     "ticketName": "票種",
 }
 PORTAL_COMPLETION_CERT_MUTABLE_FIELDS = frozenset(
-    {"badgeName", "email", "name", "ticketName"}
+    {"email", "name", "organization"}
 )
 PORTAL_COMPLETION_CERT_REQUIRED_MUTABLE_FIELDS = frozenset(
-    {"badgeName", "email", "ticketName"}
+    {"email"}
 )
 PORTAL_LOGIN_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_login.html"
 PORTAL_DASHBOARD_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_dashboard.html"
@@ -430,6 +435,7 @@ def normalize_completion_cert_for_api(document: dict[str, Any]) -> dict[str, Any
         "badgeName": str(document.get("badgeName", "")).strip(),
         "ticketName": str(document.get("ticketName", "")).strip(),
         "name": str(document.get("name", "")).strip(),
+        "organization": str(document.get("organization", "")).strip(),
         "email": str(document.get("email", "")).strip(),
         "attendanceStatus": str(document.get("attendanceStatus", "")).strip()
         or "notCheckedIn",
@@ -479,7 +485,7 @@ def parse_completion_csv_payload(
     column_indexes = resolve_completion_csv_column_indexes(headers)
     missing_fields = [
         field_name
-        for field_name in sorted(PORTAL_COMPLETION_CSV_REQUIRED_FIELDS)
+        for field_name in sorted(PORTAL_COMPLETION_CSV_REQUIRED_COLUMNS)
         if column_indexes[field_name] < 0
     ]
     if missing_fields:
@@ -594,6 +600,7 @@ def build_completion_cert_documents_from_records(
             kktix_id=record["kktixId"],
             name=record.get("name", ""),
             number=record["number"],
+            organization=record.get("organization", ""),
             ticket_name=record["ticketName"],
         )
         for record in records

@@ -172,6 +172,7 @@ partition key: /eventId
 | `badgeName` | string | Badge 顯示名稱 |
 | `ticketName` | string | 票種 |
 | `name` | string | 姓名 |
+| `organization` | string | 公司名或服務單位，缺少時以空字串儲存 |
 | `email` | string | Email |
 | `attendanceStatus` | string | 簽到狀態 |
 | `certStatus` | string | 證書狀態 |
@@ -203,10 +204,24 @@ failed
 | `kktixId` | `Id` |
 | `badgeName` | `你是誰，ID 或具有鑑識度的名稱 Name on Badge` |
 | `name` | `姓名 Full Name` |
+| `organization` | `服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)` |
 | `email` | `Email` 或 `email` |
 | `ticketName` | `票種` |
 
-CSV 必要欄位僅有 `報名序號`、`Id`、`你是誰，ID 或具有鑑識度的名稱 Name on Badge`、`Email` 或 `email`、`票種`。`報名序號` 必須是整數。`姓名 Full Name` 可匯入但不是必要欄位，缺少時 `name` 以空字串儲存。
+CSV 必要表頭欄位包含：
+
+- `報名序號`
+- `Id`
+- `你是誰，ID 或具有鑑識度的名稱 Name on Badge`
+- `Email` 或 `email`
+- `票種`
+- `服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)`
+
+`報名序號` 必須是整數。
+
+`姓名 Full Name` 與
+`服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)`
+欄位必須存在，但每列值可以空白；缺少值時分別以空字串儲存。
 
 其他 CSV 欄位不得寫入完訓證明文件，除非後續文件明確擴充白名單。
 
@@ -216,7 +231,7 @@ CSV 匯入若有格式或欄位錯誤，API 應以機器可讀錯誤回應告知
 
 ```sql
 SELECT c.id, c.number, c.kktixId, c.badgeName, c.name,
-       c.email, c.ticketName, c.attendanceStatus, c.certStatus
+       c.organization, c.email, c.ticketName, c.attendanceStatus, c.certStatus
 FROM c
 WHERE c.eventId = @eventId
 ORDER BY c.number ASC

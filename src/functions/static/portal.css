@@ -1162,12 +1162,51 @@ form {
   border-collapse: collapse;
 }
 
+.completion-cert-table {
+  min-width: 1280px;
+  table-layout: fixed;
+}
+
+.completion-cert-col-number {
+  width: 96px;
+}
+
+.completion-cert-col-badge {
+  width: 140px;
+}
+
+.completion-cert-col-id {
+  width: 132px;
+}
+
+.completion-cert-col-name {
+  width: 140px;
+}
+
+.completion-cert-col-organization,
+.completion-cert-col-ticket {
+  width: 176px;
+}
+
+.completion-cert-col-email {
+  width: 250px;
+}
+
+.completion-cert-col-status {
+  width: 112px;
+}
+
+.completion-cert-col-actions {
+  width: 140px;
+}
+
 .document-list-table th,
 .document-list-table td {
   padding: 15px 16px;
   border-bottom: 1px solid rgba(81, 121, 254, 0.1);
   text-align: left;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .document-list-table th {
@@ -1187,6 +1226,21 @@ form {
   border-bottom: 0;
 }
 
+.completion-cert-row [data-field="badgeName"],
+.completion-cert-row [data-field="name"],
+.completion-cert-row [data-field="organization"],
+.completion-cert-row [data-field="email"],
+.completion-cert-row [data-field="ticketName"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.completion-cert-row [data-field="organization"],
+.completion-cert-row [data-field="ticketName"] {
+  max-width: 10em;
+  width: 10em;
+}
+
 .document-row-actions {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1196,6 +1250,21 @@ form {
 
 .completion-cert-row .document-row-actions {
   flex-wrap: nowrap;
+}
+
+.document-pagination {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 14px 2px 0;
+}
+
+.document-page-status {
+  color: var(--theme-content-muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .document-delete-button {
@@ -1627,6 +1696,12 @@ form {
   gap: 16px;
 }
 
+.completion-edit-identity-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.56fr) minmax(104px, 0.8fr) minmax(160px, 1.4fr);
+  gap: 12px;
+}
+
 .document-type-fieldset {
   display: grid;
   gap: 12px;
@@ -1954,6 +2029,10 @@ form {
   }
 
   .event-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .completion-edit-identity-row {
     grid-template-columns: 1fr;
   }
 

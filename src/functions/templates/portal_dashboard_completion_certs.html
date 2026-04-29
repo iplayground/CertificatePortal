@@ -44,13 +44,25 @@
         </div>
 
         <div class="document-table-wrap">
-          <table class="document-list-table" aria-label="完訓證明資料清單">
+          <table class="document-list-table completion-cert-table" aria-label="完訓證明資料清單">
+            <colgroup>
+              <col class="completion-cert-col-number">
+              <col class="completion-cert-col-id">
+              <col class="completion-cert-col-badge">
+              <col class="completion-cert-col-name">
+              <col class="completion-cert-col-organization">
+              <col class="completion-cert-col-email">
+              <col class="completion-cert-col-ticket">
+              <col class="completion-cert-col-status">
+              <col class="completion-cert-col-actions">
+            </colgroup>
             <thead>
               <tr>
                 <th scope="col">報名序號</th>
                 <th scope="col">ID</th>
                 <th scope="col">Badge Name</th>
                 <th scope="col">姓名</th>
+                <th scope="col">公司名</th>
                 <th scope="col">Email</th>
                 <th scope="col">票種</th>
                 <th scope="col">簽到狀態</th>
@@ -59,7 +71,7 @@
             </thead>
             <tbody id="completion-cert-table-body">
               <tr class="document-empty-row" id="completion-cert-empty-row">
-                <td colspan="8">完訓證明資料載入中...</td>
+                <td colspan="9">完訓證明資料載入中...</td>
               </tr>
             </tbody>
           </table>
@@ -69,6 +81,7 @@
               <td data-field="kktixId"></td>
               <td data-field="badgeName"></td>
               <td data-field="name"></td>
+              <td data-field="organization"></td>
               <td data-field="email"></td>
               <td data-field="ticketName"></td>
               <td data-field="status">
@@ -93,6 +106,18 @@
             </tr>
           </template>
         </div>
+
+        <nav class="document-pagination" id="completion-pagination" aria-label="完訓證明清單分頁" hidden>
+          <button class="secondary-button document-page-button" id="completion-page-prev" type="button">
+            上一頁
+          </button>
+          <span class="document-page-status" id="completion-page-status" aria-live="polite">
+            第 1 / 1 頁
+          </span>
+          <button class="secondary-button document-page-button" id="completion-page-next" type="button">
+            下一頁
+          </button>
+        </nav>
 
         <div
           class="event-dialog-backdrop"
@@ -162,34 +187,41 @@
             </header>
 
             <form class="event-form" aria-label="修改完訓證明資料">
-              <div class="field">
-                <span class="field-label">報名序號</span>
-                <div class="field-static-value" id="completion-edit-number">-</div>
+              <div class="completion-edit-identity-row">
+                <div class="field completion-edit-number-field">
+                  <span class="field-label">報名序號</span>
+                  <div class="field-static-value" id="completion-edit-number">-</div>
+                </div>
+
+                <div class="field">
+                  <span class="field-label">ID</span>
+                  <div class="field-static-value" id="completion-edit-kktix-id">-</div>
+                </div>
+
+                <div class="field">
+                  <span class="field-label">票種</span>
+                  <div class="field-static-value" id="completion-edit-ticket-name">-</div>
+                </div>
               </div>
 
               <div class="field">
-                <span class="field-label">ID</span>
-                <div class="field-static-value" id="completion-edit-kktix-id">-</div>
-              </div>
-
-              <label class="field">
                 <span class="field-label">Badge Name</span>
-                <input id="completion-edit-badge-name" name="badgeName" type="text" autocomplete="off">
-              </label>
+                <div class="field-static-value" id="completion-edit-badge-name">-</div>
+              </div>
 
               <label class="field">
                 <span class="field-label">姓名</span>
-                <input id="completion-edit-name" name="name" type="text" autocomplete="off">
+                <input id="completion-edit-name" name="completionEditName" type="text" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other">
+              </label>
+
+              <label class="field">
+                <span class="field-label">公司名</span>
+                <input id="completion-edit-organization" name="organization" type="text" autocomplete="organization">
               </label>
 
               <label class="field">
                 <span class="field-label">Email</span>
-                <input id="completion-edit-email" name="email" type="email" autocomplete="email">
-              </label>
-
-              <label class="field">
-                <span class="field-label">票種</span>
-                <input id="completion-edit-ticket-name" name="ticketName" type="text" autocomplete="off">
+                <input id="completion-edit-email" name="completionEditEmail" type="email" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other">
               </label>
 
               <div class="form-feedback is-error" id="completion-edit-feedback" role="status" aria-live="polite" hidden></div>
@@ -205,6 +237,7 @@
     </main>
 
     <script src="/assets/portal-event-cache.js"></script>
+    <script src="/assets/page-alert.js"></script>
     <script src="/assets/portal-dashboard-completion-certs.js"></script>
   </body>
 </html>

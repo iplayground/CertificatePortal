@@ -25,6 +25,10 @@ const completionCertRowTemplate = document.getElementById(
 );
 const completionBulkDownloadableButton = document.getElementById("completion-bulk-downloadable");
 const completionBulkBlockedButton = document.getElementById("completion-bulk-blocked");
+const completionPagination = document.getElementById("completion-pagination");
+const completionPagePrevButton = document.getElementById("completion-page-prev");
+const completionPageNextButton = document.getElementById("completion-page-next");
+const completionPageStatus = document.getElementById("completion-page-status");
 const completionEditDialog = document.getElementById("completion-edit-dialog");
 const completionEditCancelButton = document.getElementById("completion-edit-cancel");
 const completionEditSubmitButton = document.getElementById("completion-edit-submit");
@@ -32,6 +36,7 @@ const completionEditNumber = document.getElementById("completion-edit-number");
 const completionEditKktixId = document.getElementById("completion-edit-kktix-id");
 const completionEditBadgeName = document.getElementById("completion-edit-badge-name");
 const completionEditName = document.getElementById("completion-edit-name");
+const completionEditOrganization = document.getElementById("completion-edit-organization");
 const completionEditEmail = document.getElementById("completion-edit-email");
 const completionEditTicketName = document.getElementById("completion-edit-ticket-name");
 const completionEditFeedback = document.getElementById("completion-edit-feedback");
@@ -61,12 +66,14 @@ const emptyCompletionEventName = "尚無活動資料";
 const loadingCompletionCertRowsMessage = "完訓證明資料載入中...";
 const emptyCompletionCertRowsMessage =
   "目前活動尚無完訓證明資料。請先上傳完訓證明 CSV。";
+const completionCertRowsPerPage = 10;
 const completionCsvFieldAliases = {
   badgeName: ["你是誰，ID 或具有鑑識度的名稱 Name on Badge"],
   email: ["Email", "email"],
   kktixId: ["Id"],
   name: ["姓名 Full Name"],
   number: ["報名序號"],
+  organization: ["服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)"],
   ticketName: ["票種"],
 };
 
@@ -76,6 +83,7 @@ let completionEditRowId = "";
 let completionCertRows = [];
 let isLoadingCompletionCertRows = true;
 let completionEventsSignature = "";
+let completionCurrentPage = 1;
 
 function normalizeCompletionEvent(eventData) {
   return {
@@ -653,6 +661,9 @@ function buildCompletionCertRows(csvText, eventName = defaultCompletionEventName
     kktixId: hasHeader ? findCompletionCsvColumnIndex(headers, completionCsvFieldAliases.kktixId) : -1,
     name: hasHeader ? findCompletionCsvColumnIndex(headers, completionCsvFieldAliases.name) : -1,
     number: hasHeader ? findCompletionCsvColumnIndex(headers, completionCsvFieldAliases.number) : -1,
+    organization: hasHeader
+      ? findCompletionCsvColumnIndex(headers, completionCsvFieldAliases.organization)
+      : -1,
     ticketName: hasHeader
       ? findCompletionCsvColumnIndex(headers, completionCsvFieldAliases.ticketName)
       : -1,
@@ -669,6 +680,7 @@ function buildCompletionCertRows(csvText, eventName = defaultCompletionEventName
       kktixId: resolveCompletionCsvValue(row, columnIndexes, "kktixId"),
       name: resolveCompletionCsvValue(row, columnIndexes, "name"),
       number: resolveCompletionCsvValue(row, columnIndexes, "number"),
+      organization: resolveCompletionCsvValue(row, columnIndexes, "organization"),
       ticketName: resolveCompletionCsvValue(row, columnIndexes, "ticketName"),
     }))
     .filter((row) =>
@@ -678,6 +690,7 @@ function buildCompletionCertRows(csvText, eventName = defaultCompletionEventName
         row.kktixId,
         row.name,
         row.number,
+        row.organization,
         row.ticketName,
       ].some(Boolean)
     );
@@ -708,6 +721,8 @@ function normalizeCompletionCertRow(rowData) {
       typeof rowData?.number === "number" || typeof rowData?.number === "string"
         ? String(rowData.number)
         : "",
+    organization:
+      typeof rowData?.organization === "string" ? rowData.organization : "",
     ticketName: typeof rowData?.ticketName === "string" ? rowData.ticketName : "",
   };
 }
@@ -715,6 +730,23 @@ function normalizeCompletionCertRow(rowData) {
 function getVisibleCompletionCertRows() {
   const eventId = getCompletionFilterEventName();
   return completionCertRows.filter((row) => row.eventId === eventId);
+}
+
+function getCompletionCertPageCount(rowCount = getVisibleCompletionCertRows().length) {
+  return Math.max(1, Math.ceil(rowCount / completionCertRowsPerPage));
+}
+
+function clampCompletionCurrentPage(rowCount = getVisibleCompletionCertRows().length) {
+  completionCurrentPage = Math.min(
+    Math.max(1, completionCurrentPage),
+    getCompletionCertPageCount(rowCount)
+  );
+}
+
+function getCurrentCompletionCertPageRows(visibleRows) {
+  clampCompletionCurrentPage(visibleRows.length);
+  const startIndex = (completionCurrentPage - 1) * completionCertRowsPerPage;
+  return visibleRows.slice(startIndex, startIndex + completionCertRowsPerPage);
 }
 
 function getCompletionCertRow(rowId) {
@@ -745,6 +777,12 @@ function setCompletionEditInputValue(element, value) {
   }
 }
 
+function setCompletionEditStaticValue(element, value) {
+  if (element instanceof HTMLElement) {
+    element.textContent = value || "-";
+  }
+}
+
 function getCompletionEditInputValue(element) {
   return element instanceof HTMLInputElement ? element.value.trim() : "";
 }
@@ -764,14 +802,15 @@ function openCompletionEditDialog(rowData) {
   if (completionEditKktixId) {
     completionEditKktixId.textContent = rowData.kktixId || "-";
   }
-  setCompletionEditInputValue(completionEditBadgeName, rowData.badgeName);
+  setCompletionEditStaticValue(completionEditBadgeName, rowData.badgeName);
   setCompletionEditInputValue(completionEditName, rowData.name);
+  setCompletionEditInputValue(completionEditOrganization, rowData.organization);
   setCompletionEditInputValue(completionEditEmail, rowData.email);
-  setCompletionEditInputValue(completionEditTicketName, rowData.ticketName);
+  setCompletionEditStaticValue(completionEditTicketName, rowData.ticketName);
 
   completionEditDialog.hidden = false;
   document.body.classList.add("has-event-dialog");
-  completionEditBadgeName?.focus();
+  completionEditName?.focus();
 }
 
 function closeCompletionEditDialog() {
@@ -793,6 +832,15 @@ function normalizeEditedCompletionCert(rowData) {
   return normalizeCompletionCertRow(rowData);
 }
 
+function showCompletionPageAlert({ message, title, tone }) {
+  window.iPlaygroundPageAlert?.show({
+    dismissDelay: 6000,
+    message,
+    title,
+    tone,
+  });
+}
+
 async function submitCompletionEditDialog() {
   if (!(completionEditSubmitButton instanceof HTMLButtonElement)) {
     return;
@@ -805,11 +853,10 @@ async function submitCompletionEditDialog() {
   }
 
   const payload = {
-    badgeName: getCompletionEditInputValue(completionEditBadgeName),
     email: getCompletionEditInputValue(completionEditEmail),
     eventId: rowData.eventId,
     name: getCompletionEditInputValue(completionEditName),
-    ticketName: getCompletionEditInputValue(completionEditTicketName),
+    organization: getCompletionEditInputValue(completionEditOrganization),
   };
 
   completionEditSubmitButton.disabled = true;
@@ -837,6 +884,11 @@ async function submitCompletionEditDialog() {
     );
     renderCompletionCertRows();
     closeCompletionEditDialog();
+    showCompletionPageAlert({
+      message: "完訓證明資料已更新。",
+      title: "更新成功",
+      tone: "success",
+    });
   } catch (error) {
     showCompletionEditFeedback(
       error instanceof Error ? error.message : "完訓證明資料修改失敗。"
@@ -874,6 +926,29 @@ function updateCompletionBulkActionControls() {
   }
 }
 
+function updateCompletionPaginationControls(visibleRows) {
+  const rowCount = visibleRows.length;
+  const pageCount = getCompletionCertPageCount(rowCount);
+  const shouldShowPagination = rowCount > completionCertRowsPerPage;
+
+  if (completionPagination instanceof HTMLElement) {
+    completionPagination.hidden = !shouldShowPagination;
+  }
+
+  if (completionPageStatus instanceof HTMLElement) {
+    completionPageStatus.textContent = `第 ${completionCurrentPage} / ${pageCount} 頁`;
+  }
+
+  if (completionPagePrevButton instanceof HTMLButtonElement) {
+    completionPagePrevButton.disabled = !shouldShowPagination || completionCurrentPage <= 1;
+  }
+
+  if (completionPageNextButton instanceof HTMLButtonElement) {
+    completionPageNextButton.disabled =
+      !shouldShowPagination || completionCurrentPage >= pageCount;
+  }
+}
+
 function setCompletionRowDownloadState(rowId, isDownloadable) {
   const rowData = completionCertRows.find((row) => row.id === rowId);
   if (!rowData) {
@@ -907,6 +982,7 @@ function renderCompletionCertRows() {
     .forEach((rowElement) => rowElement.remove());
 
   const visibleRows = getVisibleCompletionCertRows();
+  const pageRows = getCurrentCompletionCertPageRows(visibleRows);
 
   if (completionCertEmptyRow instanceof HTMLTableRowElement) {
     completionCertEmptyRow.hidden = visibleRows.length > 0;
@@ -917,7 +993,7 @@ function renderCompletionCertRows() {
     );
   }
 
-  visibleRows.forEach((rowData) => {
+  pageRows.forEach((rowData) => {
     const rowFragment = completionCertRowTemplate.content.cloneNode(true);
     const rowElement = rowFragment.querySelector(".completion-cert-row");
     if (!(rowElement instanceof HTMLTableRowElement)) {
@@ -930,6 +1006,7 @@ function renderCompletionCertRows() {
     setTextContent(rowElement, '[data-field="badgeName"]', rowData.badgeName);
     setTextContent(rowElement, '[data-field="ticketName"]', rowData.ticketName);
     setTextContent(rowElement, '[data-field="name"]', rowData.name);
+    setTextContent(rowElement, '[data-field="organization"]', rowData.organization);
     setTextContent(rowElement, '[data-field="email"]', rowData.email);
 
     const switchInput = rowElement.querySelector('[data-action="toggle-downloadable"]');
@@ -953,6 +1030,7 @@ function renderCompletionCertRows() {
   });
 
   updateCompletionBulkActionControls();
+  updateCompletionPaginationControls(visibleRows);
 }
 
 async function loadCompletionCertRows(eventId = getCompletionFilterEventName()) {
@@ -1017,6 +1095,7 @@ async function importCompletionCsvText(csvText, eventId = getCompletionUploadEve
       ? responsePayload.completionCerts.map((row) => normalizeCompletionCertRow(row))
       : []),
   ];
+  completionCurrentPage = 1;
   applyCompletionEventFilterValue(eventId, { renderRows: false });
   renderCompletionCertRows();
 }
@@ -1110,6 +1189,9 @@ function applyCompletionEventFilterValue(nextValue, { renderRows = true } = {}) 
   }
 
   if (completionEventFilter instanceof HTMLInputElement) {
+    if (completionEventFilter.value !== normalizedValue) {
+      completionCurrentPage = 1;
+    }
     completionEventFilter.value = normalizedValue;
   }
 
@@ -1139,6 +1221,12 @@ function applyCompletionEventFilterValue(nextValue, { renderRows = true } = {}) 
       }
     });
   }
+}
+
+function goToCompletionPage(nextPage) {
+  completionCurrentPage = nextPage;
+  clampCompletionCurrentPage();
+  renderCompletionCertRows();
 }
 
 function applyCompletionFilters() {
@@ -1295,6 +1383,14 @@ completionBulkBlockedButton?.addEventListener("click", () => {
   applyDownloadableStateToCurrentActivity(false);
 });
 
+completionPagePrevButton?.addEventListener("click", () => {
+  goToCompletionPage(completionCurrentPage - 1);
+});
+
+completionPageNextButton?.addEventListener("click", () => {
+  goToCompletionPage(completionCurrentPage + 1);
+});
+
 completionFilterForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   applyCompletionFilters();
@@ -1412,6 +1508,7 @@ window.addEventListener("message", (event) => {
         ...completionCertRows.filter((row) => row.eventId !== message.eventId),
         ...message.completionCerts.map((row) => normalizeCompletionCertRow(row)),
       ];
+      completionCurrentPage = 1;
       applyCompletionEventFilterValue(message.eventId, { renderRows: false });
       renderCompletionCertRows();
       return;

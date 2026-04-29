@@ -521,8 +521,9 @@ def test_portal_admin_completion_certs_import_api_writes_kktix_csv_to_cosmos(
                 "eventId": "evt_1",
                 "csvText": (
                     "不需要欄位,Email,你是誰，ID 或具有鑑識度的名稱 Name on Badge,"
-                    "票種,Id,報名序號\n"
-                    "ignore,ming@example.com,Ming,一般票,KKTIX-001,1"
+                    "票種,Id,報名序號,姓名 Full Name,"
+                    "服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)\n"
+                    "ignore,ming@example.com,Ming,一般票,KKTIX-001,1,,iPlayground"
                 ),
             },
             ensure_ascii=False,
@@ -542,6 +543,7 @@ def test_portal_admin_completion_certs_import_api_writes_kktix_csv_to_cosmos(
     assert completion_cert["number"] == 1
     assert completion_cert["ticketName"] == "一般票"
     assert completion_cert["name"] == ""
+    assert completion_cert["organization"] == "iPlayground"
     assert completion_cert["email"] == "ming@example.com"
     assert completion_cert["kktixId"] == "KKTIX-001"
     assert completion_cert["badgeName"] == "Ming"
@@ -551,6 +553,45 @@ def test_portal_admin_completion_certs_import_api_writes_kktix_csv_to_cosmos(
     assert completion_cert["verificationTokenHash"] is None
     assert completion_cert["issuedAt"] is None
     assert "不需要欄位" not in completion_cert
+
+
+def test_portal_admin_completion_certs_import_api_allows_empty_optional_csv_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_1"] = {
+        "id": "evt_1",
+        "name": "iPlayground 2026",
+    }
+    fake_completion_container = FakeCompletionCertsContainer()
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_events_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "csvText": (
+                    "Email,你是誰，ID 或具有鑑識度的名稱 Name on Badge,"
+                    "票種,Id,報名序號,姓名 Full Name,"
+                    "服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)\n"
+                    "ming@example.com,Ming,一般票,KKTIX-001,1,,"
+                ),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        url="http://localhost:7075/api/v1/admin/completion-certs/import",
+    )
+
+    response = portal_admin_completion_certs_import_api(request)
+
+    assert response.status_code == 200
+    completion_cert = next(iter(fake_completion_container.items.values()))
+    assert completion_cert["name"] == ""
+    assert completion_cert["organization"] == ""
 
 
 def test_portal_admin_completion_certs_import_api_rejects_unknown_event(
@@ -564,8 +605,10 @@ def test_portal_admin_completion_certs_import_api_rejects_unknown_event(
                 "eventId": "evt_missing",
                 "csvText": (
                     "報名序號,票種,Email,Id,"
-                    "你是誰，ID 或具有鑑識度的名稱 Name on Badge\n"
-                    "1,一般票,ming@example.com,KKTIX-001,Ming"
+                    "你是誰，ID 或具有鑑識度的名稱 Name on Badge,"
+                    "姓名 Full Name,"
+                    "服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)\n"
+                    "1,一般票,ming@example.com,KKTIX-001,Ming,,"
                 ),
             },
             ensure_ascii=False,
@@ -599,7 +642,7 @@ def test_portal_admin_completion_certs_import_api_rejects_missing_required_csv_c
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 400
-    assert "CSV 缺少必要欄位：Badge Name、Id、票種" in body
+    assert "CSV 缺少必要欄位：Badge Name、Id、姓名 Full Name、公司名、票種" in body
 
 
 def test_portal_admin_completion_certs_import_api_rejects_missing_required_csv_values(
@@ -617,9 +660,10 @@ def test_portal_admin_completion_certs_import_api_rejects_missing_required_csv_v
                 "eventId": "evt_1",
                 "csvText": (
                     "報名序號,票種,姓名 Full Name,Email,Id,"
-                    "你是誰，ID 或具有鑑識度的名稱 Name on Badge\n"
-                    "REG-001,,王小明,,KKTIX-001,Ming\n"
-                    "REG-002,一般票,,hui@example.com,,"
+                    "你是誰，ID 或具有鑑識度的名稱 Name on Badge,"
+                    "服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)\n"
+                    "REG-001,,王小明,,KKTIX-001,Ming,\n"
+                    "REG-002,一般票,,hui@example.com,,,"
                 ),
             },
             ensure_ascii=False,
@@ -663,8 +707,10 @@ def test_portal_admin_completion_certs_import_api_rejects_non_integer_number(
                 "eventId": "evt_1",
                 "csvText": (
                     "報名序號,票種,Email,Id,"
-                    "你是誰，ID 或具有鑑識度的名稱 Name on Badge\n"
-                    "REG-001,一般票,ming@example.com,KKTIX-001,Ming"
+                    "你是誰，ID 或具有鑑識度的名稱 Name on Badge,"
+                    "姓名 Full Name,"
+                    "服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)\n"
+                    "REG-001,一般票,ming@example.com,KKTIX-001,Ming,,"
                 ),
             },
             ensure_ascii=False,
@@ -699,6 +745,7 @@ def test_portal_admin_completion_certs_list_api_returns_event_partition_rows(
         "badgeName": "",
         "ticketName": "一般票",
         "name": "王小華",
+        "organization": "好玩公司",
         "email": "hua@example.com",
         "attendanceStatus": "checkedIn",
         "certStatus": "notIssued",
@@ -724,6 +771,7 @@ def test_portal_admin_completion_certs_list_api_returns_event_partition_rows(
     assert response.status_code == 200
     assert '"completionCerts"' in body
     assert '"number":2' in body
+    assert '"organization":"好玩公司"' in body
     assert '"attendanceStatus":"checkedIn"' in body
 
 
@@ -739,6 +787,7 @@ def test_portal_admin_completion_certs_update_api_updates_mutable_fields(
         "badgeName": "Old Badge",
         "ticketName": "一般票",
         "name": "王小華",
+        "organization": "舊公司",
         "email": "hua@example.com",
         "attendanceStatus": "checkedIn",
         "certStatus": "notIssued",
@@ -759,6 +808,7 @@ def test_portal_admin_completion_certs_update_api_updates_mutable_fields(
                 "badgeName": "New Badge",
                 "email": "new@example.com",
                 "name": "",
+                "organization": "新公司",
                 "number": 999,
                 "ticketName": "VIP",
             },
@@ -776,10 +826,11 @@ def test_portal_admin_completion_certs_update_api_updates_mutable_fields(
     assert '"completionCert"' in body
     assert fake_completion_container.items["ccert_2"]["number"] == 2
     assert fake_completion_container.items["ccert_2"]["kktixId"] == "KKTIX-002"
-    assert fake_completion_container.items["ccert_2"]["badgeName"] == "New Badge"
+    assert fake_completion_container.items["ccert_2"]["badgeName"] == "Old Badge"
     assert fake_completion_container.items["ccert_2"]["email"] == "new@example.com"
     assert fake_completion_container.items["ccert_2"]["name"] == ""
-    assert fake_completion_container.items["ccert_2"]["ticketName"] == "VIP"
+    assert fake_completion_container.items["ccert_2"]["organization"] == "新公司"
+    assert fake_completion_container.items["ccert_2"]["ticketName"] == "一般票"
 
 
 def test_portal_admin_completion_certs_update_api_rejects_empty_required_fields(
@@ -795,9 +846,7 @@ def test_portal_admin_completion_certs_update_api_rejects_empty_required_fields(
         body=json.dumps(
             {
                 "eventId": "evt_1",
-                "badgeName": "",
-                "email": "new@example.com",
-                "ticketName": "VIP",
+                "email": "",
             },
             ensure_ascii=False,
         ).encode("utf-8"),
@@ -810,7 +859,7 @@ def test_portal_admin_completion_certs_update_api_rejects_empty_required_fields(
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 400
-    assert "完訓證明資料缺少必要欄位值：Badge Name" in body
+    assert "完訓證明資料缺少必要欄位值：Email" in body
 
 
 def test_portal_login_page_shows_group_auth_setup_message_when_group_authorization_is_not_configured(
@@ -1574,10 +1623,18 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert "不可下載" not in body
     assert "可下載" not in body
     assert "報名序號" in body
+    assert 'class="document-list-table completion-cert-table"' in body
+    assert 'class="completion-cert-col-number"' in body
+    assert 'class="completion-cert-col-organization"' in body
+    assert 'class="completion-cert-col-ticket"' in body
+    assert 'class="completion-cert-col-actions"' in body
     assert '<th scope="col">ID</th>' in body
     assert '<th scope="col">Badge Name</th>' in body
+    assert body.index("<th scope=\"col\">姓名</th>") < body.index("<th scope=\"col\">公司名</th>")
     assert "票種" in body
+    assert body.index("<th scope=\"col\">公司名</th>") < body.index("<th scope=\"col\">Email</th>")
     assert body.index("<th scope=\"col\">Email</th>") < body.index("<th scope=\"col\">票種</th>")
+    assert body.index('data-field="organization"') < body.index('data-field="email"')
     assert body.index('data-field="email"') < body.index('data-field="ticketName"')
     assert "操作" in body
     assert "下載" in body
@@ -1585,6 +1642,12 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert 'id="completion-cert-row-template"' in body
     assert 'id="completion-cert-table-body"' in body
     assert 'id="completion-cert-empty-row"' in body
+    assert 'id="completion-pagination"' in body
+    assert 'aria-label="完訓證明清單分頁"' in body
+    assert 'id="completion-page-prev"' in body
+    assert 'id="completion-page-status"' in body
+    assert 'id="completion-page-next"' in body
+    assert "第 1 / 1 頁" in body
     assert 'class="document-row-actions"' in body
     assert 'class="secondary-button document-download-button"' in body
     assert 'class="secondary-button document-edit-button"' in body
@@ -1597,12 +1660,23 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert 'aria-label="切換簽到狀態"' in body
     assert 'data-field="kktixId"' in body
     assert 'data-field="badgeName"' in body
+    assert 'data-field="organization"' in body
     assert 'data-field="ticketName"' in body
-    assert 'colspan="8"' in body
+    assert 'colspan="9"' in body
     assert "上傳完訓證明資料" in body
     assert 'id="completion-edit-dialog"' in body
     assert "修改完訓證明資料" in body
     assert "儲存修改" in body
+    assert 'class="completion-edit-identity-row"' in body
+    assert 'class="field completion-edit-number-field"' in body
+    assert '<div class="field-static-value" id="completion-edit-badge-name">-</div>' in body
+    assert '<div class="field-static-value" id="completion-edit-ticket-name">-</div>' in body
+    assert 'id="completion-edit-name" name="completionEditName"' in body
+    assert 'id="completion-edit-email" name="completionEditEmail"' in body
+    assert 'data-1p-ignore data-lpignore="true" data-form-type="other"' in body
+    assert 'id="completion-edit-email" name="email"' not in body
+    assert 'id="completion-edit-badge-name" name="badgeName"' not in body
+    assert 'id="completion-edit-ticket-name" name="ticketName"' not in body
     assert 'class="document-filter-form"' in body
     assert 'aria-label="完訓證明資料篩選"' in body
     assert '<th scope="col">活動</th>' not in body
@@ -1644,8 +1718,12 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert 'aria-modal="true"' in body
     assert 'id="completion-upload-cancel"' in body
     assert 'src="/assets/portal-event-cache.js"' in body
+    assert 'src="/assets/page-alert.js"' in body
     assert 'src="/assets/portal-dashboard-completion-certs.js"' in body
     assert body.index('src="/assets/portal-event-cache.js"') < body.index(
+        'src="/assets/page-alert.js"'
+    )
+    assert body.index('src="/assets/page-alert.js"') < body.index(
         'src="/assets/portal-dashboard-completion-certs.js"'
     )
     assert "document-workspace-grid" not in body
@@ -1932,9 +2010,25 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".document-row-checkbox" not in body
     assert ".document-row-status-switch" in body
     assert ".document-download-switch-input" in body
+    assert ".document-pagination" in body
+    assert ".document-page-status" in body
     assert ".required-field-mark" not in body
     assert ".document-filter-submit" not in body
     assert ".document-list-table" in body
+    assert ".completion-cert-table" in body
+    assert "table-layout: fixed;" in body
+    assert ".completion-cert-col-badge {\n  width: 140px;" in body
+    assert ".completion-cert-col-name {\n  width: 140px;" in body
+    assert ".completion-cert-col-email {\n  width: 250px;" in body
+    assert ".completion-cert-col-organization,\n.completion-cert-col-ticket" in body
+    assert ".completion-edit-identity-row" in body
+    assert "grid-template-columns: minmax(72px, 0.56fr) minmax(104px, 0.8fr) minmax(160px, 1.4fr);" in body
+    assert ".document-list-table th,\n.document-list-table td {\n  padding: 15px 16px;" in body
+    assert ".document-list-table th,\n.document-list-table td {\n  padding: 15px 16px;\n  border-bottom: 1px solid rgba(81, 121, 254, 0.1);\n  text-align: left;\n  vertical-align: middle;\n  white-space: nowrap;" in body
+    assert ".completion-cert-row [data-field=\"organization\"],\n.completion-cert-row [data-field=\"ticketName\"]" in body
+    assert ".completion-cert-row [data-field=\"badgeName\"],\n.completion-cert-row [data-field=\"name\"],\n.completion-cert-row [data-field=\"organization\"],\n.completion-cert-row [data-field=\"email\"],\n.completion-cert-row [data-field=\"ticketName\"]" in body
+    assert "max-width: 10em;" in body
+    assert "text-overflow: ellipsis;" in body
     assert ".document-download-button" in body
     assert ".document-download-button:disabled" in body
     assert ".document-row-actions" in body
@@ -2372,6 +2466,15 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert 'document.getElementById("completion-select-all")' not in body
     assert 'document.getElementById("completion-bulk-downloadable")' in body
     assert 'document.getElementById("completion-bulk-blocked")' in body
+    assert 'document.getElementById("completion-pagination")' in body
+    assert 'document.getElementById("completion-page-prev")' in body
+    assert 'document.getElementById("completion-page-next")' in body
+    assert 'document.getElementById("completion-page-status")' in body
+    assert "const completionCertRowsPerPage = 10" in body
+    assert "getCurrentCompletionCertPageRows" in body
+    assert "visibleRows.slice(startIndex, startIndex + completionCertRowsPerPage)" in body
+    assert "goToCompletionPage(completionCurrentPage - 1)" in body
+    assert "goToCompletionPage(completionCurrentPage + 1)" in body
     assert "updateCompletionUploadFileName" in body
     assert "isCompletionCsvFile" in body
     assert "completionUploadImportMessageType" in body
@@ -2393,8 +2496,10 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "buildCompletionCertRows" in body
     assert "姓名 Full Name" in body
     assert "你是誰，ID 或具有鑑識度的名稱 Name on Badge" in body
+    assert "服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)" in body
     assert "kktixId" in body
     assert "badgeName" in body
+    assert "organization" in body
     assert '"Id"' in body
     assert "Email" in body
     assert "email" in body
@@ -2412,6 +2517,12 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "submitCompletionEditDialog" in body
     assert 'document.getElementById("completion-edit-dialog")' in body
     assert 'document.getElementById("completion-edit-submit")' in body
+    assert "setCompletionEditStaticValue" in body
+    assert "completionEditName?.focus()" in body
+    assert "showCompletionPageAlert" in body
+    assert "window.iPlaygroundPageAlert?.show" in body
+    assert "完訓證明資料已更新。" in body
+    assert "更新成功" in body
     assert "encodeURIComponent(rowData.id)" in body
     assert "method: \"PUT\"" in body
     assert "setCompletionSelectionForAllRows" not in body

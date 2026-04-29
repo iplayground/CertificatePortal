@@ -220,13 +220,17 @@ status: 尚未串接實際驗證資料
 - CSV 匯入會呼叫 `POST /api/v1/admin/completion-certs/import`，由後端解析 KKTIX CSV、過濾非白名單欄位，並寫入 Cosmos DB `completionCerts`
 - CSV 匯入後的清單列預設為 `未簽到`，下載按鈕停用；`issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 在會眾申請並完成產生檔案前為 `null`
 - 同一活動再次匯入 CSV 時，會以穩定的 `eventId + number + kktixId` 產生文件 ID 並 upsert 到同一批 Cosmos DB 資料
-- 清單欄位包含報名序號、ID、Badge Name、姓名、Email、票種、簽到狀態與操作
-- 清單操作提供下載與修改；修改可更新 Badge Name、姓名、Email 與票種，報名序號與 KKTIX ID 作為識別欄位不直接修改
-- 清單表格標題列置中，資料列內容維持欄位閱讀對齊
+- 清單欄位包含報名序號、ID、Badge Name、姓名、公司名、Email、票種、簽到狀態與操作
+- 每列在操作欄提供 `下載` 與 `修改` 按鈕
+- 修改視窗可更新姓名、公司名與 Email；報名序號、KKTIX ID、Badge Name 與票種不直接修改
+- 修改視窗將報名序號、ID 與票種放在同一排，且 Badge Name 與票種為唯讀顯示
+- 修改成功後顯示共用 page alert 成功提示
+- 清單表格標題列置中，標題與資料列皆維持單行
+- 完訓證明表格使用固定欄寬避免換頁時欄寬跳動，過長內容以 `…` 截斷
+- 完訓證明清單每頁最多顯示 10 筆；超過 10 筆時顯示上一頁、目前頁碼與下一頁控制
 - 清單上方提供目前活動全部資料的批次設定，可設為 `已簽到` 或 `未簽到`
 - 完訓證明清單不提供選取列功能，批次設定一律套用至目前活動全部資料
 - 每列提供可雙向切換的簽到狀態開關
-- 每列在操作欄提供 `下載` 按鈕
 - 清單上方提供活動篩選欄位；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單並直接套用篩選
 - 活動篩選與上傳視窗活動選擇會先使用 portal 分頁內的活動清單快取渲染，再直接呼叫 `GET /api/v1/admin/events` 更新畫面與快取；快取只作為先顯示用途，不作為權威資料來源
 - 標題列右上方提供 `上傳完訓證明資料` 按鈕
@@ -385,6 +389,7 @@ Response example:
       "badgeName": "Ming",
       "ticketName": "一般票",
       "name": "王小明",
+      "organization": "iPlayground",
       "email": "ming@example.com",
       "attendanceStatus": "notCheckedIn",
       "certStatus": "notIssued",
@@ -399,7 +404,7 @@ Response example:
 
 ### `POST /api/v1/admin/completion-certs/import`
 
-- 匯入單一活動的 KKTIX CSV，後端只寫入白名單欄位
+- 匯入單一活動的 KKTIX CSV，後端只寫入白名單欄位；欄位規則由 [cosmos-data-model.md](cosmos-data-model.md) 定義
 - 只接受已登入且通過授權的管理者 session
 - 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
 - 不保留原始 CSV 檔案；匯入後直接 upsert 到 Cosmos DB `completionCerts`
@@ -409,7 +414,7 @@ Request JSON example:
 ```json
 {
   "eventId": "evt_20260425_ipg",
-  "csvText": "報名序號,票種,Email,Id,你是誰，ID 或具有鑑識度的名稱 Name on Badge\n1,一般票,ming@example.com,KKTIX-001,Ming"
+  "csvText": "報名序號,票種,Email,Id,你是誰，ID 或具有鑑識度的名稱 Name on Badge,服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)\n1,一般票,ming@example.com,KKTIX-001,Ming,iPlayground"
 }
 ```
 
@@ -426,6 +431,7 @@ Response JSON example:
       "badgeName": "Ming",
       "ticketName": "一般票",
       "name": "王小明",
+      "organization": "iPlayground",
       "email": "ming@example.com",
       "attendanceStatus": "notCheckedIn",
       "certStatus": "notIssued",
@@ -446,18 +452,17 @@ Response JSON example:
 - 修改單筆完訓證明清單資料
 - 只接受已登入且通過授權的管理者 session
 - 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
-- 目前可修改欄位為 `badgeName`、`name`、`email`、`ticketName`
-- `number` 與 `kktixId` 是資料識別的一部分，不在此端點直接修改
+- 目前可修改欄位為 `name`、`organization`、`email`
+- `number`、`kktixId`、`badgeName` 與 `ticketName` 不在此端點直接修改
 
 Request JSON example:
 
 ```json
 {
   "eventId": "evt_20260425_ipg",
-  "badgeName": "Ming",
   "name": "王小明",
-  "email": "ming@example.com",
-  "ticketName": "一般票"
+  "organization": "iPlayground",
+  "email": "ming@example.com"
 }
 ```
 
@@ -473,6 +478,7 @@ Response JSON example:
     "badgeName": "Ming",
     "ticketName": "一般票",
     "name": "王小明",
+    "organization": "iPlayground",
     "email": "ming@example.com",
     "attendanceStatus": "notCheckedIn",
     "certStatus": "notIssued",

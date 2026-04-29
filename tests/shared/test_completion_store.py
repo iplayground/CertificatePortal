@@ -50,6 +50,7 @@ def test_build_completion_cert_document_stores_complete_list_row() -> None:
         kktix_id="KKTIX-001",
         name="王小明",
         number=1,
+        organization="iPlayground",
         ticket_name="一般票",
         now="2026-04-28T06:02:00Z",
     )
@@ -62,6 +63,7 @@ def test_build_completion_cert_document_stores_complete_list_row() -> None:
         "badgeName": "Ming",
         "ticketName": "一般票",
         "name": "王小明",
+        "organization": "iPlayground",
         "email": "ming@example.com",
         "attendanceStatus": "notCheckedIn",
         "certStatus": "notIssued",

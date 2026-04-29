@@ -88,6 +88,7 @@ def build_completion_cert_document(
     name: str,
     number: int,
     ticket_name: str,
+    organization: str,
     now: str | None = None,
 ) -> dict[str, Any]:
     timestamp = now or utc_now_iso()
@@ -99,6 +100,7 @@ def build_completion_cert_document(
         "badgeName": badge_name,
         "ticketName": ticket_name,
         "name": name,
+        "organization": organization,
         "email": email,
         "attendanceStatus": "notCheckedIn",
         "certStatus": "notIssued",
@@ -119,7 +121,7 @@ def list_completion_cert_documents(
             container.query_items(
                 query=(
                     "SELECT c.id, c.eventId, c.number, c.kktixId, c.badgeName, "
-                    "c.ticketName, c.name, c.email, c.attendanceStatus, "
+                    "c.ticketName, c.name, c.organization, c.email, c.attendanceStatus, "
                     "c.certStatus, c.issuedPdfBlobName, c.verificationTokenHash, "
                     "c.issuedAt, c.createdAt FROM c WHERE c.eventId = @eventId "
                     "ORDER BY c.number ASC"

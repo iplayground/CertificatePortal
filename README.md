@@ -130,11 +130,11 @@ PYTHONPATH=. pytest
 - `local.settings.json.example` 是可提交的模板；Azure 資源相關欄位預設留空，需由開發者自行填入。實際使用的 `local.settings.json` 仍維持忽略，不進 git。
 - `local.settings.json` 內已設定 `AzureWebJobsDisableHomepage=true`，避免根目錄顯示 Azure Functions 預設首頁。
 - 目前未接 Azurite 或實體 Storage Account，因此本機啟動時可能看到 `AzureWebJobsStorage` 的 unhealthy 訊息；在 `--skip-azure-storage-check` 下，這不影響目前首頁、靜態資產路由與公開驗證頁面。
-- `COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME` 與 `COSMOS_EVENTS_CONTAINER` 是 Cosmos DB 連線設定；目前 IaC 建立 serverless account、database，以及活動管理用的 `events` container。
+- `COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER` 與 `COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER` 是 Cosmos DB 連線設定；目前 IaC 建立 serverless account、database、活動管理用的 `events` container，以及完訓證明用的 `completionCerts` 與 `completionCertRequests` containers。
 - 管理平台入口現已統一使用 `/portal`，避免與 Azure Functions runtime 內建保留的 `/admin` 路徑衝突。
 - `/portal` 正式環境目前應明確設定 `PORTAL_GOOGLE_CLIENT_ID`、`PORTAL_GOOGLE_CLIENT_SECRET`、`PORTAL_GOOGLE_REDIRECT_URI` 與 `PORTAL_GOOGLE_ALLOWED_GROUP_KEYS`；建議以 Azure CLI 或 Key Vault reference 寫入 app settings，詳細流程請參考 [docs/portal-authentication.md](docs/portal-authentication.md)。
 - 會異動資料的管理 API 會檢查同源請求與 CSRF token；可選擇設定 `PORTAL_CSRF_SECRET` 作為 CSRF 簽章密鑰，未設定時會優先沿用 `PORTAL_GOOGLE_CLIENT_SECRET`。
-- 目前活動管理已串接 Cosmos DB 的新增、查詢與修改；尚未保留其他管理子路由、下載流程與其餘文件業務邏輯。
+- 目前活動管理已串接 Cosmos DB 的新增、查詢與修改；完訓證明頁已串接活動篩選、CSV 匯入、清單查詢與單筆資料修改。下載流程、證明文件生成流程與營業稅繳稅證明持久化仍待後續串接。
 
 ## Azure 部署
 
