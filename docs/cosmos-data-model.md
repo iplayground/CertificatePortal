@@ -208,7 +208,9 @@ changeRequested
 
 管理中心完訓證明清單中的下載按鈕依 `certStatus` 判斷是否可用；目前只有 `issued` 可下載。`notIssued`、`failed` 與 `changeRequested` 不可下載，即使 `attendanceStatus` 為 `checkedIn` 也一樣。
 
-目前公開首頁已在「選擇證明顯示方式」區塊顯示「提出修改申請」按鈕，但尚未串接公開 API 或 Cosmos DB 寫入流程；因此目前不會由公開首頁自動建立 `completionCertRequests` 文件，也不會自動把 `certStatus` 改為 `changeRequested`。此狀態值與下方申請文件模型是後續接上修改申請流程時的資料模型基線。
+公開首頁在 `notIssued` 狀態的「選擇證明顯示方式」區塊提供「提出修改申請」入口，並會切換到首頁同卡片內的修改申請 view state。送出後會建立或更新 `completionCertRequests` 文件，並把對應 `completionCerts.certStatus` 改為 `changeRequested`。
+
+公開首頁查詢到 `changeRequested` 狀態時仍會進入「選擇證明顯示方式」，但不再顯示「提出修改申請」。頁面會提示修改申請正在處理中，並告知使用者若現在產生證書，將視為放棄本次修改申請。
 
 目前 KKTIX CSV 白名單欄位：
 
@@ -253,7 +255,7 @@ ORDER BY c.number ASC
 
 ### 資料調整申請文件
 
-`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。目前 container 與文件 builder 已定義，但公開首頁尚未提供送出修改申請 API，因此現階段不會由使用者操作自動寫入。
+`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。公開首頁送出修改申請時會寫入此 container；同一張完訓證明使用相同申請備註重送時，會使用穩定 id upsert 同一筆申請文件。
 
 必要欄位：
 

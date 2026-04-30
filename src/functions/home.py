@@ -16,8 +16,14 @@ import azure.functions as func
 from src.shared.completion_store import (
     CompletionStoreConfigurationError,
     CompletionStoreOperationError,
+    build_completion_cert_request_document,
+    build_completion_cert_request_id,
     find_completion_cert_document_for_public_lookup,
+    get_completion_cert_requests_container,
     get_completion_records_container,
+    read_completion_cert_document,
+    replace_completion_cert_document,
+    upsert_completion_cert_request_document,
 )
 from src.shared.event_store import (
     EventStoreConfigurationError,
@@ -66,6 +72,10 @@ HOME_LOOKUP_BLOCKED_REMAINING_MINUTES_MESSAGE_TEMPLATE = (
 )
 HOME_LOOKUP_UNAVAILABLE_MESSAGE = "目前暫時無法查詢文件，請稍後再試。"
 HOME_LOOKUP_NOT_AVAILABLE_YET_MESSAGE = "完訓證明尚未開放下載，請於開放時間後再查詢。"
+HOME_CHANGE_REQUEST_INVALID_MESSAGE = "修改申請資料不完整，請確認後再送出。"
+HOME_CHANGE_REQUEST_UNAVAILABLE_MESSAGE = "目前暫時無法送出修改申請，請稍後再試。"
+HOME_CHANGE_REQUEST_NOT_ALLOWED_MESSAGE = "此完訓證明目前無法提出修改申請。"
+HOME_CHANGE_REQUEST_FORBIDDEN_MESSAGE = "請從本網站頁面送出修改申請。"
 
 
 @lru_cache(maxsize=1)
@@ -78,6 +88,7 @@ def build_home_page_url_context(req: func.HttpRequest) -> dict[str, str]:
 
     return {
         "canonical_url": page_url,
+        "certificate_change_request_api_path": "/api/v1/completion-cert-change-requests",
         "document_lookup_api_path": "/api/v1/document-lookup",
         "events_api_path": "/api/v1/events",
         "page_url": page_url,
@@ -256,6 +267,31 @@ def parse_document_lookup_payload(req: func.HttpRequest) -> dict[str, Any] | Non
     }
 
 
+def parse_completion_cert_change_request_payload(
+    req: func.HttpRequest,
+) -> dict[str, Any] | None:
+    lookup_payload = parse_document_lookup_payload(req)
+    if lookup_payload is None or lookup_payload["documentType"] != "completionCert":
+        return None
+
+    try:
+        raw_payload = req.get_json()
+    except ValueError:
+        return None
+
+    if not isinstance(raw_payload, dict):
+        return None
+
+    requester_note = str(raw_payload.get("requesterNote", "")).strip()
+    if not requester_note or len(requester_note) > 600:
+        return None
+
+    return {
+        **lookup_payload,
+        "requesterNote": requester_note,
+    }
+
+
 def lookup_public_document(payload: dict[str, Any]) -> dict[str, Any] | None:
     if payload["documentType"] != "completionCert":
         return None
@@ -266,6 +302,57 @@ def lookup_public_document(payload: dict[str, Any]) -> dict[str, Any] | None:
         event_id=payload["eventId"],
         number=payload["registrationNumber"],
     )
+
+
+def submit_completion_cert_change_request(payload: dict[str, Any]) -> dict[str, Any]:
+    records_container = get_completion_records_container()
+    public_document = find_completion_cert_document_for_public_lookup(
+        container=records_container,
+        email=payload["email"],
+        event_id=payload["eventId"],
+        number=payload["registrationNumber"],
+    )
+    if public_document is None:
+        raise LookupError("completion certificate was not found")
+
+    cert_status = str(public_document.get("certStatus", "")).strip() or "notIssued"
+    if cert_status not in {"notIssued", "changeRequested"}:
+        raise PermissionError("completion certificate cannot request changes")
+
+    completion_cert_id = str(public_document.get("id", "")).strip()
+    if not completion_cert_id:
+        raise CompletionStoreOperationError("完訓證明資料缺少識別碼。")
+
+    request_id = build_completion_cert_request_id(
+        payload["requesterNote"],
+        completion_cert_id=completion_cert_id,
+    )
+    request_document = build_completion_cert_request_document(
+        completion_cert_id=completion_cert_id,
+        event_id=payload["eventId"],
+        request_id=request_id,
+        requester_email=payload["email"],
+        requester_note=payload["requesterNote"],
+    )
+    saved_request = upsert_completion_cert_request_document(
+        container=get_completion_cert_requests_container(),
+        document=request_document,
+    )
+
+    cert_document = read_completion_cert_document(
+        cert_id=completion_cert_id,
+        container=records_container,
+        event_id=payload["eventId"],
+    )
+    if str(cert_document.get("certStatus", "")).strip() != "changeRequested":
+        cert_document["certStatus"] = "changeRequested"
+        cert_document["updatedAt"] = str(saved_request.get("updatedAt", "")).strip()
+        replace_completion_cert_document(
+            container=records_container,
+            document=cert_document,
+        )
+
+    return saved_request
 
 
 def is_completion_cert_lookup_available(payload: dict[str, Any]) -> bool | None:
@@ -354,6 +441,38 @@ def build_document_lookup_unavailable_response() -> func.HttpResponse:
         503,
         "lookup_unavailable",
         HOME_LOOKUP_UNAVAILABLE_MESSAGE,
+    )
+
+
+def build_change_request_invalid_response() -> func.HttpResponse:
+    return build_home_api_error_response(
+        400,
+        "invalid_change_request",
+        HOME_CHANGE_REQUEST_INVALID_MESSAGE,
+    )
+
+
+def build_change_request_forbidden_response() -> func.HttpResponse:
+    return build_home_api_error_response(
+        403,
+        "same_origin_required",
+        HOME_CHANGE_REQUEST_FORBIDDEN_MESSAGE,
+    )
+
+
+def build_change_request_not_allowed_response() -> func.HttpResponse:
+    return build_home_api_error_response(
+        409,
+        "change_request_not_allowed",
+        HOME_CHANGE_REQUEST_NOT_ALLOWED_MESSAGE,
+    )
+
+
+def build_change_request_unavailable_response() -> func.HttpResponse:
+    return build_home_api_error_response(
+        503,
+        "change_request_unavailable",
+        HOME_CHANGE_REQUEST_UNAVAILABLE_MESSAGE,
     )
 
 
@@ -689,6 +808,22 @@ def _build_absolute_url(req: func.HttpRequest, path: str) -> str:
     return urlunsplit((scheme, host, normalized_path, "", ""))
 
 
+def _is_same_origin_request(req: func.HttpRequest) -> bool:
+    origin = req.headers.get("Origin")
+    if not origin:
+        return True
+
+    parsed_origin = urlsplit(origin.strip())
+    if not parsed_origin.scheme or not parsed_origin.netloc:
+        return False
+
+    expected_url = urlsplit(_build_absolute_url(req, "/"))
+    return (
+        parsed_origin.scheme.lower() == expected_url.scheme.lower()
+        and parsed_origin.netloc.lower() == expected_url.netloc.lower()
+    )
+
+
 def _resolve_forwarded_value(req: func.HttpRequest, header_name: str) -> str | None:
     header_value = req.headers.get(header_name)
     if not header_value:
@@ -849,4 +984,42 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
                 "organization": str(document.get("organization", "")).strip(),
             },
         }
+    )
+
+
+@blueprint.function_name(name="public_completion_cert_change_request_api")
+@blueprint.route(
+    route="api/v1/completion-cert-change-requests",
+    methods=["POST"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def public_completion_cert_change_request_api(req: func.HttpRequest) -> func.HttpResponse:
+    if not _is_same_origin_request(req):
+        return build_change_request_forbidden_response()
+
+    payload = parse_completion_cert_change_request_payload(req)
+    if payload is None:
+        return build_change_request_invalid_response()
+
+    try:
+        request_document = submit_completion_cert_change_request(payload)
+    except LookupError:
+        return build_document_lookup_not_found_response()
+    except PermissionError:
+        return build_change_request_not_allowed_response()
+    except (CompletionStoreConfigurationError, CompletionStoreOperationError):
+        return build_change_request_unavailable_response()
+
+    return build_home_api_json_response(
+        {
+            "changeRequest": {
+                "id": request_document["id"],
+                "status": request_document["status"],
+                "completionCertId": request_document["completionCertId"],
+                "eventId": request_document["eventId"],
+                "createdAt": request_document["createdAt"],
+                "updatedAt": request_document["updatedAt"],
+            },
+        },
+        status_code=201,
     )

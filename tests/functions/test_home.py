@@ -11,6 +11,7 @@ from src.functions.assets import static_asset
 from src.functions.home import (
     build_document_lookup_blocked_message,
     home_page,
+    public_completion_cert_change_request_api,
     public_document_lookup_api,
     public_events_list_api,
     resolve_public_lookup_client_ip,
@@ -115,6 +116,34 @@ class FakeCompletionCertsContainer:
             and item["number"] == parameter_values["@number"]
         ][:1]
 
+    def read_item(self, item: str, partition_key: str, **_: Any) -> dict[str, Any]:
+        for document in self.items:
+            if document["id"] == item and document["eventId"] == partition_key:
+                return document.copy()
+
+        error = RuntimeError("not found")
+        setattr(error, "status_code", 404)
+        raise error
+
+    def replace_item(self, item: str, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        for index, document in enumerate(self.items):
+            if document["id"] == item:
+                self.items[index] = body.copy()
+                return self.items[index]
+
+        error = RuntimeError("not found")
+        setattr(error, "status_code", 404)
+        raise error
+
+
+class FakeCompletionCertRequestsContainer:
+    def __init__(self) -> None:
+        self.items: dict[str, dict[str, Any]] = {}
+
+    def upsert_item(self, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        self.items[body["id"]] = body.copy()
+        return self.items[body["id"]]
+
 
 class FakeEventsContainer:
     def __init__(self, items: dict[str, dict[str, Any]] | None = None) -> None:
@@ -163,6 +192,22 @@ def build_document_lookup_request(
         headers={
             "Content-Type": "application/json",
             "X-Forwarded-For": ip_address,
+        },
+    )
+
+
+def build_completion_cert_change_request(
+    *,
+    body: dict[str, Any],
+    headers: dict[str, str] | None = None,
+) -> func.HttpRequest:
+    return build_request(
+        "http://localhost:7075/api/v1/completion-cert-change-requests",
+        method="POST",
+        body=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            **(headers or {}),
         },
     )
 
@@ -278,6 +323,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "---- / -- / -- --:--:--" in body
     assert 'data-current-locale="zh-TW"' in body
     assert 'data-locale-cookie-name="ipg_locale"' in body
+    assert 'data-certificate-change-request-api-path="/api/v1/completion-cert-change-requests"' in body
     assert 'id="locale-trigger"' in body
     assert 'id="locale-options"' in body
     assert 'id="home-page-i18n"' in body
@@ -305,6 +351,24 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "顯示公司名：{organization}" in body
     assert "提出修改申請" in body
     assert 'id="certificate-change-request-action"' in body
+    assert 'id="certificate-change-request-processing-feedback"' in body
+    assert "若現在產生證書，將視為放棄本次修改申請。" in body
+    assert "修改申請" in body
+    assert "請描述需要調整的證明資料" in body
+    assert 'id="certificate-change-request-view" hidden tabindex="-1"' in body
+    assert 'id="certificate-change-request-form"' in body
+    assert 'id="certificate-change-request-event-value"' in body
+    assert 'id="certificate-change-request-registration-number-value"' in body
+    assert 'id="certificate-change-request-email-value"' in body
+    assert 'id="certificate-change-request-current-name-value"' not in body
+    assert 'id="certificate-change-request-note"' in body
+    assert 'maxlength="600"' in body
+    assert "例如：想改成本名，或公司名需要調整。" in body
+    assert "Badge Name 應改為" not in body
+    assert "請只填寫必要的更正內容" in body
+    assert "返回顯示方式" in body
+    assert "送出申請" in body
+    assert "修改申請已送出，管理者確認後會再處理發證。" in body
     assert "產生證書" in body
     assert 'id="certificate-generate-action"' in body
     assert 'id="certificate-options-step-label"' not in body
@@ -988,6 +1052,185 @@ def test_public_document_lookup_api_returns_change_requested_cert_status(
     )
 
 
+def test_public_completion_cert_change_request_api_writes_request_and_updates_cert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    certs_container = FakeCompletionCertsContainer(
+        [
+            {
+                "id": "ccert_1",
+                "eventId": "evt_1",
+                "number": 100,
+                "email": "Ming@example.com",
+                "badgeName": "Ming",
+                "name": "王小明",
+                "organization": "iPlayground",
+                "certStatus": "notIssued",
+                "issuedPdfBlobName": None,
+            }
+        ]
+    )
+    requests_container = FakeCompletionCertRequestsContainer()
+    monkeypatch.setattr("src.functions.home.get_completion_records_container", lambda: certs_container)
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_cert_requests_container",
+        lambda: requests_container,
+    )
+
+    response = public_completion_cert_change_request_api(
+        build_completion_cert_change_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+                "requesterNote": "想改成本名",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+    request_document = next(iter(requests_container.items.values()))
+
+    assert response.status_code == 201
+    assert response.mimetype == "application/json"
+    assert '"status":"pending"' in body
+    assert '"completionCertId":"ccert_1"' in body
+    assert request_document["completionCertId"] == "ccert_1"
+    assert request_document["eventId"] == "evt_1"
+    assert request_document["requesterEmail"] == "ming@example.com"
+    assert request_document["requesterNote"] == "想改成本名"
+    assert certs_container.items[0]["certStatus"] == "changeRequested"
+    assert certs_container.items[0]["updatedAt"] == request_document["updatedAt"]
+
+
+def test_public_completion_cert_change_request_api_is_idempotent_for_same_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    certs_container = FakeCompletionCertsContainer(
+        [
+            {
+                "id": "ccert_1",
+                "eventId": "evt_1",
+                "number": 100,
+                "email": "Ming@example.com",
+                "badgeName": "Ming",
+                "name": "王小明",
+                "organization": "iPlayground",
+                "certStatus": "notIssued",
+                "issuedPdfBlobName": None,
+            }
+        ]
+    )
+    requests_container = FakeCompletionCertRequestsContainer()
+    monkeypatch.setattr("src.functions.home.get_completion_records_container", lambda: certs_container)
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_cert_requests_container",
+        lambda: requests_container,
+    )
+    request = build_completion_cert_change_request(
+        body={
+            "documentType": "completionCert",
+            "eventId": "evt_1",
+            "registrationNumber": "100",
+            "email": "ming@example.com",
+            "requesterNote": "想改成本名",
+        },
+    )
+
+    first_response = public_completion_cert_change_request_api(request)
+    second_response = public_completion_cert_change_request_api(request)
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+    assert len(requests_container.items) == 1
+
+
+def test_public_completion_cert_change_request_api_rejects_cross_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_querying_completion_records() -> object:
+        raise AssertionError("cross-origin request should not query completion records")
+
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        fail_if_querying_completion_records,
+    )
+
+    response = public_completion_cert_change_request_api(
+        build_completion_cert_change_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+                "requesterNote": "想改成本名",
+            },
+            headers={"Origin": "https://evil.example"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 403
+    assert '"code":"same_origin_required"' in body
+
+
+def test_public_completion_cert_change_request_api_rejects_invalid_payload() -> None:
+    response = public_completion_cert_change_request_api(
+        build_completion_cert_change_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+                "requesterNote": "",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 400
+    assert '"code":"invalid_change_request"' in body
+
+
+def test_public_completion_cert_change_request_api_rejects_issued_cert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(
+            [
+                {
+                    "id": "ccert_1",
+                    "eventId": "evt_1",
+                    "number": 100,
+                    "email": "Ming@example.com",
+                    "badgeName": "Ming",
+                    "name": "王小明",
+                    "organization": "iPlayground",
+                    "certStatus": "issued",
+                    "issuedPdfBlobName": "issued/ccert_1.pdf",
+                }
+            ]
+        ),
+    )
+
+    response = public_completion_cert_change_request_api(
+        build_completion_cert_change_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+                "requesterNote": "想改公司名",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 409
+    assert '"code":"change_request_not_allowed"' in body
+
+
 def test_public_document_lookup_api_uses_local_block_cache_before_cosmos(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1167,6 +1410,9 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert "background: #fff;" in body
     assert "@keyframes page-loading-spin" in body
     assert ".certificate-options-view" in body
+    assert ".certificate-change-request-view" in body
+    assert ".certificate-summary-list" in body
+    assert ".certificate-change-request-form textarea" in body
     assert ".certificate-choice-option" in body
     assert '.certificate-choice-option input[type="radio"]' in body
     assert ".certificate-choice-option span::before" in body
@@ -1273,10 +1519,29 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert 'documentRequestForm.classList.toggle("is-certificate-options-active", isLocked)' in body
     assert "buildCertificateNameChoices" in body
     assert "showCertificateOptions" in body
+    assert '["notIssued", "changeRequested"].includes(documentData?.certStatus)' in body
+    assert "renderCertificateOptionsStatus" in body
+    assert "certificateChangeRequestProcessingFeedback" in body
+    assert "certificateChangeRequestAction.hidden = isChangeRequested" in body
+    assert "certificateChangeRequestProcessingFeedback.hidden = !isChangeRequested" in body
+    assert "showCertificateChangeRequest" in body
+    assert "showCertificateOptionsFromChangeRequest" in body
+    assert "renderCertificateChangeRequestSummary" in body
+    assert "updateCertificateChangeRequestSubmitState" in body
+    assert "isChangeRequestSubmitted" in body
+    assert "setChangeRequestSubmitted(true)" in body
+    assert 'certificateChangeRequestNote.disabled = isSubmitted' in body
+    assert 'currentCertificateDocument.certStatus === "changeRequested"' in body
     assert "showDocumentLookupForm" in body
     assert "certificateCompanyVisible.checked = Boolean(organization)" in body
     assert "previewAction.hidden = isLocked" in body
     assert "certificateChangeRequestAction" in body
+    assert "certificateChangeRequestForm?.addEventListener" in body
+    assert "certificateChangeRequestApiPath" in body
+    assert "submitCertificateChangeRequest" in body
+    assert "fetch(certificateChangeRequestApiPath" in body
+    assert "certificate_change_request_submitted_message" in body
+    assert "certificate_change_request_unavailable_message" in body
     assert "certificateGenerateAction" in body
     assert "certificateNameDisplay" in body
     assert "nameWithBadge" in body
@@ -1289,6 +1554,10 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "showCertificateOptions(successfulDocument)" in body
     assert "clearLookupFeedback()" in body
     assert 'showLookupFeedback(lookupUnavailableMessage, "error")' in body
+    assert "submitDocumentLookupFromCompletionCertInput" in body
+    assert 'event.key !== "Enter" || event.isComposing' in body
+    assert "[registrationNumber, email].filter(Boolean).forEach" in body
+    assert 'input.addEventListener("keydown", submitDocumentLookupFromCompletionCertInput)' in body
     assert "lookupBlockedStorageKey" in body
     assert "lookupBlockedClientCacheMs = 60 * 60 * 1000" in body
     assert "readClientLookupBlockedUntil" in body

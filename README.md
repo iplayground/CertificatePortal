@@ -24,7 +24,7 @@ iPlayground 完訓證明系統。
 - 首頁與公開驗證頁支援 `zh-TW` 與 `en-US`，並以 `ipg_locale` cookie 搭配 `Accept-Language` 決定語系
 - 語系切換器只出現在首頁 `/`，切換時由前端直接更新文案，不會整頁重新整理
 - 首頁文件查詢期間會顯示全 window 黑色半透明遮罩，中央使用純白 loading panel 顯示查詢中狀態，並阻擋語系切換與表單操作
-- 完訓證明查詢成功且證書尚未產生時，首頁會顯示「選擇證明顯示方式」UI；目前「產生證書」與「提出修改申請」按鈕尚未接上後續公開 API
+- 完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁會顯示「選擇證明顯示方式」UI；`notIssued` 可進入「修改申請」並寫入 Cosmos DB，`changeRequested` 會顯示處理中提示並隱藏「提出修改申請」
 - 管理平台固定使用繁體中文，入口與子路徑統一收斂在 `/portal...`，不納入 i18n 範圍
 - 共用 alert 元件已支援 i18n；若頁面本身未接入 i18n，alert 文案預設使用 `zh-TW`
 - 首頁與管理平台共用 `/assets/theme.css` 主題 token，並依 `prefers-color-scheme` 切換日夜模式

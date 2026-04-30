@@ -241,6 +241,27 @@ def replace_completion_cert_document(
         raise
 
 
+def upsert_completion_cert_request_document(
+    *,
+    container: CompletionContainer,
+    document: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        return container.upsert_item(body=document)
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise CompletionStoreOperationError(
+                "Cosmos DB 完訓證明修改申請容器不存在。請確認 "
+                "COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER 是否指向已建立的資源。"
+            ) from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise CompletionStoreOperationError(
+                "目前身分沒有 Cosmos DB 完訓證明修改申請容器寫入權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Contributor 權限。"
+            ) from exc
+        raise
+
+
 def upsert_completion_cert_documents(
     *,
     container: CompletionContainer,

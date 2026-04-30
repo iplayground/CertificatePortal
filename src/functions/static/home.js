@@ -17,6 +17,29 @@ const certificateCompanyVisible = document.getElementById("certificate-company-v
 const certificateOptionsBackAction = document.getElementById("certificate-options-back-action");
 const certificateChangeRequestAction = document.getElementById("certificate-change-request-action");
 const certificateGenerateAction = document.getElementById("certificate-generate-action");
+const certificateChangeRequestProcessingFeedback = document.getElementById(
+  "certificate-change-request-processing-feedback"
+);
+const certificateChangeRequestView = document.getElementById("certificate-change-request-view");
+const certificateChangeRequestForm = document.getElementById("certificate-change-request-form");
+const certificateChangeRequestTitle = document.getElementById("certificate-change-request-title");
+const certificateChangeRequestSubtitle = document.getElementById("certificate-change-request-subtitle");
+const certificateChangeRequestEventLabel = document.getElementById("certificate-change-request-event-label");
+const certificateChangeRequestEventValue = document.getElementById("certificate-change-request-event-value");
+const certificateChangeRequestRegistrationNumberLabel = document.getElementById(
+  "certificate-change-request-registration-number-label"
+);
+const certificateChangeRequestRegistrationNumberValue = document.getElementById(
+  "certificate-change-request-registration-number-value"
+);
+const certificateChangeRequestEmailLabel = document.getElementById("certificate-change-request-email-label");
+const certificateChangeRequestEmailValue = document.getElementById("certificate-change-request-email-value");
+const certificateChangeRequestNoteLabel = document.getElementById("certificate-change-request-note-label");
+const certificateChangeRequestNote = document.getElementById("certificate-change-request-note");
+const certificateChangeRequestNoteHint = document.getElementById("certificate-change-request-note-hint");
+const certificateChangeRequestBackAction = document.getElementById("certificate-change-request-back-action");
+const certificateChangeRequestSubmitAction = document.getElementById("certificate-change-request-submit-action");
+const certificateChangeRequestFeedback = document.getElementById("certificate-change-request-feedback");
 const registrationNumber = document.getElementById("registration-number");
 const attendeeName = document.getElementById("attendee-name");
 const email = document.getElementById("email");
@@ -64,6 +87,8 @@ const localeCookieName = homePage.dataset.localeCookieName ?? "ipg_locale";
 const localeCookieMaxAge = Number.parseInt(homePage.dataset.localeCookieMaxAge ?? "31536000", 10);
 const eventsApiPath = homePage.dataset.eventsApiPath ?? "/api/v1/events";
 const documentLookupApiPath = homePage.dataset.documentLookupApiPath ?? "/api/v1/document-lookup";
+const certificateChangeRequestApiPath =
+  homePage.dataset.certificateChangeRequestApiPath ?? "/api/v1/completion-cert-change-requests";
 const lookupBlockedStorageKey = "ipg_document_lookup_blocked_until";
 const lookupBlockedClientCacheMs = 60 * 60 * 1000;
 let emptyNameText = homePage.dataset.emptyNameText ?? "未填寫姓名";
@@ -76,6 +101,9 @@ let lookupBlockedMessage = homePage.dataset.lookupBlockedMessage ?? "查詢失�
 let lookupUnavailableMessage = homePage.dataset.lookupUnavailableMessage ?? "目前暫時無法查詢文件，請稍後再試。";
 let lookupPendingMessage = homePage.dataset.lookupPendingMessage ?? "查詢中，請稍候。";
 let isLookupInProgress = false;
+let isChangeRequestInProgress = false;
+let isChangeRequestSubmitted = false;
+let currentCertificateDocument = null;
 const { installDateTimePicker } = window.iPlaygroundPortalDateTime ?? {};
 
 function parseHomePageI18n() {
@@ -509,6 +537,185 @@ function renderCertificateCompanyOption(documentData) {
   }
 }
 
+function renderCertificateOptionsStatus(documentData) {
+  const isChangeRequested = documentData?.certStatus === "changeRequested";
+  if (certificateChangeRequestAction) {
+    certificateChangeRequestAction.hidden = isChangeRequested;
+  }
+  if (certificateChangeRequestProcessingFeedback) {
+    certificateChangeRequestProcessingFeedback.hidden = !isChangeRequested;
+  }
+}
+
+function updateCertificateChangeRequestSubmitState() {
+  if (!certificateChangeRequestSubmitAction || !certificateChangeRequestNote) {
+    return;
+  }
+
+  certificateChangeRequestSubmitAction.disabled =
+    isChangeRequestInProgress || isChangeRequestSubmitted || certificateChangeRequestNote.value.trim().length === 0;
+}
+
+function clearCertificateChangeRequestFeedback() {
+  if (!certificateChangeRequestFeedback) {
+    return;
+  }
+
+  certificateChangeRequestFeedback.hidden = true;
+  certificateChangeRequestFeedback.classList.remove("is-active", "is-success", "is-error");
+  certificateChangeRequestFeedback.textContent = "";
+}
+
+function showCertificateChangeRequestFeedback(message) {
+  if (!certificateChangeRequestFeedback) {
+    return;
+  }
+
+  certificateChangeRequestFeedback.hidden = false;
+  certificateChangeRequestFeedback.classList.add("is-active", "is-success");
+  certificateChangeRequestFeedback.classList.remove("is-error");
+  certificateChangeRequestFeedback.textContent = message;
+}
+
+function showCertificateChangeRequestError(message) {
+  if (!certificateChangeRequestFeedback) {
+    return;
+  }
+
+  certificateChangeRequestFeedback.hidden = false;
+  certificateChangeRequestFeedback.classList.add("is-active", "is-error");
+  certificateChangeRequestFeedback.classList.remove("is-success");
+  certificateChangeRequestFeedback.textContent = message;
+}
+
+function setChangeRequestBusy(isBusy) {
+  isChangeRequestInProgress = isBusy;
+  certificateChangeRequestForm?.classList.toggle("is-lookup-busy", isBusy);
+  certificateChangeRequestForm?.setAttribute("aria-busy", String(isBusy));
+  [certificateChangeRequestBackAction].filter(Boolean).forEach((control) => {
+    control.disabled = isBusy;
+  });
+  if (certificateChangeRequestNote) {
+    certificateChangeRequestNote.disabled = isBusy || isChangeRequestSubmitted;
+  }
+  updateCertificateChangeRequestSubmitState();
+}
+
+function setChangeRequestSubmitted(isSubmitted) {
+  isChangeRequestSubmitted = isSubmitted;
+  if (certificateChangeRequestNote) {
+    certificateChangeRequestNote.disabled = isSubmitted;
+  }
+  updateCertificateChangeRequestSubmitState();
+}
+
+function renderCertificateChangeRequestSummary() {
+  updateTextContent(certificateChangeRequestEventValue, eventNameInput.value || emptyNameText);
+  updateTextContent(certificateChangeRequestRegistrationNumberValue, registrationNumber.value.trim() || emptyNameText);
+  updateTextContent(certificateChangeRequestEmailValue, email.value.trim() || emptyEmailText);
+}
+
+function buildCertificateChangeRequestPayload() {
+  return {
+    documentType: "completionCert",
+    email: email.value.trim(),
+    eventId: eventNameInput.dataset.eventId ?? "",
+    registrationNumber: registrationNumber.value.trim(),
+    requesterNote: certificateChangeRequestNote?.value.trim() ?? "",
+  };
+}
+
+function resolveChangeRequestFailureMessage(payload) {
+  const code = payload?.error?.code;
+  const message = payload?.error?.message;
+  if (typeof message === "string" && message.trim()) {
+    return message;
+  }
+
+  const fallbackByCode = {
+    change_request_not_allowed: resolveCertificateOptionCopy(
+      "certificate_change_request_not_allowed_message",
+      "此完訓證明目前無法提出修改申請。",
+    ),
+    invalid_change_request: resolveCertificateOptionCopy(
+      "certificate_change_request_invalid_message",
+      "修改申請資料不完整，請確認後再送出。",
+    ),
+    same_origin_required: resolveCertificateOptionCopy(
+      "certificate_change_request_invalid_message",
+      "修改申請資料不完整，請確認後再送出。",
+    ),
+  };
+
+  return fallbackByCode[code] || resolveCertificateOptionCopy(
+    "certificate_change_request_unavailable_message",
+    "目前暫時無法送出修改申請，請稍後再試。",
+  );
+}
+
+async function submitCertificateChangeRequest() {
+  updateCertificateChangeRequestSubmitState();
+  if (certificateChangeRequestSubmitAction?.disabled) {
+    return;
+  }
+
+  setChangeRequestBusy(true);
+  try {
+    const response = await fetch(certificateChangeRequestApiPath, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildCertificateChangeRequestPayload()),
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      showCertificateChangeRequestError(resolveChangeRequestFailureMessage(payload));
+      return;
+    }
+
+    const message = resolveCertificateOptionCopy(
+      "certificate_change_request_submitted_message",
+      "修改申請已送出，管理者確認後會再處理發證。",
+    );
+    showCertificateChangeRequestFeedback(message);
+    if (currentCertificateDocument) {
+      currentCertificateDocument.certStatus = "changeRequested";
+    }
+    setChangeRequestSubmitted(true);
+  } catch {
+    showCertificateChangeRequestError(resolveCertificateOptionCopy(
+      "certificate_change_request_unavailable_message",
+      "目前暫時無法送出修改申請，請稍後再試。",
+    ));
+  } finally {
+    setChangeRequestBusy(false);
+  }
+}
+
+function showCertificateChangeRequest() {
+  if (!certificateChangeRequestView || !currentCertificateDocument) {
+    return;
+  }
+
+  renderCertificateChangeRequestSummary();
+  certificateOptionsView.hidden = true;
+  certificateChangeRequestView.hidden = false;
+  clearCertificateChangeRequestFeedback();
+  setChangeRequestSubmitted(currentCertificateDocument.certStatus === "changeRequested");
+  updateCertificateChangeRequestSubmitState();
+  certificateChangeRequestView.focus?.();
+}
+
+function showCertificateOptionsFromChangeRequest() {
+  certificateChangeRequestView.hidden = true;
+  certificateOptionsView.hidden = false;
+  certificateOptionsView.focus?.();
+}
+
 function setDocumentLookupFieldsLocked(isLocked) {
   documentRequestForm.classList.toggle("is-certificate-options-active", isLocked);
   [
@@ -524,15 +731,22 @@ function setDocumentLookupFieldsLocked(isLocked) {
 }
 
 function showCertificateOptions(documentData) {
+  currentCertificateDocument = documentData;
   renderCertificateNameOptions(documentData);
   renderCertificateCompanyOption(documentData);
+  renderCertificateOptionsStatus(documentData);
   setDocumentLookupFieldsLocked(true);
+  certificateChangeRequestView.hidden = true;
   certificateOptionsView.hidden = false;
   certificateOptionsView.focus?.();
 }
 
 function showDocumentLookupForm() {
   certificateOptionsView.hidden = true;
+  certificateChangeRequestView.hidden = true;
+  currentCertificateDocument = null;
+  setChangeRequestSubmitted(false);
+  clearCertificateChangeRequestFeedback();
   setDocumentLookupFieldsLocked(false);
   updatePreviewActionState();
   previewAction.focus();
@@ -696,7 +910,7 @@ function clearLookupFeedback() {
 }
 
 function shouldShowCertificateOptions(documentData) {
-  return documentData?.certStatus === "notIssued";
+  return ["notIssued", "changeRequested"].includes(documentData?.certStatus);
 }
 
 function readClientLookupBlockedUntil() {
@@ -829,6 +1043,20 @@ async function submitDocumentLookup() {
   showCertificateOptions(successfulDocument);
 }
 
+function submitDocumentLookupFromCompletionCertInput(event) {
+  if (event.key !== "Enter" || event.isComposing) {
+    return;
+  }
+
+  event.preventDefault();
+  updatePreviewActionState();
+  if (previewAction.disabled) {
+    return;
+  }
+
+  void submitDocumentLookup();
+}
+
 function applyHomePageLocale(nextLocale) {
   const bundle = getLocaleBundle(nextLocale);
   if (!bundle) {
@@ -910,6 +1138,19 @@ function applyHomePageLocale(nextLocale) {
   updateTextContent(certificateOptionsBackAction, homePageCopy.certificate_options_back_action_label);
   updateTextContent(certificateChangeRequestAction, homePageCopy.certificate_change_request_action_label);
   updateTextContent(certificateGenerateAction, homePageCopy.certificate_generate_action_label);
+  updateTextContent(
+    certificateChangeRequestProcessingFeedback,
+    homePageCopy.certificate_change_request_processing_message,
+  );
+  updateTextContent(certificateChangeRequestTitle, homePageCopy.certificate_change_request_title);
+  updateTextContent(certificateChangeRequestSubtitle, homePageCopy.certificate_change_request_subtitle);
+  updateTextContent(certificateChangeRequestEventLabel, homePageCopy.certificate_change_request_event_label);
+  updateTextContent(certificateChangeRequestRegistrationNumberLabel, homePageCopy.registration_number_label);
+  updateTextContent(certificateChangeRequestEmailLabel, homePageCopy.email_label);
+  updateTextContent(certificateChangeRequestNoteLabel, homePageCopy.certificate_change_request_note_label);
+  updateTextContent(certificateChangeRequestNoteHint, homePageCopy.certificate_change_request_note_hint);
+  updateTextContent(certificateChangeRequestBackAction, homePageCopy.certificate_change_request_back_action_label);
+  updateTextContent(certificateChangeRequestSubmitAction, homePageCopy.certificate_change_request_submit_action_label);
   updateTextContent(copyrightNotice, homePageCopy.copyright_notice);
 
   if (typeof homePageCopy.registration_number_placeholder === "string") {
@@ -930,6 +1171,14 @@ function applyHomePageLocale(nextLocale) {
 
   if (typeof homePageCopy.generated_at_placeholder === "string") {
     generatedAt.placeholder = homePageCopy.generated_at_placeholder;
+  }
+
+  if (certificateChangeRequestNote && typeof homePageCopy.certificate_change_request_note_placeholder === "string") {
+    certificateChangeRequestNote.placeholder = homePageCopy.certificate_change_request_note_placeholder;
+  }
+
+  if (currentCertificateDocument && !certificateChangeRequestView.hidden) {
+    renderCertificateChangeRequestSummary();
   }
 
   if (typeof homePageCopy.empty_name_text === "string") {
@@ -1370,8 +1619,30 @@ previewAction.addEventListener("click", () => {
   void submitDocumentLookup();
 });
 
+[registrationNumber, email].filter(Boolean).forEach((input) => {
+  input.addEventListener("keydown", submitDocumentLookupFromCompletionCertInput);
+});
+
 certificateOptionsBackAction?.addEventListener("click", () => {
   showDocumentLookupForm();
+});
+
+certificateChangeRequestAction?.addEventListener("click", () => {
+  showCertificateChangeRequest();
+});
+
+certificateChangeRequestBackAction?.addEventListener("click", () => {
+  showCertificateOptionsFromChangeRequest();
+});
+
+certificateChangeRequestNote?.addEventListener("input", () => {
+  clearCertificateChangeRequestFeedback();
+  updateCertificateChangeRequestSubmitState();
+});
+
+certificateChangeRequestForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void submitCertificateChangeRequest();
 });
 
 [registrationNumber, attendeeName, email, businessTaxId, generatedAt].filter(Boolean).forEach((input) => {

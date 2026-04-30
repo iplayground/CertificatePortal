@@ -38,6 +38,7 @@
     data-locale-cookie-max-age="{{locale_cookie_max_age}}"
     data-events-api-path="{{events_api_path}}"
     data-document-lookup-api-path="{{document_lookup_api_path}}"
+    data-certificate-change-request-api-path="{{certificate_change_request_api_path}}"
   >
     <div class="shell">
       <main class="hero">
@@ -206,10 +207,64 @@
                 </label>
               </div>
 
+              <div
+                id="certificate-change-request-processing-feedback"
+                class="feedback is-active is-success"
+                role="status"
+                aria-live="polite"
+                hidden
+              >{{certificate_change_request_processing_message}}</div>
+
               <div class="form-actions certificate-actions">
                 <button class="secondary-action" type="button" id="certificate-options-back-action">{{certificate_options_back_action_label}}</button>
                 <button class="primary-action" type="button" id="certificate-generate-action">{{certificate_generate_action_label}}</button>
                 <button class="brand-square-action certificate-change-request-action" type="button" id="certificate-change-request-action">{{certificate_change_request_action_label}}</button>
+              </div>
+            </section>
+
+            <section class="certificate-change-request-view" id="certificate-change-request-view" hidden tabindex="-1" aria-labelledby="certificate-change-request-title">
+              <div class="certificate-options-header">
+                <h2 class="options-title" id="certificate-change-request-title">{{certificate_change_request_title}}</h2>
+                <p class="options-subtitle" id="certificate-change-request-subtitle">{{certificate_change_request_subtitle}}</p>
+              </div>
+
+              <dl class="certificate-summary-list" aria-label="{{certificate_change_request_summary_label}}">
+                <div>
+                  <dt id="certificate-change-request-event-label">{{certificate_change_request_event_label}}</dt>
+                  <dd id="certificate-change-request-event-value"></dd>
+                </div>
+                <div>
+                  <dt id="certificate-change-request-registration-number-label">{{registration_number_label}}</dt>
+                  <dd id="certificate-change-request-registration-number-value"></dd>
+                </div>
+                <div>
+                  <dt id="certificate-change-request-email-label">{{email_label}}</dt>
+                  <dd id="certificate-change-request-email-value"></dd>
+                </div>
+              </dl>
+
+              <form id="certificate-change-request-form" class="certificate-change-request-form">
+                <div class="field certificate-change-request-note-field">
+                  <span class="field-label" id="certificate-change-request-note-label">{{certificate_change_request_note_label}}</span>
+                  <div class="certificate-change-request-textarea-shell">
+                    <textarea
+                      id="certificate-change-request-note"
+                      name="requesterNote"
+                      rows="3"
+                      maxlength="600"
+                      aria-labelledby="certificate-change-request-note-label"
+                      placeholder="{{certificate_change_request_note_placeholder}}"
+                    ></textarea>
+                  </div>
+                  <p class="hint" id="certificate-change-request-note-hint">{{certificate_change_request_note_hint}}</p>
+                </div>
+
+                <div id="certificate-change-request-feedback" class="feedback" role="status" aria-live="polite" hidden></div>
+              </form>
+
+              <div class="form-actions certificate-actions">
+                <button class="secondary-action" type="button" id="certificate-change-request-back-action">{{certificate_change_request_back_action_label}}</button>
+                <button class="primary-action" type="submit" id="certificate-change-request-submit-action" form="certificate-change-request-form" disabled>{{certificate_change_request_submit_action_label}}</button>
               </div>
             </section>
           </div>
