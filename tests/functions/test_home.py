@@ -113,6 +113,41 @@ class FakeCompletionCertsContainer:
         ][:1]
 
 
+class FakeEventsContainer:
+    def __init__(self, items: dict[str, dict[str, Any]] | None = None) -> None:
+        self.items = items or {
+            "evt_1": {
+                "id": "evt_1",
+                "name": "iPlayground 2026",
+                "status": "open",
+                "documentTypes": ["completionCert"],
+                "completionCertDownloadStartsAt": None,
+            }
+        }
+
+    def read_item(self, item: str, partition_key: str) -> dict[str, Any]:
+        assert item == partition_key
+        if item not in self.items:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+
+        return self.items[item]
+
+    def query_items(
+        self,
+        query: str,
+        *,
+        enable_cross_partition_query: bool,
+    ) -> list[dict[str, Any]]:
+        return list(self.items.values())
+
+
+@pytest.fixture(autouse=True)
+def use_open_public_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.functions.home.get_events_container", lambda: FakeEventsContainer())
+
+
 def build_document_lookup_request(
     *,
     body: dict[str, Any],
@@ -221,6 +256,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     ) in body
     assert '<button class="primary-action" type="button" id="preview-action" disabled>查詢文件</button>' in body
     assert 'data-lookup-pending-message="查詢中，請稍候。"' in body
+    assert 'data-lookup-not-available-yet-message="完訓證明尚未開放下載，請於開放時間後再查詢。"' in body
     assert 'id="page-loading-overlay"' in body
     assert 'class="page-loading-panel"' in body
     assert 'class="page-loading-indicator"' in body
@@ -549,6 +585,107 @@ def test_public_document_lookup_api_skips_attempt_record_without_forwarded_for(
     assert response.status_code == 404
     assert '"code":"document_not_found"' in body
     assert attempts_container.items == {}
+
+
+def test_public_document_lookup_api_blocks_completion_lookup_before_download_opens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts_container = FakeLookupAttemptsContainer()
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: attempts_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_events_container",
+        lambda: FakeEventsContainer(
+            {
+                "evt_1": {
+                    "id": "evt_1",
+                    "name": "iPlayground 2026",
+                    "status": "open",
+                    "documentTypes": ["completionCert"],
+                    "completionCertDownloadStartsAt": "2999-04-27T12:38:00Z",
+                }
+            }
+        ),
+    )
+
+    def fail_if_querying_completion_records() -> object:
+        raise AssertionError("unavailable certificates should not query completion records")
+
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        fail_if_querying_completion_records,
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 403
+    assert '"code":"document_not_available_yet"' in body
+    assert "完訓證明尚未開放下載" in body
+    attempt_document = next(iter(attempts_container.items.values()))
+    assert attempt_document["notAvailableCount"] == 1
+    assert attempt_document["blockedUntil"] is None
+
+
+def test_public_document_lookup_api_blocks_ip_after_tenth_unavailable_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts_container = FakeLookupAttemptsContainer()
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: attempts_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_events_container",
+        lambda: FakeEventsContainer(
+            {
+                "evt_1": {
+                    "id": "evt_1",
+                    "name": "iPlayground 2026",
+                    "status": "open",
+                    "documentTypes": ["completionCert"],
+                    "completionCertDownloadStartsAt": "2999-04-27T12:38:00Z",
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(),
+    )
+
+    responses = [
+        public_document_lookup_api(
+            build_document_lookup_request(
+                body={
+                    "documentType": "completionCert",
+                    "eventId": "evt_1",
+                    "registrationNumber": "100",
+                    "email": "ming@example.com",
+                },
+            )
+        )
+        for _ in range(10)
+    ]
+    blocked_body = responses[-1].get_body().decode("utf-8")
+    attempt_document = next(iter(attempts_container.items.values()))
+
+    assert [response.status_code for response in responses] == [403] * 9 + [429]
+    assert '"code":"lookup_blocked"' in blocked_body
+    assert "暫停查詢 12 小時" in blocked_body
+    assert attempt_document["notAvailableCount"] == 10
+    assert attempt_document["blockedUntil"] is not None
 
 
 def test_public_document_lookup_api_blocks_ip_after_fifth_failure(
@@ -981,6 +1118,7 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "fetch(documentLookupApiPath" in body
     assert "resolveLookupFailureMessage" in body
     assert "lookup_blocked" in body
+    assert "document_not_available_yet" in body
     assert 'showLookupFeedback(resolveLookupFailureMessage(payload), "error")' in body
     assert 'showLookupFeedback(lookupUnavailableMessage, "error")' in body
     assert "lookupBlockedStorageKey" in body
@@ -990,6 +1128,7 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "window.localStorage.setItem" in body
     assert "window.localStorage.removeItem" in body
     assert "lookup_not_found_message" in body
+    assert "lookup_not_available_yet_message" in body
     assert "lookup_pending_message" in body
     assert "[registrationNumber, attendeeName, email, businessTaxId, generatedAt].filter(Boolean).forEach" in body
     assert 'input.addEventListener("input", updatePreviewActionState)' in body

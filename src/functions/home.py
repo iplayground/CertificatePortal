@@ -24,7 +24,9 @@ from src.shared.event_store import (
     EventStoreOperationError,
     get_events_container,
     list_public_event_documents,
+    read_public_event_document,
 )
+from src.shared.datetime_values import parse_utc_iso_datetime
 from src.shared.i18n import get_home_page_context, localized_response_headers, resolve_locale
 from src.shared.public_lookup_store import (
     PublicLookupStoreConfigurationError,
@@ -37,6 +39,7 @@ from src.shared.public_lookup_store import (
     read_public_lookup_cached_attempt_document,
     read_public_lookup_attempt_document,
     record_public_lookup_failure,
+    record_public_lookup_not_available,
     record_public_lookup_success,
     remember_public_lookup_attempt_document,
     remember_public_lookup_block,
@@ -62,6 +65,7 @@ HOME_LOOKUP_BLOCKED_REMAINING_MINUTES_MESSAGE_TEMPLATE = (
     "查詢失敗次數過多，已暫停查詢 {minutes} 分鐘。"
 )
 HOME_LOOKUP_UNAVAILABLE_MESSAGE = "目前暫時無法查詢文件，請稍後再試。"
+HOME_LOOKUP_NOT_AVAILABLE_YET_MESSAGE = "完訓證明尚未開放下載，請於開放時間後再查詢。"
 
 
 @lru_cache(maxsize=1)
@@ -264,11 +268,50 @@ def lookup_public_document(payload: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
+def is_completion_cert_lookup_available(payload: dict[str, Any]) -> bool | None:
+    if payload["documentType"] != "completionCert":
+        return True
+
+    event_document = read_public_event_document(
+        container=get_events_container(),
+        event_id=payload["eventId"],
+    )
+    if event_document is None:
+        return None
+
+    if str(event_document.get("status", "")).strip() != "open":
+        return None
+
+    document_types = event_document.get("documentTypes")
+    if not isinstance(document_types, list) or "completionCert" not in document_types:
+        return None
+
+    download_starts_at = str(
+        event_document.get("completionCertDownloadStartsAt") or ""
+    ).strip()
+    if not download_starts_at:
+        return True
+
+    parsed_download_starts_at = parse_utc_iso_datetime(download_starts_at)
+    if parsed_download_starts_at is None:
+        return True
+
+    return parsed_download_starts_at <= datetime.now(timezone.utc)
+
+
 def build_document_lookup_not_found_response() -> func.HttpResponse:
     return build_home_api_error_response(
         404,
         "document_not_found",
         HOME_LOOKUP_NOT_FOUND_MESSAGE,
+    )
+
+
+def build_document_lookup_not_available_yet_response() -> func.HttpResponse:
+    return build_home_api_error_response(
+        403,
+        "document_not_available_yet",
+        HOME_LOOKUP_NOT_AVAILABLE_YET_MESSAGE,
     )
 
 
@@ -357,6 +400,24 @@ def schedule_public_lookup_failure_record(
         return None
 
 
+def schedule_public_lookup_not_available_record(
+    *,
+    attempt_id: str,
+    attempt_document: dict[str, Any] | None,
+    ip_address: str,
+) -> dict[str, Any] | None:
+    future = PUBLIC_LOOKUP_STORE_EXECUTOR.submit(
+        _record_public_lookup_not_available_for_cache,
+        attempt_id,
+        attempt_document,
+        ip_address,
+    )
+    try:
+        return future.result(timeout=PUBLIC_LOOKUP_STORE_WAIT_SECONDS)
+    except TimeoutError:
+        return None
+
+
 def schedule_public_lookup_success_record(
     *,
     attempt_id: str,
@@ -409,6 +470,38 @@ def _record_public_lookup_failure_for_cache(
     except (PublicLookupStoreConfigurationError, PublicLookupStoreOperationError):
         LOGGER.warning(
             "Public lookup failure count could not be recorded.",
+            exc_info=True,
+        )
+        return None
+
+    remember_public_lookup_attempt_document(
+        attempt_id=attempt_id,
+        attempt_document=updated_attempt_document,
+    )
+    if is_public_lookup_blocked(attempt_document=updated_attempt_document):
+        remember_public_lookup_block(
+            attempt_id=attempt_id,
+            attempt_document=updated_attempt_document,
+        )
+
+    return updated_attempt_document
+
+
+def _record_public_lookup_not_available_for_cache(
+    attempt_id: str,
+    attempt_document: dict[str, Any] | None,
+    ip_address: str,
+) -> dict[str, Any] | None:
+    try:
+        updated_attempt_document = record_public_lookup_not_available(
+            attempt_id=attempt_id,
+            container=get_public_lookup_attempts_container(),
+            existing_document=attempt_document,
+            ip_address=ip_address,
+        )
+    except (PublicLookupStoreConfigurationError, PublicLookupStoreOperationError):
+        LOGGER.warning(
+            "Public lookup not-available count could not be recorded.",
             exc_info=True,
         )
         return None
@@ -668,7 +761,9 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
     client_ip = resolve_public_lookup_client_ip(req)
     attempt_id = build_public_lookup_attempt_id(client_ip) if client_ip else None
     if attempt_id is not None and is_public_lookup_blocked_by_local_cache(attempt_id=attempt_id):
-        return build_document_lookup_blocked_response()
+        return build_document_lookup_blocked_response(
+            read_public_lookup_cached_attempt_document(attempt_id=attempt_id)
+        )
 
     try:
         attempt_document = (
@@ -684,6 +779,30 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
             return build_document_lookup_blocked_response(attempt_document)
 
         payload = parse_document_lookup_payload(req)
+        lookup_available = (
+            is_completion_cert_lookup_available(payload)
+            if payload is not None
+            else None
+        )
+        if lookup_available is False:
+            updated_attempt_document = (
+                schedule_public_lookup_not_available_record(
+                    attempt_id=attempt_id,
+                    attempt_document=attempt_document,
+                    ip_address=client_ip,
+                )
+                if attempt_id is not None and client_ip is not None
+                else None
+            )
+            if attempt_id is not None and is_public_lookup_blocked(attempt_document=updated_attempt_document):
+                remember_public_lookup_block(
+                    attempt_id=attempt_id,
+                    attempt_document=updated_attempt_document or {},
+                )
+                return build_document_lookup_blocked_response(updated_attempt_document)
+
+            return build_document_lookup_not_available_yet_response()
+
         document = lookup_public_document(payload) if payload else None
         if document is None:
             updated_attempt_document = (
@@ -713,6 +832,8 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
     except (
         CompletionStoreConfigurationError,
         CompletionStoreOperationError,
+        EventStoreConfigurationError,
+        EventStoreOperationError,
     ):
         return build_document_lookup_unavailable_response()
 

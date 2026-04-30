@@ -72,6 +72,7 @@ HOME_PAGE_COPY_KEYS = frozenset(
         "generated_at_placeholder",
         "preview_action_label",
         "lookup_not_found_message",
+        "lookup_not_available_yet_message",
         "lookup_blocked_message",
         "lookup_unavailable_message",
         "lookup_pending_message",

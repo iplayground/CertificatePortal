@@ -112,10 +112,10 @@ def build_event_id(idempotency_key: str, *, actor: str) -> str:
 ```sql
 SELECT c.id, c.name, c.status, c.documentTypes, c.completionCertDownloadStartsAt
 FROM c
-ORDER BY c.updatedAt DESC
+ORDER BY c.createdAt DESC
 ```
 
-活動清單只投影管理端 UI 需要的欄位，並依最後更新時間由新到舊排序。
+活動清單只投影管理端 UI 需要的欄位，並依建立時間由新到舊排序。
 
 公開首頁活動清單：
 
@@ -123,7 +123,7 @@ ORDER BY c.updatedAt DESC
 SELECT c.id, c.name, c.documentTypes, c.completionCertDownloadStartsAt
 FROM c
 WHERE c.status = 'open'
-ORDER BY c.updatedAt DESC
+ORDER BY c.createdAt DESC
 ```
 
 公開首頁只讀取狀態為 `open` 的活動，並只投影會眾選擇活動與文件類型所需欄位；`documentTypes` 可以是空陣列，代表首頁應顯示活動但提示尚無可申請文件。不得在公開頁面輸出管理端稽核欄位或其他不必要的個人資料。
@@ -300,6 +300,9 @@ partition key: /id
 | `failureCount` | int | 目前 24 小時失敗視窗內的連續失敗次數 |
 | `firstFailedAt` | string \| null | 目前失敗視窗的第一次失敗時間，UTC ISO 8601 |
 | `lastFailedAt` | string \| null | 最近一次失敗時間，UTC ISO 8601 |
+| `notAvailableCount` | int | 目前 24 小時內查詢尚未開放完訓證明的次數 |
+| `firstNotAvailableAt` | string \| null | 目前未開放查詢視窗的第一次查詢時間，UTC ISO 8601 |
+| `lastNotAvailableAt` | string \| null | 最近一次未開放查詢時間，UTC ISO 8601 |
 | `blockedUntil` | string \| null | 封鎖到期時間，UTC ISO 8601；未封鎖時為 null |
 | `updatedAt` | string | 最後更新時間，UTC ISO 8601 |
 
@@ -307,9 +310,10 @@ partition key: /id
 
 - IP 來源只使用 `X-Forwarded-For` 的第一個值，並移除 IPv4 `host:port` 與 bracketed IPv6 `[host]:port` 的 port；本機 `func start` 直連通常不會自動帶此 header，需由測試請求自行明確提供。
 - 同一 IP 在 24 小時內連續查詢失敗 5 次後，`blockedUntil` 設為開始封鎖時間加 24 小時。
+- 同一 IP 在 24 小時內查詢尚未開放的完訓證明 10 次後，`blockedUntil` 設為開始封鎖時間加 12 小時；此計數與一般查不到資料的 `failureCount` 分開記錄。
 - 封鎖期間公開查詢 API 直接回覆封鎖錯誤，不查詢文件資料。
 - 對使用者顯示的封鎖訊息不得提到 IP；若可取得 `blockedUntil`，滿 1 小時以上以小時計算並無條件進位，不足 1 小時以分鐘計算並無條件進位，不足 1 分鐘顯示 1 分鐘。
-- 查詢成功時，將 `failureCount` 歸零並清除 `firstFailedAt`、`lastFailedAt` 與 `blockedUntil`。
+- 查詢成功時，將 `failureCount` 與 `notAvailableCount` 歸零，並清除對應時間欄位與 `blockedUntil`。
 - 對使用者顯示的失敗訊息不得指出哪個欄位錯誤，也不得提示剩餘嘗試次數。
 - 此 container 只供公開查詢限制使用；公開查詢流程對此 container 的 point read 與 upsert 最多等待 5 秒，若 Cosmos DB 提前回應就立即使用結果，避免 Cosmos DB 延遲讓首頁查詢長時間卡住。
 - Functions worker 可在記憶體中快取已封鎖 attempt id 與 `blockedUntil`，讓封鎖期間的後續查詢不必每次讀取 Cosmos DB；此快取不得用於放行，只能用於提早拒絕，且即使 DB 文件異常帶有更遠的 `blockedUntil`，本機快取也不得超過 1 小時。

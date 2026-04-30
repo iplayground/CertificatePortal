@@ -31,6 +31,7 @@
     "generated_at_placeholder": "---- / -- / -- --:--:--",
     "preview_action_label": "查詢文件",
     "lookup_not_found_message": "查不到符合條件的文件，請確認資料後再試。",
+    "lookup_not_available_yet_message": "完訓證明尚未開放下載，請於開放時間後再查詢。",
     "lookup_blocked_message": "查詢失敗次數過多，已暫停查詢 24 小時。",
     "lookup_unavailable_message": "目前暫時無法查詢文件，請稍後再試。",
     "lookup_pending_message": "查詢中，請稍候。",

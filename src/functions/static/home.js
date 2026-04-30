@@ -58,6 +58,8 @@ let emptyNameText = homePage.dataset.emptyNameText ?? "未填寫姓名";
 let emptyEmailText = homePage.dataset.emptyEmailText ?? "未填寫 email";
 let previewFeedbackTemplate = homePage.dataset.previewFeedbackTemplate ?? "";
 let lookupNotFoundMessage = homePage.dataset.lookupNotFoundMessage ?? "查不到符合條件的文件，請確認資料後再試。";
+let lookupNotAvailableYetMessage =
+  homePage.dataset.lookupNotAvailableYetMessage ?? "完訓證明尚未開放下載，請於開放時間後再查詢。";
 let lookupBlockedMessage = homePage.dataset.lookupBlockedMessage ?? "查詢失敗次數過多，已暫停查詢 24 小時。";
 let lookupUnavailableMessage = homePage.dataset.lookupUnavailableMessage ?? "目前暫時無法查詢文件，請稍後再試。";
 let lookupPendingMessage = homePage.dataset.lookupPendingMessage ?? "查詢中，請稍候。";
@@ -550,6 +552,14 @@ function resolveLookupFailureMessage(payload) {
     return lookupUnavailableMessage;
   }
 
+  if (code === "document_not_available_yet") {
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+
+    return lookupNotAvailableYetMessage;
+  }
+
   return lookupNotFoundMessage;
 }
 
@@ -568,6 +578,28 @@ function readClientLookupBlockedUntil() {
       return null;
     }
 
+    if (value.trim().startsWith("{")) {
+      const payload = JSON.parse(value);
+      const timestamp = Number.parseInt(String(payload?.until ?? ""), 10);
+      if (!Number.isFinite(timestamp)) {
+        window.localStorage.removeItem(lookupBlockedStorageKey);
+        return null;
+      }
+
+      if (timestamp <= Date.now()) {
+        window.localStorage.removeItem(lookupBlockedStorageKey);
+        return null;
+      }
+
+      return {
+        message:
+          typeof payload?.message === "string" && payload.message.trim()
+            ? payload.message
+            : lookupBlockedMessage,
+        until: timestamp,
+      };
+    }
+
     const timestamp = Number.parseInt(value, 10);
     if (!Number.isFinite(timestamp)) {
       window.localStorage.removeItem(lookupBlockedStorageKey);
@@ -579,18 +611,21 @@ function readClientLookupBlockedUntil() {
       return null;
     }
 
-    return timestamp;
+    return {
+      message: lookupBlockedMessage,
+      until: timestamp,
+    };
   } catch {
     return null;
   }
 }
 
-function rememberClientLookupBlock() {
+function rememberClientLookupBlock(message = lookupBlockedMessage) {
   try {
-    window.localStorage.setItem(
-      lookupBlockedStorageKey,
-      String(Date.now() + lookupBlockedClientCacheMs),
-    );
+    window.localStorage.setItem(lookupBlockedStorageKey, JSON.stringify({
+      message,
+      until: Date.now() + lookupBlockedClientCacheMs,
+    }));
   } catch {
     return;
   }
@@ -605,8 +640,9 @@ function clearClientLookupBlock() {
 }
 
 async function submitDocumentLookup() {
-  if (readClientLookupBlockedUntil() !== null) {
-    showLookupFeedback(lookupBlockedMessage, "error");
+  const clientLookupBlock = readClientLookupBlockedUntil();
+  if (clientLookupBlock !== null) {
+    showLookupFeedback(clientLookupBlock.message, "error");
     return;
   }
 
@@ -632,7 +668,7 @@ async function submitDocumentLookup() {
 
     if (!response.ok) {
       if (payload?.error?.code === "lookup_blocked") {
-        rememberClientLookupBlock();
+        rememberClientLookupBlock(resolveLookupFailureMessage(payload));
       }
       showLookupFeedback(resolveLookupFailureMessage(payload), "error");
       return;
@@ -768,6 +804,11 @@ function applyHomePageLocale(nextLocale) {
   if (typeof homePageCopy.lookup_not_found_message === "string") {
     lookupNotFoundMessage = homePageCopy.lookup_not_found_message;
     homePage.dataset.lookupNotFoundMessage = lookupNotFoundMessage;
+  }
+
+  if (typeof homePageCopy.lookup_not_available_yet_message === "string") {
+    lookupNotAvailableYetMessage = homePageCopy.lookup_not_available_yet_message;
+    homePage.dataset.lookupNotAvailableYetMessage = lookupNotAvailableYetMessage;
   }
 
   if (typeof homePageCopy.lookup_blocked_message === "string") {

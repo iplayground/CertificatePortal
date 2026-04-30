@@ -10,7 +10,7 @@ iPlayground 完訓證明系統。
 - 管理平台登入入口 `/portal`
 - 公開驗證頁面 `/verify/{certId}`
 
-首頁與管理平台目前為 HTML 頁面，公開驗證頁面仍為純文字；首頁活動清單、完訓證明查詢與公開查詢失敗限制已串接 Cosmos DB。
+首頁與管理平台目前為 HTML 頁面，公開驗證頁面仍為純文字；首頁活動清單、完訓證明查詢與公開查詢限制已串接 Cosmos DB。
 
 管理平台目前已建立 Google Workspace SSO + Google Group 授權基線：
 
@@ -133,7 +133,7 @@ PYTHONPATH=. pytest
 - `local.settings.json.example` 是可提交的模板；Azure 資源相關欄位預設留空，需由開發者自行填入。實際使用的 `local.settings.json` 仍維持忽略，不進 git。
 - `local.settings.json` 內已設定 `AzureWebJobsDisableHomepage=true`，避免根目錄顯示 Azure Functions 預設首頁。
 - 目前未接 Azurite 或實體 Storage Account，因此本機啟動時可能看到 `AzureWebJobsStorage` 的 unhealthy 訊息；在 `--skip-azure-storage-check` 下，這不影響目前首頁、靜態資產路由與公開驗證頁面。
-- `COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER`、`COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER` 與 `COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER` 是 Cosmos DB 連線設定；目前 IaC 建立 serverless account、database、活動管理用的 `events` container、完訓證明用的 `completionCerts` 與 `completionCertRequests` containers，以及公開查詢失敗限制用的 `publicLookupAttempts` container。
+- `COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER`、`COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER` 與 `COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER` 是 Cosmos DB 連線設定；目前 IaC 建立 serverless account、database、活動管理用的 `events` container、完訓證明用的 `completionCerts` 與 `completionCertRequests` containers，以及公開查詢限制用的 `publicLookupAttempts` container。
 - 管理平台入口現已統一使用 `/portal`，避免與 Azure Functions runtime 內建保留的 `/admin` 路徑衝突。
 - `/portal` 正式環境目前應明確設定 `PORTAL_GOOGLE_CLIENT_ID`、`PORTAL_GOOGLE_CLIENT_SECRET`、`PORTAL_GOOGLE_REDIRECT_URI` 與 `PORTAL_GOOGLE_ALLOWED_GROUP_KEYS`；建議以 Azure CLI 或 Key Vault reference 寫入 app settings，詳細流程請參考 [docs/portal-authentication.md](docs/portal-authentication.md)。
 - 會異動資料的管理 API 會檢查同源請求與 CSRF token；可選擇設定 `PORTAL_CSRF_SECRET` 作為 CSRF 簽章密鑰，未設定時會優先沿用 `PORTAL_GOOGLE_CLIENT_SECRET`。

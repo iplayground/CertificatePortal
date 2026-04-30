@@ -13,6 +13,7 @@ from src.shared.public_lookup_store import (
     is_public_lookup_blocked_by_local_cache,
     remember_public_lookup_block,
     record_public_lookup_failure,
+    record_public_lookup_not_available,
     record_public_lookup_success,
 )
 
@@ -60,6 +61,7 @@ def test_record_public_lookup_failure_blocks_on_fifth_failure_in_24_hours() -> N
 
     assert existing_document["ipAddress"] == "203.0.113.10"
     assert existing_document["failureCount"] == 5
+    assert existing_document["notAvailableCount"] == 0
     assert existing_document["blockedUntil"] == "2026-04-30T00:04:00Z"
     assert all(
         option["timeout"] == PUBLIC_LOOKUP_COSMOS_TIMEOUT_SECONDS
@@ -143,6 +145,60 @@ def test_record_public_lookup_failure_resets_window_after_24_hours() -> None:
     assert updated_document["blockedUntil"] is None
 
 
+def test_record_public_lookup_not_available_blocks_on_tenth_attempt_in_24_hours() -> None:
+    container = FakeLookupAttemptsContainer()
+    attempt_id = build_public_lookup_attempt_id("203.0.113.10")
+    existing_document = None
+    for index in range(10):
+        existing_document = record_public_lookup_not_available(
+            attempt_id=attempt_id,
+            container=container,
+            existing_document=existing_document,
+            ip_address="203.0.113.10",
+            now=f"2026-04-29T00:{index:02}:00Z",
+        )
+
+    assert existing_document["ipAddress"] == "203.0.113.10"
+    assert existing_document["failureCount"] == 0
+    assert existing_document["notAvailableCount"] == 10
+    assert existing_document["firstNotAvailableAt"] == "2026-04-29T00:00:00Z"
+    assert existing_document["lastNotAvailableAt"] == "2026-04-29T00:09:00Z"
+    assert existing_document["blockedUntil"] == "2026-04-29T12:09:00Z"
+    assert is_public_lookup_blocked(
+        attempt_document=existing_document,
+        now="2026-04-29T00:10:00Z",
+    )
+
+
+def test_record_public_lookup_not_available_resets_window_after_24_hours() -> None:
+    container = FakeLookupAttemptsContainer()
+    attempt_id = build_public_lookup_attempt_id("203.0.113.10")
+    existing_document = {
+        "id": attempt_id,
+        "failureCount": 2,
+        "firstFailedAt": "2026-04-29T00:00:00Z",
+        "lastFailedAt": "2026-04-29T00:02:00Z",
+        "notAvailableCount": 9,
+        "firstNotAvailableAt": "2026-04-28T00:00:00Z",
+        "lastNotAvailableAt": "2026-04-28T00:09:00Z",
+        "blockedUntil": None,
+        "updatedAt": "2026-04-28T00:09:00Z",
+    }
+
+    updated_document = record_public_lookup_not_available(
+        attempt_id=attempt_id,
+        container=container,
+        existing_document=existing_document,
+        ip_address="203.0.113.10",
+        now="2026-04-29T00:00:00Z",
+    )
+
+    assert updated_document["failureCount"] == 2
+    assert updated_document["notAvailableCount"] == 1
+    assert updated_document["firstNotAvailableAt"] == "2026-04-29T00:00:00Z"
+    assert updated_document["blockedUntil"] is None
+
+
 def test_record_public_lookup_success_resets_failure_state() -> None:
     container = FakeLookupAttemptsContainer()
     attempt_id = build_public_lookup_attempt_id("203.0.113.10")
@@ -160,6 +216,9 @@ def test_record_public_lookup_success_resets_failure_state() -> None:
         "failureCount": 0,
         "firstFailedAt": None,
         "lastFailedAt": None,
+        "notAvailableCount": 0,
+        "firstNotAvailableAt": None,
+        "lastNotAvailableAt": None,
         "blockedUntil": None,
         "updatedAt": "2026-04-29T00:10:00Z",
     }

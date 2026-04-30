@@ -31,6 +31,7 @@
     "generated_at_placeholder": "---- / -- / -- --:--:--",
     "preview_action_label": "Look Up Documents",
     "lookup_not_found_message": "No matching document was found. Please check your information and try again.",
+    "lookup_not_available_yet_message": "Completion certificates are not available for download yet. Please try again after the opening time.",
     "lookup_blocked_message": "Too many failed lookups. Lookup is paused for 24 hours.",
     "lookup_unavailable_message": "Document lookup is temporarily unavailable. Please try again later.",
     "lookup_pending_message": "Looking up documents. Please wait.",

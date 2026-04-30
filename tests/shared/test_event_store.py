@@ -7,6 +7,7 @@ from src.shared.event_store import (
     create_event_document,
     list_event_documents,
     list_public_event_documents,
+    read_public_event_document,
     update_event_document,
 )
 
@@ -67,6 +68,26 @@ class ReplaceContainer:
         assert item == self.existing_item["id"]
         self.replaced_item = body
         return body
+
+
+class ReadContainer:
+    def __init__(self, existing_item: dict[str, object] | None) -> None:
+        self.existing_item = existing_item
+
+    def create_item(self, body: dict[str, object]) -> dict[str, object]:
+        raise AssertionError("read test should not create item")
+
+    def read_item(self, item: str, partition_key: str) -> dict[str, object]:
+        assert item == partition_key
+        if self.existing_item is None:
+            raise NotFoundError()
+
+        return self.existing_item
+
+
+class ForbiddenReadContainer(ReadContainer):
+    def read_item(self, item: str, partition_key: str) -> dict[str, object]:
+        raise ForbiddenError()
 
 
 class QueryContainer:
@@ -203,14 +224,14 @@ def test_update_event_document_replaces_existing_item_without_changing_created_f
     assert event["updatedBy"] == "editor@example.com"
 
 
-def test_list_event_documents_queries_events_by_updated_at_desc() -> None:
+def test_list_event_documents_queries_events_by_created_at_desc() -> None:
     events = [{"id": "evt_a"}, {"id": "evt_b"}]
     container = QueryContainer(events)
 
     assert list_event_documents(container=container) == events
     assert container.query == (
         "SELECT c.id, c.name, c.status, c.documentTypes, "
-        "c.completionCertDownloadStartsAt FROM c ORDER BY c.updatedAt DESC"
+        "c.completionCertDownloadStartsAt FROM c ORDER BY c.createdAt DESC"
     )
     assert container.enable_cross_partition_query is True
 
@@ -223,9 +244,27 @@ def test_list_public_event_documents_queries_open_events_only() -> None:
     assert container.query == (
         "SELECT c.id, c.name, c.documentTypes, "
         "c.completionCertDownloadStartsAt FROM c "
-        "WHERE c.status = 'open' ORDER BY c.updatedAt DESC"
+        "WHERE c.status = 'open' ORDER BY c.createdAt DESC"
     )
     assert container.enable_cross_partition_query is True
+
+
+def test_read_public_event_document_reads_by_event_id() -> None:
+    event = {"id": "evt_a", "status": "open"}
+
+    assert read_public_event_document(container=ReadContainer(event), event_id="evt_a") == event
+
+
+def test_read_public_event_document_returns_none_when_event_is_missing() -> None:
+    assert read_public_event_document(container=ReadContainer(None), event_id="evt_missing") is None
+
+
+def test_read_public_event_document_wraps_missing_read_permission_error() -> None:
+    with pytest.raises(EventStoreOperationError, match="讀取權限"):
+        read_public_event_document(
+            container=ForbiddenReadContainer(None),
+            event_id="evt_forbidden",
+        )
 
 
 def test_list_event_documents_wraps_missing_read_permission_error() -> None:

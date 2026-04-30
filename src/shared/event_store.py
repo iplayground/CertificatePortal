@@ -139,7 +139,7 @@ def list_event_documents(*, container: EventContainer) -> list[dict[str, Any]]:
             container.query_items(
                 query=(
                     "SELECT c.id, c.name, c.status, c.documentTypes, "
-                    "c.completionCertDownloadStartsAt FROM c ORDER BY c.updatedAt DESC"
+                    "c.completionCertDownloadStartsAt FROM c ORDER BY c.createdAt DESC"
                 ),
                 enable_cross_partition_query=True,
             )
@@ -165,7 +165,7 @@ def list_public_event_documents(*, container: EventContainer) -> list[dict[str, 
                 query=(
                     "SELECT c.id, c.name, c.documentTypes, "
                     "c.completionCertDownloadStartsAt FROM c "
-                    "WHERE c.status = 'open' ORDER BY c.updatedAt DESC"
+                    "WHERE c.status = 'open' ORDER BY c.createdAt DESC"
                 ),
                 enable_cross_partition_query=True,
             )
@@ -176,6 +176,24 @@ def list_public_event_documents(*, container: EventContainer) -> list[dict[str, 
                 "Cosmos DB 活動容器不存在。請確認 COSMOS_DATABASE_NAME 與 "
                 "COSMOS_EVENTS_CONTAINER 是否指向已建立的資源。"
             ) from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise EventStoreOperationError(
+                "目前身分沒有 Cosmos DB 活動容器讀取權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Reader 或 Data Contributor 權限。"
+            ) from exc
+        raise
+
+
+def read_public_event_document(
+    *,
+    container: EventContainer,
+    event_id: str,
+) -> dict[str, Any] | None:
+    try:
+        return container.read_item(item=event_id, partition_key=event_id)
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            return None
         if _is_cosmos_forbidden_error(exc):
             raise EventStoreOperationError(
                 "目前身分沒有 Cosmos DB 活動容器讀取權限。請確認本機或服務身分"

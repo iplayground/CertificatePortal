@@ -18,6 +18,9 @@ from src.shared.event_store import utc_now_iso
 PUBLIC_LOOKUP_FAILURE_LIMIT = 5
 PUBLIC_LOOKUP_FAILURE_WINDOW_HOURS = 24
 PUBLIC_LOOKUP_BLOCK_HOURS = 24
+PUBLIC_LOOKUP_NOT_AVAILABLE_LIMIT = 10
+PUBLIC_LOOKUP_NOT_AVAILABLE_WINDOW_HOURS = 24
+PUBLIC_LOOKUP_NOT_AVAILABLE_BLOCK_HOURS = 12
 PUBLIC_LOOKUP_LOCAL_BLOCK_CACHE_HOURS = 1
 PUBLIC_LOOKUP_ATTEMPT_NAMESPACE = "io.iplayground.ipg-certificate.public-lookups"
 _PUBLIC_LOOKUP_BLOCK_CACHE: dict[str, datetime] = {}
@@ -218,12 +221,89 @@ def record_public_lookup_failure(
             timestamp_value + timedelta(hours=PUBLIC_LOOKUP_BLOCK_HOURS)
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    existing_document = existing_document or {}
     document = {
         "id": attempt_id,
         "ipAddress": ip_address,
         "failureCount": failure_count,
         "firstFailedAt": next_first_failed_at,
         "lastFailedAt": timestamp,
+        "notAvailableCount": int(existing_document.get("notAvailableCount") or 0),
+        "firstNotAvailableAt": existing_document.get("firstNotAvailableAt"),
+        "lastNotAvailableAt": existing_document.get("lastNotAvailableAt"),
+        "blockedUntil": blocked_until,
+        "updatedAt": timestamp,
+    }
+
+    try:
+        return container.upsert_item(
+            body=document,
+            **build_public_lookup_cosmos_timeout_options(),
+        )
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise PublicLookupStoreOperationError(
+                "Cosmos DB 公開查詢限制容器不存在。請確認 "
+                "COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER 是否指向已建立的資源。"
+            ) from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise PublicLookupStoreOperationError(
+                "目前身分沒有 Cosmos DB 公開查詢限制容器寫入權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Contributor 權限。"
+            ) from exc
+        raise PublicLookupStoreOperationError("公開查詢限制資料寫入暫時失敗。") from exc
+
+
+def record_public_lookup_not_available(
+    *,
+    attempt_id: str,
+    container: PublicLookupContainer,
+    existing_document: dict[str, Any] | None,
+    ip_address: str,
+    now: str | None = None,
+) -> dict[str, Any]:
+    timestamp = now or utc_now_iso()
+    timestamp_value = _parse_utc_iso(timestamp)
+    if timestamp_value is None:
+        raise ValueError("now must use UTC ISO 8601 format.")
+
+    existing_document = existing_document or {}
+    first_not_available_at = _parse_utc_iso(
+        str(existing_document.get("firstNotAvailableAt", ""))
+    )
+    previous_not_available_count = int(
+        existing_document.get("notAvailableCount") or 0
+    )
+    in_not_available_window = (
+        first_not_available_at is not None
+        and timestamp_value - first_not_available_at
+        < timedelta(hours=PUBLIC_LOOKUP_NOT_AVAILABLE_WINDOW_HOURS)
+    )
+
+    if in_not_available_window:
+        not_available_count = previous_not_available_count + 1
+        next_first_not_available_at = first_not_available_at.strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+    else:
+        not_available_count = 1
+        next_first_not_available_at = timestamp
+
+    blocked_until = None
+    if not_available_count >= PUBLIC_LOOKUP_NOT_AVAILABLE_LIMIT:
+        blocked_until = (
+            timestamp_value + timedelta(hours=PUBLIC_LOOKUP_NOT_AVAILABLE_BLOCK_HOURS)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    document = {
+        "id": attempt_id,
+        "ipAddress": ip_address,
+        "failureCount": int(existing_document.get("failureCount") or 0),
+        "firstFailedAt": existing_document.get("firstFailedAt"),
+        "lastFailedAt": existing_document.get("lastFailedAt"),
+        "notAvailableCount": not_available_count,
+        "firstNotAvailableAt": next_first_not_available_at,
+        "lastNotAvailableAt": timestamp,
         "blockedUntil": blocked_until,
         "updatedAt": timestamp,
     }
@@ -261,6 +341,9 @@ def record_public_lookup_success(
         "failureCount": 0,
         "firstFailedAt": None,
         "lastFailedAt": None,
+        "notAvailableCount": 0,
+        "firstNotAvailableAt": None,
+        "lastNotAvailableAt": None,
         "blockedUntil": None,
         "updatedAt": timestamp,
     }
