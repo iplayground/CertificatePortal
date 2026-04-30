@@ -706,17 +706,21 @@ function setTextContent(parent, selector, value) {
 }
 
 function normalizeCompletionCertRow(rowData) {
+  const attendanceStatus =
+    typeof rowData?.attendanceStatus === "string"
+      ? rowData.attendanceStatus
+      : "notCheckedIn";
+  const certStatus = typeof rowData?.certStatus === "string" ? rowData.certStatus : "notIssued";
+
   return {
-    attendanceStatus:
-      typeof rowData?.attendanceStatus === "string"
-        ? rowData.attendanceStatus
-        : "notCheckedIn",
+    attendanceStatus,
     badgeName: typeof rowData?.badgeName === "string" ? rowData.badgeName : "",
-    certStatus: typeof rowData?.certStatus === "string" ? rowData.certStatus : "notIssued",
+    certStatus,
     email: typeof rowData?.email === "string" ? rowData.email : "",
     eventId: typeof rowData?.eventId === "string" ? rowData.eventId : "",
     id: typeof rowData?.id === "string" ? rowData.id : "",
-    isDownloadable: rowData?.attendanceStatus === "checkedIn",
+    isCheckedIn: attendanceStatus === "checkedIn",
+    isDownloadable: certStatus === "issued",
     kktixId: typeof rowData?.kktixId === "string" ? rowData.kktixId : "",
     name: typeof rowData?.name === "string" ? rowData.name : "",
     number:
@@ -914,7 +918,7 @@ function applyCompletionRowDownloadState(rowElement, rowData) {
   rowElement.classList.toggle("is-blocked", !rowData.isDownloadable);
 
   if (switchInput instanceof HTMLInputElement) {
-    switchInput.checked = rowData.isDownloadable;
+    switchInput.checked = rowData.isCheckedIn;
     switchInput.disabled = isUpdatingCompletionBulkAttendance;
   }
 
@@ -940,7 +944,7 @@ function updateCompletionTableBusyState() {
   }
 }
 
-async function updateCompletionRowAttendanceStatus(rowData, isDownloadable) {
+async function updateCompletionRowAttendanceStatus(rowData, isCheckedIn) {
   const response = await fetch(
     `${adminCompletionCertsApiPath}/${encodeURIComponent(rowData.id)}`,
     {
@@ -950,7 +954,7 @@ async function updateCompletionRowAttendanceStatus(rowData, isDownloadable) {
         "X-Portal-CSRF-Token": portalCsrfToken,
       },
       body: JSON.stringify({
-        attendanceStatus: isDownloadable ? "checkedIn" : "notCheckedIn",
+        attendanceStatus: isCheckedIn ? "checkedIn" : "notCheckedIn",
         eventId: rowData.eventId,
       }),
     }
@@ -1001,7 +1005,7 @@ function updateCompletionPaginationControls(visibleRows) {
   }
 }
 
-async function setCompletionRowDownloadState(rowId, isDownloadable) {
+async function setCompletionRowDownloadState(rowId, isCheckedIn) {
   if (isUpdatingCompletionBulkAttendance) {
     return;
   }
@@ -1011,7 +1015,8 @@ async function setCompletionRowDownloadState(rowId, isDownloadable) {
     return;
   }
 
-  const previousIsDownloadable = rowData.isDownloadable;
+  const previousAttendanceStatus = rowData.attendanceStatus;
+  const previousIsCheckedIn = rowData.isCheckedIn;
   const rowElement = completionCertTableBody?.querySelector(`[data-row-id="${rowId}"]`);
   const switchInput = rowElement?.querySelector('[data-action="toggle-downloadable"]');
   if (switchInput instanceof HTMLInputElement) {
@@ -1019,7 +1024,7 @@ async function setCompletionRowDownloadState(rowId, isDownloadable) {
   }
 
   try {
-    await updateCompletionRowAttendanceStatus(rowData, isDownloadable);
+    await updateCompletionRowAttendanceStatus(rowData, isCheckedIn);
     renderCompletionCertRows();
     showCompletionPageAlert({
       dismissDelay: 3000,
@@ -1028,7 +1033,8 @@ async function setCompletionRowDownloadState(rowId, isDownloadable) {
       tone: "success",
     });
   } catch (error) {
-    rowData.isDownloadable = previousIsDownloadable;
+    rowData.attendanceStatus = previousAttendanceStatus;
+    rowData.isCheckedIn = previousIsCheckedIn;
     if (rowElement instanceof HTMLTableRowElement) {
       applyCompletionRowDownloadState(rowElement, rowData);
     }
@@ -1224,7 +1230,7 @@ async function applyDownloadableStateToCurrentActivity(isDownloadable) {
 
   const eventId = getCompletionFilterEventName();
   const rowsToUpdate = getVisibleCompletionCertRows().filter(
-    (row) => row.isDownloadable !== isDownloadable
+    (row) => row.isCheckedIn !== isDownloadable
   );
   if (!rowsToUpdate.length) {
     return;

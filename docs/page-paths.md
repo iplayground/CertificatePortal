@@ -44,6 +44,7 @@
 - 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓證明 CSV 由後端解析、驗證並寫入 Cosmos DB；營業稅繳稅證明的後端上傳處理與持久化流程尚未串接
 - 完訓證明頁目前已有後端 CSV 匯入、活動篩選、清單載入與單筆資料修改流程
 - 營業稅繳稅證明頁目前已有前端單筆 PDF、PNG 或 JPG/JPEG 新增與頁面暫存清單，用於管理介面流程示意；目前不支援 WebP
+- 首頁完訓證明查詢成功且 `certStatus` 為 `notIssued` 時，會顯示「選擇證明顯示方式」區塊；目前「產生證書」與「提出修改申請」按鈕已完成 UI，但尚未串接後續公開 API 或資料寫入流程
 
 ### 表單輸入規則
 
@@ -108,6 +109,12 @@
 - 後端可用 Functions worker 本機記憶體快取已封鎖 IP 的 attempt id，用於封鎖期間快速短路 Cosmos DB；此快取只能作為額外封鎖捷徑，不能取代 Cosmos DB 的權威紀錄，且本機快取期限不得超過 1 小時。
 - 首頁可用 `localStorage` 快取「已被封鎖」狀態與伺服器回傳的封鎖訊息，以減少重整後的等待感並保留 12 小時或 24 小時封鎖文案；此快取只作為使用者體驗提示，不得作為後端安全判斷依據，期限不得超過 1 小時，且必須在到期、格式不合法或查詢成功時清除，避免永久性上鎖。
 - 目前只串接 `completionCert` 的查詢判斷；`taxReceipt` 後端持久化尚未完成前會視為查不到。
+- 完訓證明查詢成功時，回應會包含 `badgeName`、`name`、`organization` 與 `certStatus`，供首頁決定是否顯示「選擇證明顯示方式」。
+- 目前只有 `certStatus` 為 `notIssued` 時，首頁會顯示「選擇證明顯示方式」。`issued` 與 `changeRequested` 的後續畫面尚未設計。
+- 「選擇證明顯示方式」區塊會依實際 `name` 與 `badgeName` 產生姓名顯示選項：`姓名`、`Badge Name`、`姓名 (Badge Name)`；若其中一個值為空，或兩者相同，只顯示單一有效選項。
+- 若查詢結果有 `organization`，首頁會顯示是否顯示公司名的 checkbox。
+- 顯示「選擇證明顯示方式」時，首頁會隱藏「查詢文件」按鈕，並鎖定活動、文件類型、報名序號與 email，避免使用者在確認顯示方式時修改查詢條件。
+- 「返回查詢」會回到查詢表單並解除上述鎖定；「產生證書」與「提出修改申請」目前尚未註冊 click 行為，也尚未呼叫任何公開 API。
 
 Request JSON 範例：
 
@@ -219,6 +226,8 @@ Request JSON 範例：
 - `營業稅繳稅證明` 的產製時間使用共用日期時間選擇器的秒數模式，顯示年、月、日、時、分、秒
 - 查詢文件按鈕在目前可見申請資料欄位未完整填寫前維持停用
 - 查詢文件送出後使用滿版 loading 遮罩鎖住整個 window，避免等待期間切換語系或調整表單資料
+- 完訓證明查詢成功且尚未產生證書時，首頁顯示「選擇證明顯示方式」，讓使用者選擇姓名顯示方式與是否顯示公司名；一旦確認後將無法更改
+- 「選擇證明顯示方式」目前包含 `返回查詢`、`產生證書` 與 `提出修改申請` 三個按鈕；其中 `返回查詢` 已可回到查詢表單，`產生證書` 與 `提出修改申請` 目前僅完成 UI，尚未接後續行為
 - 顯示頁尾版權聲明
 
 ### `/verify/{certId}`
@@ -282,10 +291,10 @@ status: 尚未串接實際驗證資料
 - 主畫面提供完訓證明資料的清單檢視區
 - 完訓證明資料依活動 `eventId` 從 `GET /api/v1/admin/completion-certs?eventId=<eventId>` 載入
 - CSV 匯入會呼叫 `POST /api/v1/admin/completion-certs/import`，由後端解析 KKTIX CSV、過濾非白名單欄位，並寫入 Cosmos DB `completionCerts`
-- CSV 匯入後的清單列預設為 `未簽到`，下載按鈕停用；`issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 在會眾申請並完成產生檔案前為 `null`
+- CSV 匯入後的清單列預設為 `未簽到` 且 `certStatus` 為 `notIssued`；`issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 在會眾申請並完成產生檔案前為 `null`
 - 同一活動再次匯入 CSV 時，會以穩定的 `eventId + number + kktixId` 產生文件 ID 並 upsert 到同一批 Cosmos DB 資料
 - 清單欄位包含報名序號、ID、Badge Name、姓名、公司名、Email、票種、簽到狀態與操作
-- 每列在操作欄提供 `下載` 與 `修改` 按鈕
+- 每列在操作欄提供 `下載` 與 `修改` 按鈕；`下載` 按鈕是否可用依 `certStatus` 判斷，只有 `issued` 可下載，不能用 `attendanceStatus` 或簽到狀態判斷
 - 修改視窗可更新姓名、公司名與 Email；報名序號、KKTIX ID、Badge Name 與票種不直接修改
 - 修改視窗將報名序號、ID 與票種放在同一排，且 Badge Name 與票種為唯讀顯示
 - 修改成功後顯示共用 page alert 成功提示；共用 alert 預設 6 秒後自動關閉
@@ -295,7 +304,7 @@ status: 尚未串接實際驗證資料
 - 清單上方提供目前活動全部資料的批次設定，可設為 `已簽到` 或 `未簽到`，並逐筆呼叫 `PUT /api/v1/admin/completion-certs/{certid}` 將 `attendanceStatus` 寫回 Cosmos DB
 - 完訓證明清單不提供選取列功能，批次設定一律套用至目前活動全部資料
 - 批次簽到狀態更新進行中時，完訓證明表格會進入 `aria-busy` 狀態並顯示停用樣式；列內簽到開關、下載、修改、分頁與批次按鈕皆停用，避免管理者同時編輯資料
-- 每列提供可雙向切換的簽到狀態開關，切換後會呼叫 `PUT /api/v1/admin/completion-certs/{certid}` 將 `attendanceStatus` 寫回 Cosmos DB；簽到狀態更新成功或失敗 alert 會在 3 秒後自動關閉
+- 每列提供可雙向切換的簽到狀態開關，切換後會呼叫 `PUT /api/v1/admin/completion-certs/{certid}` 將 `attendanceStatus` 寫回 Cosmos DB；簽到狀態更新成功或失敗 alert 會在 3 秒後自動關閉。簽到狀態只代表出席紀錄，不控制下載按鈕是否可用
 - 清單上方提供活動篩選欄位；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單並直接套用篩選
 - 活動篩選與上傳視窗活動選擇會先使用 portal 分頁內的活動清單快取渲染，再直接呼叫 `GET /api/v1/admin/events` 更新畫面與快取；快取只作為先顯示用途，不作為權威資料來源
 - 標題列右上方提供 `上傳完訓證明資料` 按鈕

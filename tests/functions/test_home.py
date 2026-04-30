@@ -95,6 +95,9 @@ class FakeCompletionCertsContainer:
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
         assert "SELECT TOP 1" in query
+        assert "c.badgeName" in query
+        assert "c.name" in query
+        assert "c.organization" in query
         assert "LOWER(c.email)" not in query
         assert "AND c.number = @number" in query
         assert not enable_cross_partition_query
@@ -296,6 +299,19 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "完訓證明" in body
     assert "營業稅繳稅證明" in body
     assert "查詢文件" in body
+    assert "選擇證明顯示方式" in body
+    assert "一旦確認後，將無法更改" in body
+    assert "姓名顯示方式" in body
+    assert "顯示公司名：{organization}" in body
+    assert "提出修改申請" in body
+    assert 'id="certificate-change-request-action"' in body
+    assert "產生證書" in body
+    assert 'id="certificate-generate-action"' in body
+    assert 'id="certificate-options-step-label"' not in body
+    assert 'id="certificate-options-view" hidden tabindex="-1"' in body
+    assert 'id="certificate-name-options"' in body
+    assert 'id="certificate-company-visible" type="checkbox"' in body
+    assert "返回查詢" in body
     assert "請確認填寫資訊與報名資料一致。" not in body
     assert "選擇活動與文件類型後，填寫報名人姓名與 email。" not in body
     assert "若查詢不到資料" not in body
@@ -373,6 +389,12 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert '<div class="field" id="document-type-field" hidden>' in body
     assert '<span id="document-type-value" class="custom-select-value">Loading document types</span>' in body
     assert "Look Up Documents" in body
+    assert "Choose Certificate Display" in body
+    assert "Once confirmed, it cannot be changed." in body
+    assert "Name display" in body
+    assert "Show company name: {organization}" in body
+    assert "Generate Certificate" in body
+    assert "Back to Search" in body
     assert "Make sure the information matches the registration record." not in body
     assert "Taipei Elite Software Developer Association (77212283)" in body
     assert "If no record is found" not in body
@@ -844,6 +866,9 @@ def test_public_document_lookup_api_does_not_block_success_on_attempt_store_fail
                     "eventId": "evt_1",
                     "number": 100,
                     "email": "Ming@example.com",
+                    "badgeName": "Ming",
+                    "name": "王小明",
+                    "organization": "iPlayground",
                     "certStatus": "issued",
                     "issuedPdfBlobName": "issued/ccert_1.pdf",
                 }
@@ -864,7 +889,103 @@ def test_public_document_lookup_api_does_not_block_success_on_attempt_store_fail
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
-    assert body == '{"document":{"status":"found","documentType":"completionCert"}}'
+    assert body == (
+        '{"document":{"status":"found","documentType":"completionCert",'
+        '"badgeName":"Ming","certStatus":"issued","name":"王小明",'
+        '"organization":"iPlayground"}}'
+    )
+
+
+def test_public_document_lookup_api_marks_not_generated_completion_cert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: FailingLookupAttemptsContainer(),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(
+            [
+                {
+                    "id": "ccert_1",
+                    "eventId": "evt_1",
+                    "number": 100,
+                    "email": "Ming@example.com",
+                    "badgeName": "Ming",
+                    "name": "王小明",
+                    "organization": "iPlayground",
+                    "certStatus": "notIssued",
+                    "issuedPdfBlobName": None,
+                }
+            ]
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert body == (
+        '{"document":{"status":"found","documentType":"completionCert",'
+        '"badgeName":"Ming","certStatus":"notIssued","name":"王小明",'
+        '"organization":"iPlayground"}}'
+    )
+
+
+def test_public_document_lookup_api_returns_change_requested_cert_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: FailingLookupAttemptsContainer(),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(
+            [
+                {
+                    "id": "ccert_1",
+                    "eventId": "evt_1",
+                    "number": 100,
+                    "email": "Ming@example.com",
+                    "badgeName": "Ming",
+                    "name": "王小明",
+                    "organization": "iPlayground",
+                    "certStatus": "changeRequested",
+                    "issuedPdfBlobName": None,
+                }
+            ]
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert body == (
+        '{"document":{"status":"found","documentType":"completionCert",'
+        '"badgeName":"Ming","certStatus":"changeRequested","name":"王小明",'
+        '"organization":"iPlayground"}}'
+    )
 
 
 def test_public_document_lookup_api_uses_local_block_cache_before_cosmos(
@@ -931,6 +1052,9 @@ def test_public_document_lookup_api_resets_failures_after_success(
                     "eventId": "evt_1",
                     "number": 100,
                     "email": "Ming@example.com",
+                    "badgeName": "Ming",
+                    "name": "王小明",
+                    "organization": "iPlayground",
                     "certStatus": "issued",
                     "issuedPdfBlobName": "issued/ccert_1.pdf",
                 }
@@ -952,7 +1076,11 @@ def test_public_document_lookup_api_resets_failures_after_success(
     attempt_document = next(iter(attempts_container.items.values()))
 
     assert response.status_code == 200
-    assert body == '{"document":{"status":"found","documentType":"completionCert"}}'
+    assert body == (
+        '{"document":{"status":"found","documentType":"completionCert",'
+        '"badgeName":"Ming","certStatus":"issued","name":"王小明",'
+        '"organization":"iPlayground"}}'
+    )
     assert attempt_document["ipAddress"] == "203.0.113.10"
     assert attempt_document["failureCount"] == 0
     assert attempt_document["blockedUntil"] is None
@@ -1019,9 +1147,6 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert response.status_code == 200
     assert response.mimetype == "text/css"
     assert "@media (max-width: 640px)" in body
-    assert ".custom-select-menu[hidden]" in body
-    assert ".custom-select-trigger[hidden]" in body
-    assert ".field-static-value[hidden]" in body
     assert ".page-toolbar" in body
     assert "z-index: 4;" in body
     assert "body.is-locale-menu-open .hero-card > :not(.page-toolbar)" in body
@@ -1029,17 +1154,6 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert "white-space: nowrap;" in body
     assert ".locale-trigger" in body
     assert ".locale-menu-option" in body
-    assert ".form-datetime-input" in body
-    assert ".form-datetime-picker" in body
-    assert "grid-template-columns: max-content max-content;" in body
-    assert "justify-content: start;" in body
-    assert ".form-datetime-picker:focus-within" in body
-    assert ".form-datetime-picker-date-native:focus" in body
-    assert "box-sizing: border-box;" in body
-    assert ".form-datetime-picker-date" in body
-    assert ".form-datetime-picker-time" in body
-    assert "grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px) max-content minmax(26px, 30px);" in body
-    assert "border-radius: 0;" in body
     assert 'url("/assets/language_icon.svg")' in body
     assert "margin-inline: auto;" in body
     assert ".feedback.is-error" in body
@@ -1052,6 +1166,23 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert ".page-loading-panel" in body
     assert "background: #fff;" in body
     assert "@keyframes page-loading-spin" in body
+    assert ".certificate-options-view" in body
+    assert ".certificate-choice-option" in body
+    assert '.certificate-choice-option input[type="radio"]' in body
+    assert ".certificate-choice-option span::before" in body
+    assert "width: 12px;" in body
+    assert "height: 12px;" in body
+    assert "border: 1.5px solid #111827;" in body
+    assert '.certificate-choice-option input[type="radio"]:checked + span::before' in body
+    assert ".certificate-company-option" in body
+    assert '.certificate-company-option input[type="checkbox"]' in body
+    assert "min-height: 0;" in body
+    assert '.certificate-company-option input[type="checkbox"]:focus-visible' in body
+    assert ".certificate-actions" in body
+    assert ".certificate-change-request-action" in body
+    assert "margin-left: auto;" in body
+    assert "form.is-certificate-options-active .field-static-value" in body
+    assert "cursor: not-allowed;" in body
 
 
 def test_theme_css_asset_returns_expected_content_type() -> None:
@@ -1074,6 +1205,27 @@ def test_theme_css_asset_returns_expected_content_type() -> None:
     assert ".page-alert-frame" in body
     assert ".page-alert-close" in body
     assert "@keyframes page-alert-dissolve" in body
+    assert ".custom-select-menu[hidden]" in body
+    assert ".custom-select-trigger[hidden]" in body
+    assert ".field-static-value[hidden]" in body
+    assert ".custom-select-trigger:disabled" in body
+    assert ".secondary-action" in body
+    assert ".brand-square-action" in body
+    assert "--theme-icon-square-color: #ee5fa7;" in body
+    assert "--theme-icon-square-gradient: linear-gradient(135deg, #ee5fa7 0%, #ff8fc6 100%);" in body
+    assert "--theme-icon-square-shadow: rgba(238, 95, 167, 0.26);" in body
+    assert ".form-checkbox-option" in body
+    assert "accent-color: var(--theme-accent-deep);" in body
+    assert "accent-color: #ea6e1e;" in body
+    assert "color-scheme: light;" in body
+    assert "grid-template-columns: 22px minmax(0, 1fr);" in body
+    assert ".form-datetime-input" in body
+    assert ".form-datetime-picker" in body
+    assert ".form-datetime-picker:focus-within" in body
+    assert ".form-datetime-picker-date-native:focus" in body
+    assert ".form-datetime-picker-date" in body
+    assert ".form-datetime-picker-time" in body
+    assert "grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px) max-content minmax(26px, 30px);" in body
 
 
 def test_home_js_asset_returns_expected_content_type() -> None:
@@ -1115,11 +1267,27 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert 'homePage.classList.toggle("is-lookup-busy", isBusy)' in body
     assert 'querySelectorAll("input, button, select, textarea")' in body
     assert "submitDocumentLookup" in body
+    assert "clearLookupFeedback" in body
+    assert "shouldShowCertificateOptions" in body
+    assert "setDocumentLookupFieldsLocked" in body
+    assert 'documentRequestForm.classList.toggle("is-certificate-options-active", isLocked)' in body
+    assert "buildCertificateNameChoices" in body
+    assert "showCertificateOptions" in body
+    assert "showDocumentLookupForm" in body
+    assert "certificateCompanyVisible.checked = Boolean(organization)" in body
+    assert "previewAction.hidden = isLocked" in body
+    assert "certificateChangeRequestAction" in body
+    assert "certificateGenerateAction" in body
+    assert "certificateNameDisplay" in body
+    assert "nameWithBadge" in body
     assert "fetch(documentLookupApiPath" in body
     assert "resolveLookupFailureMessage" in body
     assert "lookup_blocked" in body
     assert "document_not_available_yet" in body
     assert 'showLookupFeedback(resolveLookupFailureMessage(payload), "error")' in body
+    assert "successfulDocument = payload?.document ?? {}" in body
+    assert "showCertificateOptions(successfulDocument)" in body
+    assert "clearLookupFeedback()" in body
     assert 'showLookupFeedback(lookupUnavailableMessage, "error")' in body
     assert "lookupBlockedStorageKey" in body
     assert "lookupBlockedClientCacheMs = 60 * 60 * 1000" in body

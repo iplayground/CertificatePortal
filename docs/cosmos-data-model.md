@@ -193,13 +193,22 @@ checkedIn
 
 管理端完訓證明頁的單筆簽到狀態開關與目前活動全部資料批次設定，皆會透過 `PUT /api/v1/admin/completion-certs/{certid}` 更新 `attendanceStatus`。批次更新期間前端會鎖定清單互動，避免同時編輯造成畫面狀態與 DB 狀態分歧。
 
+`attendanceStatus` 僅表示出席紀錄，不代表證書已發行，也不作為管理中心下載按鈕是否可用的判斷依據。
+
 `certStatus` 目前允許值：
 
 ```text
 notIssued
 issued
 failed
+changeRequested
 ```
+
+`changeRequested` 代表會眾已送出完訓證明資料修改申請，管理者尚未完成處理。
+
+管理中心完訓證明清單中的下載按鈕依 `certStatus` 判斷是否可用；目前只有 `issued` 可下載。`notIssued`、`failed` 與 `changeRequested` 不可下載，即使 `attendanceStatus` 為 `checkedIn` 也一樣。
+
+目前公開首頁已在「選擇證明顯示方式」區塊顯示「提出修改申請」按鈕，但尚未串接公開 API 或 Cosmos DB 寫入流程；因此目前不會由公開首頁自動建立 `completionCertRequests` 文件，也不會自動把 `certStatus` 改為 `changeRequested`。此狀態值與下方申請文件模型是後續接上修改申請流程時的資料模型基線。
 
 目前 KKTIX CSV 白名單欄位：
 
@@ -244,7 +253,7 @@ ORDER BY c.number ASC
 
 ### 資料調整申請文件
 
-`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。
+`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。目前 container 與文件 builder 已定義，但公開首頁尚未提供送出修改申請 API，因此現階段不會由使用者操作自動寫入。
 
 必要欄位：
 

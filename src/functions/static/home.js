@@ -5,6 +5,18 @@ const documentRequestForm = document.getElementById("document-request-form");
 const previewAction = document.getElementById("preview-action");
 const feedback = document.getElementById("form-feedback");
 const pageLoadingOverlay = document.getElementById("page-loading-overlay");
+const certificateOptionsView = document.getElementById("certificate-options-view");
+const certificateOptionsTitle = document.getElementById("certificate-options-title");
+const certificateOptionsSubtitle = document.getElementById("certificate-options-subtitle");
+const certificateNameOptionsLabel = document.getElementById("certificate-name-options-label");
+const certificateNameOptions = document.getElementById("certificate-name-options");
+const certificateCompanyOptionField = document.getElementById("certificate-company-option-field");
+const certificateCompanyOptionLabel = document.getElementById("certificate-company-option-label");
+const certificateCompanyOptionText = document.getElementById("certificate-company-option-text");
+const certificateCompanyVisible = document.getElementById("certificate-company-visible");
+const certificateOptionsBackAction = document.getElementById("certificate-options-back-action");
+const certificateChangeRequestAction = document.getElementById("certificate-change-request-action");
+const certificateGenerateAction = document.getElementById("certificate-generate-action");
 const registrationNumber = document.getElementById("registration-number");
 const attendeeName = document.getElementById("attendee-name");
 const email = document.getElementById("email");
@@ -420,6 +432,112 @@ function formatPreviewMessage(template, replacements) {
   }, template);
 }
 
+function resolveCertificateOptionCopy(key, fallback = "") {
+  const bundle = getLocaleBundle(currentLocale);
+  const homePageCopy = bundle?.home_page ?? {};
+  const value = homePageCopy[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+function normalizeLookupDocumentText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function buildCertificateNameChoices(documentData) {
+  const name = normalizeLookupDocumentText(documentData?.name);
+  const badgeName = normalizeLookupDocumentText(documentData?.badgeName);
+  const choices = [];
+  const seenLabels = new Set();
+
+  [
+    { value: "name", label: name },
+    { value: "badgeName", label: badgeName },
+    {
+      value: "nameWithBadge",
+      label: name && badgeName && name !== badgeName ? `${name} (${badgeName})` : "",
+    },
+  ].forEach((choice) => {
+    if (!choice.label || seenLabels.has(choice.label)) {
+      return;
+    }
+
+    seenLabels.add(choice.label);
+    choices.push(choice);
+  });
+
+  return choices;
+}
+
+function renderCertificateNameOptions(documentData) {
+  if (!certificateNameOptions) {
+    return;
+  }
+
+  const choices = buildCertificateNameChoices(documentData);
+  certificateNameOptions.replaceChildren();
+  choices.forEach((choice, index) => {
+    const option = document.createElement("label");
+    option.className = "certificate-choice-option";
+
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "certificateNameDisplay";
+    input.value = choice.value;
+    input.checked = index === 0;
+
+    const label = document.createElement("span");
+    label.textContent = choice.label;
+
+    option.append(input, label);
+    certificateNameOptions.append(option);
+  });
+}
+
+function renderCertificateCompanyOption(documentData) {
+  const organization = normalizeLookupDocumentText(documentData?.organization);
+  if (!certificateCompanyOptionField || !certificateCompanyOptionText || !certificateCompanyVisible) {
+    return;
+  }
+
+  certificateCompanyOptionField.hidden = !organization;
+  certificateCompanyVisible.checked = Boolean(organization);
+  if (organization) {
+    certificateCompanyOptionText.textContent = formatPreviewMessage(
+      resolveCertificateOptionCopy("certificate_company_option_text", "顯示公司名：{organization}"),
+      { organization },
+    );
+  }
+}
+
+function setDocumentLookupFieldsLocked(isLocked) {
+  documentRequestForm.classList.toggle("is-certificate-options-active", isLocked);
+  [
+    eventNameTrigger,
+    documentTypeTrigger,
+    registrationNumber,
+    email,
+  ].filter(Boolean).forEach((control) => {
+    control.disabled = isLocked;
+  });
+
+  previewAction.hidden = isLocked;
+}
+
+function showCertificateOptions(documentData) {
+  renderCertificateNameOptions(documentData);
+  renderCertificateCompanyOption(documentData);
+  setDocumentLookupFieldsLocked(true);
+  certificateOptionsView.hidden = false;
+  certificateOptionsView.focus?.();
+}
+
+function showDocumentLookupForm() {
+  certificateOptionsView.hidden = true;
+  setDocumentLookupFieldsLocked(false);
+  updatePreviewActionState();
+  previewAction.focus();
+}
+
 function updateLocaleOptionState(selectedLocale, localeOptionLabels) {
   localeOptions.forEach((button) => {
     const optionLocale = button.dataset.locale ?? "";
@@ -571,6 +689,16 @@ function showLookupFeedback(message, tone = "success") {
   feedback.textContent = message;
 }
 
+function clearLookupFeedback() {
+  feedback.hidden = true;
+  feedback.classList.remove("is-active", "is-success", "is-error");
+  feedback.textContent = "";
+}
+
+function shouldShowCertificateOptions(documentData) {
+  return documentData?.certStatus === "notIssued";
+}
+
 function readClientLookupBlockedUntil() {
   try {
     const value = window.localStorage.getItem(lookupBlockedStorageKey);
@@ -653,6 +781,7 @@ async function submitDocumentLookup() {
 
   const documentLookupPayload = buildDocumentLookupPayload();
   setLookupBusy(true);
+  let successfulDocument = null;
 
   try {
     const response = await fetch(documentLookupApiPath, {
@@ -675,19 +804,29 @@ async function submitDocumentLookup() {
     }
 
     clearClientLookupBlock();
-    const name = attendeeName?.value.trim() || emptyNameText;
-    const emailValue = email.value.trim() || emptyEmailText;
-    showLookupFeedback(formatPreviewMessage(previewFeedbackTemplate, {
-      eventName: eventNameInput.value,
-      documentType: resolveDocumentTypeLabel(documentTypeInput.value),
-      attendeeName: name,
-      email: emailValue,
-    }));
+    successfulDocument = payload?.document ?? {};
   } catch {
     showLookupFeedback(lookupUnavailableMessage, "error");
   } finally {
     setLookupBusy(false);
   }
+
+  if (successfulDocument === null) {
+    return;
+  }
+
+  clearLookupFeedback();
+  if (!shouldShowCertificateOptions(successfulDocument)) {
+    showLookupFeedback(formatPreviewMessage(previewFeedbackTemplate, {
+      eventName: eventNameInput.value,
+      documentType: resolveDocumentTypeLabel(documentTypeInput.value),
+      attendeeName: emptyNameText,
+      email: email.value.trim() || emptyEmailText,
+    }));
+    return;
+  }
+
+  showCertificateOptions(successfulDocument);
 }
 
 function applyHomePageLocale(nextLocale) {
@@ -764,6 +903,13 @@ function applyHomePageLocale(nextLocale) {
   updateTextContent(businessTaxIdLabel, homePageCopy.business_tax_id_label);
   updateTextContent(generatedAtLabel, homePageCopy.generated_at_label);
   updateTextContent(previewAction, homePageCopy.preview_action_label);
+  updateTextContent(certificateOptionsTitle, homePageCopy.certificate_options_title);
+  updateTextContent(certificateOptionsSubtitle, homePageCopy.certificate_options_subtitle);
+  updateTextContent(certificateNameOptionsLabel, homePageCopy.certificate_name_options_label);
+  updateTextContent(certificateCompanyOptionLabel, homePageCopy.certificate_company_option_label);
+  updateTextContent(certificateOptionsBackAction, homePageCopy.certificate_options_back_action_label);
+  updateTextContent(certificateChangeRequestAction, homePageCopy.certificate_change_request_action_label);
+  updateTextContent(certificateGenerateAction, homePageCopy.certificate_generate_action_label);
   updateTextContent(copyrightNotice, homePageCopy.copyright_notice);
 
   if (typeof homePageCopy.registration_number_placeholder === "string") {
@@ -1222,6 +1368,10 @@ documentRequestForm?.addEventListener("submit", (event) => {
 
 previewAction.addEventListener("click", () => {
   void submitDocumentLookup();
+});
+
+certificateOptionsBackAction?.addEventListener("click", () => {
+  showDocumentLookupForm();
 });
 
 [registrationNumber, attendeeName, email, businessTaxId, generatedAt].filter(Boolean).forEach((input) => {

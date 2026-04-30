@@ -78,6 +78,10 @@
   --theme-primary-shadow: 0 16px 30px rgba(81, 121, 254, 0.24);
   --theme-primary-shadow-hover: 0 18px 34px rgba(81, 121, 254, 0.28);
   --theme-primary-text: #fff;
+  --theme-icon-square-color: #ee5fa7;
+  --theme-icon-square-gradient: linear-gradient(135deg, #ee5fa7 0%, #ff8fc6 100%);
+  --theme-icon-square-shadow: rgba(238, 95, 167, 0.26);
+  --theme-icon-square-shadow-hover: rgba(238, 95, 167, 0.32);
   --theme-pill-bg: rgba(81, 121, 254, 0.14);
   --theme-pill-hover-bg: rgba(81, 121, 254, 0.22);
   --theme-pill-text: #3150cb;
@@ -210,6 +214,553 @@
     --theme-disabled-text: rgba(255, 255, 255, 0.88);
     --theme-caret-color: rgba(255, 176, 99, 0.86);
     --theme-caret-focus-color: #ea6e1e;
+  }
+}
+
+.field input,
+.field select,
+.form-datetime-input {
+  width: 100%;
+  min-height: 56px;
+  padding: 16px 18px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 18px;
+  background: var(--theme-input-bg);
+  color: var(--theme-content-text);
+  font: inherit;
+  font-size: 16px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.field select,
+.form-datetime-input {
+  appearance: none;
+}
+
+.field select {
+  background-image: none;
+}
+
+.form-datetime-input {
+  color-scheme: light;
+}
+
+.field input::placeholder,
+.form-datetime-input::placeholder {
+  color: var(--theme-input-placeholder);
+}
+
+.field input:focus,
+.field select:focus,
+.form-datetime-input:focus {
+  outline: none;
+  border-color: var(--theme-focus-border);
+  box-shadow:
+    0 0 0 5px var(--theme-focus-ring),
+    0 12px 24px var(--theme-focus-shadow);
+  transform: translateY(-1px);
+}
+
+.field.has-error input,
+.field.has-error select {
+  border-color: rgba(180, 35, 24, 0.42);
+  box-shadow: 0 0 0 4px rgba(180, 35, 24, 0.1);
+}
+
+.custom-select {
+  position: relative;
+}
+
+.custom-select-trigger,
+.field-static-value {
+  position: relative;
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 52px 15px 16px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 18px;
+  background: var(--theme-input-strong-bg);
+  color: var(--theme-content-text);
+  box-shadow: var(--theme-input-inset-shadow);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.field-static-value {
+  justify-content: flex-start;
+  padding-right: 16px;
+  background: var(--theme-input-bg);
+  color: var(--theme-content-muted);
+  cursor: default;
+}
+
+.field[hidden],
+.custom-select-trigger[hidden],
+.field-static-value[hidden],
+.form-datetime-input[hidden] {
+  display: none;
+}
+
+.custom-select.is-single-option .custom-select-trigger {
+  justify-content: flex-start;
+  padding-right: 16px;
+  cursor: default;
+}
+
+.custom-select-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theme-content-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select.is-open .custom-select-trigger,
+.custom-select-trigger:focus-visible {
+  outline: none;
+  border-color: var(--theme-focus-border);
+  box-shadow:
+    0 0 0 5px var(--theme-focus-ring),
+    0 12px 24px var(--theme-focus-shadow);
+  transform: translateY(-1px);
+}
+
+.custom-select-trigger:focus:not(:focus-visible) {
+  outline: none;
+  border-color: var(--theme-input-border);
+  box-shadow: var(--theme-input-inset-shadow);
+  transform: none;
+}
+
+.select-caret {
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 9px solid var(--theme-caret-color);
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition: transform 160ms ease, border-top-color 160ms ease;
+}
+
+.custom-select.is-open .select-caret,
+.custom-select-trigger:focus-visible .select-caret {
+  transform: translateY(-50%) rotate(180deg);
+  border-top-color: var(--theme-caret-focus-color);
+}
+
+.custom-select-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--theme-menu-border);
+  border-radius: 18px;
+  background: var(--theme-menu-bg);
+  box-shadow: var(--theme-menu-shadow);
+}
+
+.custom-select-menu[hidden] {
+  display: none;
+}
+
+.custom-select-option {
+  width: 100%;
+  padding: 13px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--theme-content-text);
+  font: inherit;
+  font-size: 0.97rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.custom-select-option:hover,
+.custom-select-option:focus-visible {
+  outline: none;
+  background: var(--theme-menu-hover-bg);
+  color: var(--theme-accent-deep);
+  transform: translateX(1px);
+}
+
+.custom-select-option.is-selected {
+  background: var(--theme-menu-active-bg);
+  color: var(--theme-accent-deep);
+  font-weight: 700;
+}
+
+.custom-select-trigger:disabled,
+.field input:disabled,
+.field select:disabled {
+  border-color: var(--theme-input-border);
+  background: var(--theme-input-bg);
+  color: var(--theme-content-muted);
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.62;
+  transform: none;
+}
+
+.custom-select-trigger:disabled .custom-select-value,
+.field input:disabled::placeholder {
+  color: var(--theme-content-muted);
+}
+
+.custom-select-trigger:disabled .select-caret {
+  border-top-color: var(--theme-content-muted);
+}
+
+.custom-select-trigger:disabled:hover,
+.custom-select-trigger:disabled:focus-visible,
+.field input:disabled:hover,
+.field input:disabled:focus,
+.field select:disabled:hover,
+.field select:disabled:focus {
+  outline: none;
+  border-color: var(--theme-input-border);
+  box-shadow: none;
+  transform: none;
+}
+
+.submit-button,
+.primary-action,
+.brand-square-action {
+  border: 0;
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: var(--theme-primary-shadow);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.submit-button,
+.primary-action {
+  background: var(--theme-primary-gradient);
+}
+
+.submit-button {
+  border-radius: 18px;
+  padding: 16px 20px;
+  font-size: 1rem;
+}
+
+.primary-action {
+  border-radius: 999px;
+  padding: 14px 24px;
+}
+
+.brand-square-action {
+  border-radius: 999px;
+  padding: 14px 24px;
+  background: var(--theme-icon-square-gradient);
+  box-shadow: 0 16px 30px var(--theme-icon-square-shadow);
+}
+
+.secondary-button,
+.secondary-action {
+  border: 0;
+  background: var(--theme-pill-bg);
+  color: var(--theme-pill-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.secondary-button {
+  border-radius: 999px;
+  padding: 9px 14px;
+  font-size: 0.9rem;
+}
+
+.secondary-action {
+  border: 1px solid var(--theme-input-border);
+  border-radius: 999px;
+  padding: 14px 24px;
+  background: var(--theme-input-bg);
+  color: var(--theme-content-text);
+  box-shadow: var(--theme-input-inset-shadow);
+}
+
+.submit-button:hover,
+.submit-button:focus-visible,
+.primary-action:hover,
+.primary-action:focus-visible,
+.brand-square-action:hover,
+.brand-square-action:focus-visible {
+  outline: none;
+  transform: translateY(-1px);
+  box-shadow: var(--theme-primary-shadow-hover);
+}
+
+.brand-square-action:hover,
+.brand-square-action:focus-visible {
+  box-shadow: 0 18px 34px var(--theme-icon-square-shadow-hover);
+}
+
+.secondary-button:hover,
+.secondary-button:focus-visible {
+  outline: none;
+  background: var(--theme-pill-hover-bg);
+  transform: translateY(-1px);
+}
+
+.secondary-action:hover,
+.secondary-action:focus-visible {
+  outline: none;
+  border-color: var(--theme-focus-border);
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 5px var(--theme-focus-ring),
+    0 12px 24px var(--theme-focus-shadow);
+}
+
+.submit-button:disabled,
+.primary-action:disabled,
+.brand-square-action:disabled {
+  background: var(--theme-disabled-gradient);
+  color: var(--theme-disabled-text);
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.submit-button:disabled:hover,
+.submit-button:disabled:focus-visible,
+.primary-action:disabled:hover,
+.primary-action:disabled:focus-visible,
+.brand-square-action:disabled:hover,
+.brand-square-action:disabled:focus-visible {
+  outline: none;
+  box-shadow: none;
+  transform: none;
+}
+
+.form-datetime-picker {
+  display: grid;
+  grid-template-columns: 140px 70px;
+  gap: 6px;
+  width: max-content;
+  min-width: 0;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 18px;
+  padding: 7px;
+  background: var(--theme-input-bg);
+}
+
+.form-datetime-picker:focus-within {
+  border-color: var(--theme-focus-border);
+  box-shadow:
+    0 0 0 5px var(--theme-focus-ring),
+    0 12px 24px var(--theme-focus-shadow);
+  transform: translateY(-1px);
+}
+
+.form-datetime-picker[hidden] {
+  display: none;
+}
+
+.form-datetime-picker-inline {
+  position: relative;
+}
+
+.form-datetime-picker-date,
+.form-datetime-picker-time,
+.form-datetime-picker-time-input {
+  min-height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theme-content-text);
+  color-scheme: light;
+  font: inherit;
+  font-size: 15px;
+  min-width: 0;
+  width: 100%;
+}
+
+.form-datetime-picker-time {
+  display: grid;
+  grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px);
+  gap: 0.2ch;
+  align-items: center;
+  padding: 8px 6px;
+}
+
+.form-datetime-picker-time:has(.form-datetime-picker-time-input:nth-of-type(3)) {
+  grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px) max-content minmax(26px, 30px);
+}
+
+.form-datetime-picker-date {
+  display: grid;
+  grid-template-columns: calc(4ch + 2px) max-content calc(2ch + 2px) max-content calc(2ch + 2px) 22px;
+  gap: 2px;
+  align-items: center;
+  padding: 8px 4px 8px 10px;
+}
+
+.form-datetime-picker-date-part {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--theme-content-text);
+  color-scheme: light;
+  font: inherit;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.form-datetime-picker-date-part.is-year {
+  text-align: center;
+}
+
+.form-datetime-picker-date-part:focus,
+.form-datetime-picker-date-native:focus,
+.form-datetime-picker-time-input:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.form-datetime-picker-date-native {
+  width: 22px;
+  min-width: 0;
+  height: 22px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: transparent;
+  color-scheme: light;
+  font: inherit;
+}
+
+.form-datetime-picker-date-native::-webkit-datetime-edit {
+  display: none;
+}
+
+.form-datetime-picker-date-native::-webkit-calendar-picker-indicator {
+  margin: 0;
+  padding: 0;
+  cursor: default;
+  opacity: 1;
+}
+
+.form-datetime-picker-time-input {
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+  box-sizing: border-box;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.document-type-datetime-input[hidden] + .form-datetime-picker {
+  padding: 0 3px;
+  border-radius: 10px;
+  grid-template-columns: 130px 65px;
+  gap: 4px;
+  width: max-content;
+}
+
+.document-type-datetime-input[hidden] + .form-datetime-picker .form-datetime-picker-date,
+.document-type-datetime-input[hidden] + .form-datetime-picker .form-datetime-picker-time,
+.document-type-datetime-input[hidden] + .form-datetime-picker .form-datetime-picker-time-input {
+  min-height: 26px;
+  font-size: 14px;
+}
+
+.document-type-datetime-input[hidden] + .form-datetime-picker .form-datetime-picker-time {
+  grid-template-columns: minmax(24px, 26px) max-content minmax(24px, 26px);
+  padding: 3px 4px;
+}
+
+.document-type-datetime-input[hidden] + .form-datetime-picker .form-datetime-picker-date {
+  grid-template-columns: calc(4.3ch + 2px) max-content calc(2.3ch + 2px) max-content calc(2.3ch + 2px) 22px;
+  padding: 3px 2px 3px 8px;
+}
+
+.document-type-datetime-input {
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+.form-checkbox-option {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-height: 54px;
+  padding: 14px 16px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 16px;
+  background: var(--theme-input-bg);
+  color: var(--theme-content-text);
+  font: inherit;
+  line-height: 1.5;
+  cursor: pointer;
+  user-select: none;
+}
+
+.form-checkbox-option input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 3px 0 0;
+  flex: 0 0 auto;
+  accent-color: var(--theme-accent-deep);
+  color-scheme: light;
+  cursor: pointer;
+}
+
+.form-checkbox-option input[type="checkbox"]:focus-visible {
+  outline: 3px solid rgba(242, 134, 94, 0.28);
+  outline-offset: 2px;
+}
+
+.form-checkbox-option:has(input:checked) {
+  border-color: var(--theme-focus-border);
+  background: var(--theme-menu-active-bg);
+}
+
+.form-checkbox-option span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.form-checkbox-option small {
+  color: var(--theme-content-muted);
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .form-checkbox-option input[type="checkbox"] {
+    appearance: auto;
+    color-scheme: light;
+    accent-color: #ea6e1e;
   }
 }
 

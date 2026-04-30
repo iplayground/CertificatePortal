@@ -183,8 +183,9 @@ def find_completion_cert_document_for_public_lookup(
         documents = list(
             container.query_items(
                 query=(
-                    "SELECT TOP 1 c.id, c.eventId, c.number, c.email, c.certStatus, "
-                    "c.issuedPdfBlobName FROM c WHERE c.eventId = @eventId "
+                    "SELECT TOP 1 c.id, c.eventId, c.number, c.email, c.badgeName, "
+                    "c.name, c.organization, c.certStatus, c.issuedPdfBlobName "
+                    "FROM c WHERE c.eventId = @eventId "
                     "AND c.number = @number"
                 ),
                 parameters=[

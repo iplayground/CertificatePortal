@@ -186,6 +186,32 @@
 
               <div id="form-feedback" class="feedback" role="status" aria-live="polite" hidden></div>
             </form>
+
+            <section class="certificate-options-view" id="certificate-options-view" hidden tabindex="-1" aria-labelledby="certificate-options-title">
+              <div class="certificate-options-header">
+                <h2 class="options-title" id="certificate-options-title">{{certificate_options_title}}</h2>
+                <p class="options-subtitle" id="certificate-options-subtitle">{{certificate_options_subtitle}}</p>
+              </div>
+
+              <div class="field" id="certificate-name-options-field">
+                <span class="field-label" id="certificate-name-options-label">{{certificate_name_options_label}}</span>
+                <div class="choice-list" id="certificate-name-options" role="radiogroup" aria-labelledby="certificate-name-options-label"></div>
+              </div>
+
+              <div class="field" id="certificate-company-option-field" hidden>
+                <span class="field-label" id="certificate-company-option-label">{{certificate_company_option_label}}</span>
+                <label class="form-checkbox-option certificate-company-option">
+                  <input id="certificate-company-visible" type="checkbox" value="1">
+                  <span id="certificate-company-option-text">{{certificate_company_option_text}}</span>
+                </label>
+              </div>
+
+              <div class="form-actions certificate-actions">
+                <button class="secondary-action" type="button" id="certificate-options-back-action">{{certificate_options_back_action_label}}</button>
+                <button class="primary-action" type="button" id="certificate-generate-action">{{certificate_generate_action_label}}</button>
+                <button class="brand-square-action certificate-change-request-action" type="button" id="certificate-change-request-action">{{certificate_change_request_action_label}}</button>
+              </div>
+            </section>
           </div>
         </section>
       </main>

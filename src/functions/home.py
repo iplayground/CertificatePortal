@@ -842,6 +842,11 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
             "document": {
                 "status": "found",
                 "documentType": payload["documentType"],
+                "badgeName": str(document.get("badgeName", "")).strip(),
+                "certStatus": str(document.get("certStatus", "")).strip()
+                or "notIssued",
+                "name": str(document.get("name", "")).strip(),
+                "organization": str(document.get("organization", "")).strip(),
             },
         }
     )

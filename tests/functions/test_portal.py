@@ -2009,9 +2009,18 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
         )
     )
     body = response.get_body().decode("utf-8")
+    theme_response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/theme.css",
+            route_params={"asset_name": "theme.css"},
+        )
+    )
+    theme_body = theme_response.get_body().decode("utf-8")
 
     assert response.status_code == 200
     assert response.mimetype == "text/css"
+    assert theme_response.status_code == 200
+    assert theme_response.mimetype == "text/css"
     assert ".portal-card" in body
     assert ".portal-auth-actions" in body
     assert ".portal-auth-lead" in body
@@ -2041,11 +2050,11 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".metric-panel" in body
     assert ".metric-section-heading" in body
     assert ".event-management-card" in body
-    assert ".custom-select-trigger" in body
-    assert ".custom-select.is-single-option .custom-select-trigger" in body
-    assert ".custom-select-menu" in body
-    assert ".custom-select-option" in body
-    assert ".field-static-value" in body
+    assert ".custom-select-trigger" in theme_body
+    assert ".custom-select.is-single-option .custom-select-trigger" in theme_body
+    assert ".custom-select-menu" in theme_body
+    assert ".custom-select-option" in theme_body
+    assert ".field-static-value" in theme_body
     assert ".document-workspace-card" in body
     assert ".document-filter-form" in body
     assert ".document-bulk-toolbar" in body
@@ -2120,7 +2129,7 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".event-status-switch-input:checked + .event-status-switch-track" in body
     assert ".event-status-switch-thumb" in body
     assert "transform: translateX(18px);" in body
-    assert "select-caret" in body
+    assert "select-caret" in theme_body
     assert ".event-status-badge.is-draft" not in body
     assert ".event-status-badge.is-unlisted" in body
     assert ".event-status-badge.is-open" in body
@@ -2128,13 +2137,12 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".document-type-pill.is-completion-cert" in body
     assert ".document-type-pill.is-tax-receipt" in body
     assert ".document-type-pill.is-empty" in body
-    assert ".form-checkbox-option" in body
+    assert ".form-checkbox-option" in theme_body
     assert ".document-type-option-with-setting" in body
     assert ".document-type-checkbox-control" in body
     assert ".document-type-setting" in body
-    assert "grid-template-columns: max-content max-content;" in body
-    assert "grid-template-columns: 140px 70px;" in body
-    assert "grid-template-columns: 130px 65px;" in body
+    assert "grid-template-columns: 140px 70px;" in theme_body
+    assert "grid-template-columns: 130px 65px;" in theme_body
     assert "grid-template-columns: minmax(0, 1fr) max-content;" in body
     assert ".document-type-option-with-setting {\n    grid-template-columns: 1fr;" not in body
     assert ".document-type-setting {\n    grid-template-columns: 1fr;" not in body
@@ -2146,37 +2154,37 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     ]
     assert "cursor: pointer;" not in document_type_toggle_css
     assert ".document-type-setting-toggle:focus-visible" in body
-    assert ".form-datetime-input" in body
-    assert ".form-datetime-input:focus" in body
+    assert ".form-datetime-input" in theme_body
+    assert ".form-datetime-input:focus" in theme_body
     assert ".form-datetime-picker-proxy" not in body
-    assert ".form-datetime-picker" in body
-    assert ".form-datetime-picker-inline" in body
-    assert ".form-datetime-picker-date" in body
-    assert ".form-datetime-picker-date-part" in body
-    assert ".form-datetime-picker-date-part.is-year" in body
-    assert ".form-datetime-picker-date-native" in body
-    assert ".form-datetime-picker-date-native::-webkit-calendar-picker-indicator" in body
-    assert ".form-datetime-picker-time" in body
-    assert ".form-datetime-picker-time-input" in body
-    assert ".form-datetime-picker-time-input:focus" in body
-    assert "grid-template-columns: calc(4ch + 2px) max-content calc(2ch + 2px) max-content calc(2ch + 2px) 22px;" in body
-    assert "grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px);" in body
-    assert "grid-template-columns: calc(4.3ch + 2px) max-content calc(2.3ch + 2px) max-content calc(2.3ch + 2px) 22px;" in body
-    assert "grid-template-columns: minmax(24px, 26px) max-content minmax(24px, 26px);" in body
-    assert "gap: 0.2ch;" in body
-    assert ".form-datetime-input[hidden]" in body
-    assert "width: max-content;" in body
-    assert "padding: 8px 4px 8px 10px;" in body
-    assert ".document-type-datetime-input" in body
-    assert "min-height: 40px;" in body
-    assert "padding: 8px 12px;" in body
-    assert "background-image: none;" in body
+    assert ".form-datetime-picker" in theme_body
+    assert ".form-datetime-picker-inline" in theme_body
+    assert ".form-datetime-picker-date" in theme_body
+    assert ".form-datetime-picker-date-part" in theme_body
+    assert ".form-datetime-picker-date-part.is-year" in theme_body
+    assert ".form-datetime-picker-date-native" in theme_body
+    assert ".form-datetime-picker-date-native::-webkit-calendar-picker-indicator" in theme_body
+    assert ".form-datetime-picker-time" in theme_body
+    assert ".form-datetime-picker-time-input" in theme_body
+    assert ".form-datetime-picker-time-input:focus" in theme_body
+    assert "grid-template-columns: calc(4ch + 2px) max-content calc(2ch + 2px) max-content calc(2ch + 2px) 22px;" in theme_body
+    assert "grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px);" in theme_body
+    assert "grid-template-columns: calc(4.3ch + 2px) max-content calc(2.3ch + 2px) max-content calc(2.3ch + 2px) 22px;" in theme_body
+    assert "grid-template-columns: minmax(24px, 26px) max-content minmax(24px, 26px);" in theme_body
+    assert "gap: 0.2ch;" in theme_body
+    assert ".form-datetime-input[hidden]" in theme_body
+    assert "width: max-content;" in theme_body
+    assert "padding: 8px 4px 8px 10px;" in theme_body
+    assert ".document-type-datetime-input" in theme_body
+    assert "min-height: 40px;" in theme_body
+    assert "padding: 8px 12px;" in theme_body
+    assert "background-image: none;" in theme_body
     assert ".event-cancel-button" in body
     assert "border-radius: 14px;" not in body
-    assert "accent-color: var(--theme-accent-deep);" in body
-    assert "appearance: auto;" in body
-    assert "color-scheme: light;" in body
-    assert "accent-color: #ea6e1e;" in body
+    assert "accent-color: var(--theme-accent-deep);" in theme_body
+    assert "appearance: auto;" in theme_body
+    assert "color-scheme: light;" in theme_body
+    assert "accent-color: #ea6e1e;" in theme_body
     assert "border: 2px solid #f2865e;" not in body
     assert ".sidebar-brand" in body
     assert "object-fit: cover;" in body
@@ -2565,6 +2573,12 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "assignCompletionUploadFile" in body
     assert "document.addEventListener(\"drop\", handleCompletionUploadDrop)" in body
     assert "setCompletionRowDownloadState" in body
+    assert 'isCheckedIn: attendanceStatus === "checkedIn"' in body
+    assert 'isDownloadable: certStatus === "issued"' in body
+    assert 'isDownloadable: rowData?.attendanceStatus === "checkedIn"' not in body
+    assert "switchInput.checked = rowData.isCheckedIn" in body
+    assert "switchInput.checked = rowData.isDownloadable" not in body
+    assert "(row) => row.isCheckedIn !== isDownloadable" in body
     assert "isUpdatingCompletionBulkAttendance" in body
     assert "updateCompletionTableBusyState" in body
     assert "\"is-bulk-updating\"" in body
