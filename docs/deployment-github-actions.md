@@ -186,6 +186,7 @@ gh workflow list -R iplayground/CertificatePortal
 - Flex Consumption 只支援 One Deploy 路徑，不應混用舊式 Zip Deploy 設定。
 - `workflow_dispatch` 應從 `main` 分支觸發；目前 OIDC federated credential 明確綁定 `repo:iplayground/CertificatePortal:ref:refs/heads/main`。
 - 目前 GitHub OIDC 身分只需要支援應用程式程式碼部署，不應為了日常 deploy 額外授與整個 resource group 的基礎設施管理權限。
+- workflow 目前使用支援 Node.js 24 的 `actions/checkout@v6` 與 `actions/setup-python@v6`；若未來改用 self-hosted runner，runner 版本需維持在 GitHub 官方 action 要求的最低版本以上。
 - 若變更 GitHub repo 名稱、組織或主要分支，必須同步更新 federated credential，否則 OIDC 會失效。
 - `functionAppName` 一旦上線後就不建議任意變更，否則會影響 DNS、監控命名與既有部署設定。
 
