@@ -306,25 +306,32 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   properties: {
     serverFarmId: hostingPlan.id
     httpsOnly: true
-    functionAppConfig: {
-      deployment: {
-        storage: {
-          type: 'blobContainer'
-          value: '${storageAccount.properties.primaryEndpoints.blob}${deploymentContainerName}'
-          authentication: {
-            type: 'SystemAssignedIdentity'
+    functionAppConfig: union(
+      {
+        deployment: {
+          storage: {
+            type: 'blobContainer'
+            value: '${storageAccount.properties.primaryEndpoints.blob}${deploymentContainerName}'
+            authentication: {
+              type: 'SystemAssignedIdentity'
+            }
           }
         }
+        runtime: {
+          name: 'python'
+          version: pythonVersion
+        }
+        scaleAndConcurrency: {
+          instanceMemoryMB: instanceMemoryMB
+          maximumInstanceCount: maximumInstanceCount
+        }
+      },
+      {
+        siteUpdateStrategy: {
+          type: 'RollingUpdate'
+        }
       }
-      runtime: {
-        name: 'python'
-        version: pythonVersion
-      }
-      scaleAndConcurrency: {
-        instanceMemoryMB: instanceMemoryMB
-        maximumInstanceCount: maximumInstanceCount
-      }
-    }
+    )
     siteConfig: {
       alwaysOn: false
       appSettings: [

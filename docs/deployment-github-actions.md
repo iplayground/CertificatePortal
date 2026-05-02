@@ -165,8 +165,31 @@ gh workflow list -R iplayground/CertificatePortal
 3. 安裝 `requirements.txt` 內的 Python 依賴
 4. 用 `compileall` 做語法檢查
 5. 直接 import `function_app`，確認核心模組與依賴可載入
-6. 以 OIDC 登入 Azure
-7. 透過 `Azure/functions-action` 對既有 Function App 做 remote build 與部署
+6. 查詢上一個 `ipg-certificate-production` GitHub deployment success 紀錄
+7. 寫入 `build-info.json`，內容包含目前 commit SHA
+8. 以 OIDC 登入 Azure
+9. 透過 `Azure/functions-action` 對既有 Function App 做 remote build 與部署
+10. 輪詢 `GET /api/health`，確認正式 endpoint 回傳目前 commit SHA
+11. 健康檢查通過後建立 `ipg-certificate-production` GitHub deployment success 紀錄
+12. 若部署或健康檢查失敗，且可取得 rollback ref，重新部署 rollback ref
+
+### 健康檢查與 rollback
+
+每次 workflow 部署前會在部署包寫入 `build-info.json`，內容包含該次 commit SHA。
+正式站提供不需授權的 `GET /api/health`，回傳 `status` 與部署包內的 commit SHA。
+部署完成後，workflow 會輪詢健康檢查，直到確認正式 endpoint 回傳目前 commit SHA。
+健康檢查通過後，workflow 才會建立 `ipg-certificate-production` GitHub deployment
+success 紀錄。此紀錄代表上一個已知健康部署版本，供後續自動 rollback 選擇 ref。
+
+若部署或健康檢查未通過，workflow 會重新部署 rollback ref，優先順序如下：
+
+1. 上一個 `ipg-certificate-production` GitHub deployment success 紀錄的 commit SHA。
+2. 手動執行時填入的 `rollback_ref` input。
+3. push 觸發時 GitHub push event 的 `before` SHA。
+
+rollback 會重新 checkout rollback ref，並再次透過 `Azure/functions-action@v1`
+上傳該版本。GitHub Deployments 只用來記錄健康版本與選擇 rollback ref；它不保存
+部署包，也不提供 Azure 原生 rollback。
 
 ## 目前的 Azure 設定基線
 
@@ -174,6 +197,7 @@ gh workflow list -R iplayground/CertificatePortal
 - Hosting plan：Flex Consumption
 - Host storage：`AzureWebJobsStorage__accountName`，以 system-assigned managed identity 存取
 - Deployment storage：Blob container `function-releases`，以 system-assigned managed identity 存取
+- Site update strategy：`RollingUpdate`
 - Function App `httpsOnly`：啟用，僅允許 HTTPS 存取
 - Cosmos DB：Azure Cosmos DB for NoSQL serverless account
 - Cosmos DB local auth：停用，Function App 以 system-assigned managed identity 取得 database 範圍的 Cosmos DB Built-in Data Contributor 權限
@@ -184,9 +208,10 @@ gh workflow list -R iplayground/CertificatePortal
 ## 注意事項
 
 - Flex Consumption 只支援 One Deploy 路徑，不應混用舊式 Zip Deploy 設定。
+- `RollingUpdate` 是 Azure Function App 的站台設定，需先透過 `az deployment group create` 套用 `infra/bicep/main.bicep` 後才會在 Azure 生效；只修改 workflow 或只部署程式碼不會改變既有 Function App 的 site update strategy。
 - `workflow_dispatch` 應從 `main` 分支觸發；目前 OIDC federated credential 明確綁定 `repo:iplayground/CertificatePortal:ref:refs/heads/main`。
 - 目前 GitHub OIDC 身分只需要支援應用程式程式碼部署，不應為了日常 deploy 額外授與整個 resource group 的基礎設施管理權限。
-- workflow 目前使用支援 Node.js 24 的 `actions/checkout@v6` 與 `actions/setup-python@v6`；若未來改用 self-hosted runner，runner 版本需維持在 GitHub 官方 action 要求的最低版本以上。
+- workflow 目前使用支援 Node.js 24 的 `actions/checkout@v6`、`actions/setup-python@v6` 與 `actions/github-script@v8`；若未來改用 self-hosted runner，runner 版本需維持在 GitHub 官方 action 要求的最低版本以上。
 - 若變更 GitHub repo 名稱、組織或主要分支，必須同步更新 federated credential，否則 OIDC 會失效。
 - `functionAppName` 一旦上線後就不建議任意變更，否則會影響 DNS、監控命名與既有部署設定。
 
