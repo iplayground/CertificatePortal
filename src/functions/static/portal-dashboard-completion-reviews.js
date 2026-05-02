@@ -19,12 +19,57 @@ const adminCompletionChangeRequestsApiPath = "/api/v1/admin/completion-cert-chan
 const portalCsrfToken = document.body?.dataset.portalCsrfToken || "";
 const loadingCompletionReviewsMessage = "修改申請載入中...";
 const emptyCompletionReviewsMessage = "目前沒有待審核的修改申請。";
+const portalEntryPath = "/portal";
+const portalSessionStartedAtKey = "ipg:portal:session-started-at:v1";
+const portalSessionMaxAgeMs = 8 * 60 * 60 * 1000;
 
 let completionReviewRows = [];
 let selectedCompletionReviewId = "";
 let completionReviewPreviousFocus = null;
 let isLoadingCompletionReviews = true;
 let isSubmittingCompletionReview = false;
+
+function redirectToPortalEntry() {
+  const targetWindow = window.top && window.top !== window ? window.top : window;
+  targetWindow.location.assign(portalEntryPath);
+}
+
+function handlePortalUnauthorizedResponse(response) {
+  if (response.status !== 401) {
+    return false;
+  }
+
+  redirectToPortalEntry();
+  return true;
+}
+
+async function verifyPortalSession() {
+  let startedAt = 0;
+  try {
+    startedAt = Number.parseInt(
+      window.sessionStorage.getItem(portalSessionStartedAtKey) ?? "",
+      10
+    );
+  } catch (error) {
+    void error;
+  }
+
+  if (!Number.isFinite(startedAt) || startedAt <= 0) {
+    try {
+      window.sessionStorage.setItem(portalSessionStartedAtKey, String(Date.now()));
+    } catch (error) {
+      void error;
+    }
+    return true;
+  }
+
+  if (Date.now() - startedAt >= portalSessionMaxAgeMs) {
+    redirectToPortalEntry();
+    return false;
+  }
+
+  return true;
+}
 
 function setTextContent(parent, selector, value) {
   const element = parent.querySelector(selector);
@@ -137,7 +182,7 @@ function renderCompletionReviewRows() {
     if (reviewButton instanceof HTMLButtonElement) {
       reviewButton.disabled = isSubmittingCompletionReview;
       reviewButton.addEventListener("click", () => {
-        openCompletionReviewDialog(rowData);
+        void openCompletionReviewDialog(rowData);
       });
     }
 
@@ -164,6 +209,10 @@ async function loadCompletionReviews() {
         Accept: "application/json",
       },
     });
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(responsePayload?.error?.message || "修改申請載入失敗。");
@@ -227,8 +276,12 @@ function setStaticValue(element, value) {
   }
 }
 
-function openCompletionReviewDialog(rowData) {
+async function openCompletionReviewDialog(rowData) {
   if (!completionReviewDialog || isSubmittingCompletionReview) {
+    return;
+  }
+
+  if (!(await verifyPortalSession())) {
     return;
   }
 
@@ -307,6 +360,10 @@ async function submitCompletionReview(status) {
         body: JSON.stringify(payload),
       }
     );
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(responsePayload?.error?.message || "修改申請審核失敗。");

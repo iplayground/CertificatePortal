@@ -41,6 +41,15 @@ const {
   installDateTimePicker,
   normalizeDateTimeInputValue,
 } = window.iPlaygroundPortalDateTime;
+
+function handlePortalUnauthorizedResponse(response) {
+  return window.iPlaygroundPortalAuth?.handleUnauthorizedResponse?.(response) === true;
+}
+
+async function verifyPortalSession() {
+  return window.iPlaygroundPortalAuth?.verifySession?.() ?? true;
+}
+
 function canRequestParentEventCreateDialog() {
   return window.parent && window.parent !== window;
 }
@@ -214,7 +223,11 @@ function openEventFormDialog({ mode = "create", eventData = {} } = {}) {
   eventNameInput?.focus();
 }
 
-function openEventCreateDialog() {
+async function openEventCreateDialog() {
+  if (!(await verifyPortalSession())) {
+    return;
+  }
+
   openEventFormDialog({ mode: "create" });
 }
 
@@ -234,7 +247,11 @@ function buildEventDataFromRow(row) {
   };
 }
 
-function openEventEditDialog(row) {
+async function openEventEditDialog(row) {
+  if (!(await verifyPortalSession())) {
+    return;
+  }
+
   openEventFormDialog({
     mode: "edit",
     eventData: buildEventDataFromRow(row),
@@ -470,6 +487,10 @@ async function loadEventRows() {
         Accept: "application/json",
       },
     });
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(responsePayload?.error?.message || "活動清單載入失敗。");
@@ -580,6 +601,10 @@ async function submitEventForm() {
       },
       body: JSON.stringify(collectEventDialogPayload()),
     });
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(responsePayload?.error?.message || "建立活動失敗，請稍後再試。");
@@ -623,7 +648,9 @@ async function submitEventForm() {
   }
 }
 
-eventCreateOpenButton?.addEventListener("click", openEventCreateDialog);
+eventCreateOpenButton?.addEventListener("click", () => {
+  void openEventCreateDialog();
+});
 eventCreateCancelButton?.addEventListener("click", () => {
   closeEventCreateDialog({ confirmUnsaved: true });
 });

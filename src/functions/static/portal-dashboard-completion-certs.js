@@ -87,6 +87,14 @@ let isUpdatingCompletionBulkAttendance = false;
 let completionEventsSignature = "";
 let completionCurrentPage = 1;
 
+function handlePortalUnauthorizedResponse(response) {
+  return window.iPlaygroundPortalAuth?.handleUnauthorizedResponse?.(response) === true;
+}
+
+async function verifyPortalSession() {
+  return window.iPlaygroundPortalAuth?.verifySession?.() ?? true;
+}
+
 function normalizeCompletionEvent(eventData) {
   return {
     id: typeof eventData?.id === "string" ? eventData.id : "",
@@ -310,6 +318,10 @@ async function loadCompletionEvents() {
         Accept: "application/json",
       },
     });
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(responsePayload?.error?.message || "活動清單載入失敗。");
@@ -793,8 +805,12 @@ function getCompletionEditInputValue(element) {
   return element instanceof HTMLInputElement ? element.value.trim() : "";
 }
 
-function openCompletionEditDialog(rowData) {
+async function openCompletionEditDialog(rowData) {
   if (!completionEditDialog || isUpdatingCompletionBulkAttendance) {
+    return;
+  }
+
+  if (!(await verifyPortalSession())) {
     return;
   }
 
@@ -887,6 +903,10 @@ async function submitCompletionEditDialog() {
         body: JSON.stringify(payload),
       }
     );
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(responsePayload?.error?.message || "完訓證明資料修改失敗。");
@@ -959,6 +979,10 @@ async function updateCompletionRowAttendanceStatus(rowData, isCheckedIn) {
       }),
     }
   );
+  if (handlePortalUnauthorizedResponse(response)) {
+    return rowData;
+  }
+
   const responsePayload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(responsePayload?.error?.message || "簽到狀態更新失敗。");
@@ -1007,6 +1031,10 @@ function updateCompletionPaginationControls(visibleRows) {
 
 async function setCompletionRowDownloadState(rowId, isCheckedIn) {
   if (isUpdatingCompletionBulkAttendance) {
+    return;
+  }
+
+  if (!(await verifyPortalSession())) {
     return;
   }
 
@@ -1105,14 +1133,14 @@ function renderCompletionCertRows() {
       const rowLabel = rowData.name || rowData.number || "此筆完訓證明";
       switchInput.setAttribute("aria-label", `${rowLabel} 簽到狀態`);
       switchInput.addEventListener("change", () => {
-        setCompletionRowDownloadState(rowData.id, switchInput.checked);
+        void setCompletionRowDownloadState(rowData.id, switchInput.checked);
       });
     }
 
     const editButton = rowElement.querySelector(".document-edit-button");
     if (editButton instanceof HTMLButtonElement) {
       editButton.addEventListener("click", () => {
-        openCompletionEditDialog(rowData);
+        void openCompletionEditDialog(rowData);
       });
     }
 
@@ -1145,6 +1173,10 @@ async function loadCompletionCertRows(eventId = getCompletionFilterEventName()) 
         },
       }
     );
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(responsePayload?.error?.message || "完訓證明資料載入失敗。");
@@ -1175,6 +1207,10 @@ async function importCompletionCsvText(csvText, eventId = getCompletionUploadEve
     },
     body: JSON.stringify({ eventId, csvText }),
   });
+  if (handlePortalUnauthorizedResponse(response)) {
+    return [];
+  }
+
   const responsePayload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw buildCompletionUploadImportError(responsePayload, "完訓證明資料匯入失敗。");
@@ -1225,6 +1261,10 @@ async function importSelectedCompletionCsvFile() {
 
 async function applyDownloadableStateToCurrentActivity(isDownloadable) {
   if (isUpdatingCompletionBulkAttendance) {
+    return;
+  }
+
+  if (!(await verifyPortalSession())) {
     return;
   }
 
@@ -1280,7 +1320,11 @@ function confirmCompletionUploadDialogClose() {
   return window.confirm("資料尚未存檔，確定要取消嗎？");
 }
 
-function openCompletionUploadDialog() {
+async function openCompletionUploadDialog() {
+  if (!(await verifyPortalSession())) {
+    return;
+  }
+
   if (canRequestParentCompletionUploadDialog()) {
     requestParentCompletionUploadDialog();
     return;
@@ -1480,7 +1524,9 @@ function openCompletionUploadEventSelect() {
   }
 }
 
-completionUploadOpenButton?.addEventListener("click", openCompletionUploadDialog);
+completionUploadOpenButton?.addEventListener("click", () => {
+  void openCompletionUploadDialog();
+});
 completionUploadCancelButton?.addEventListener("click", () => {
   closeCompletionUploadDialog({ confirmUnsaved: true });
 });
@@ -1510,11 +1556,11 @@ completionUploadEventTrigger?.addEventListener(
 );
 
 completionBulkDownloadableButton?.addEventListener("click", () => {
-  applyDownloadableStateToCurrentActivity(true);
+  void applyDownloadableStateToCurrentActivity(true);
 });
 
 completionBulkBlockedButton?.addEventListener("click", () => {
-  applyDownloadableStateToCurrentActivity(false);
+  void applyDownloadableStateToCurrentActivity(false);
 });
 
 completionPagePrevButton?.addEventListener("click", () => {

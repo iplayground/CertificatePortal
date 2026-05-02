@@ -58,6 +58,14 @@ const {
   normalizeDateTimeInputValue,
 } = window.iPlaygroundPortalDateTime;
 
+function handlePortalUnauthorizedResponse(response) {
+  return window.iPlaygroundPortalAuth?.handleUnauthorizedResponse?.(response) === true;
+}
+
+async function verifyPortalSession() {
+  return window.iPlaygroundPortalAuth?.verifySession?.() ?? true;
+}
+
 function canRequestParentTaxUploadDialog() {
   return window.parent && window.parent !== window;
 }
@@ -326,6 +334,10 @@ async function loadTaxEvents() {
         Accept: "application/json",
       },
     });
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(responsePayload?.error?.message || "活動清單載入失敗。");
@@ -581,7 +593,11 @@ function formatTaxGeneratedAt(value) {
   return normalizeDateTimeInputValue(value) || "";
 }
 
-function openTaxEditDialog(rowData) {
+async function openTaxEditDialog(rowData) {
+  if (!(await verifyPortalSession())) {
+    return;
+  }
+
   if (canRequestParentTaxUploadDialog()) {
     requestParentTaxUploadDialog("edit", rowData);
     return;
@@ -644,7 +660,7 @@ function renderTaxReceiptRows() {
     const editButton = rowElement.querySelector(".document-edit-button");
     if (editButton instanceof HTMLButtonElement) {
       editButton.addEventListener("click", () => {
-        openTaxEditDialog(rowData);
+        void openTaxEditDialog(rowData);
       });
     }
 
@@ -705,7 +721,11 @@ function confirmTaxUploadDialogClose() {
   return window.confirm("資料尚未存檔，確定要取消嗎？");
 }
 
-function openTaxUploadDialog({ mode = "create", rowData = {} } = {}) {
+async function openTaxUploadDialog({ mode = "create", rowData = {} } = {}) {
+  if (!(await verifyPortalSession())) {
+    return;
+  }
+
   if (mode !== "edit" && canRequestParentTaxUploadDialog()) {
     requestParentTaxUploadDialog("create");
     return;
@@ -888,7 +908,7 @@ function handleTaxUploadEventTriggerKeydown(event) {
 }
 
 taxUploadOpenButton?.addEventListener("click", () => {
-  openTaxUploadDialog();
+  void openTaxUploadDialog();
 });
 
 taxUploadCancelButton?.addEventListener("click", () => {

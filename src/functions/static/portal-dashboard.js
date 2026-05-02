@@ -165,10 +165,58 @@ function normaliseFramePath(value) {
   }
 }
 
-function syncViewFromFrame() {
-  const currentPath = normaliseFramePath(contentFrame.src || welcomePagePath);
-  if (currentPath === portalEntryPath) {
+function redirectToPortalEntry() {
+  window.iPlaygroundPortalAuth?.redirectToPortalEntry?.() ??
     window.location.assign(portalEntryPath);
+}
+
+function handlePortalUnauthorizedResponse(response) {
+  if (window.iPlaygroundPortalAuth?.handleUnauthorizedResponse?.(response)) {
+    return true;
+  }
+
+  if (response.status !== 401) {
+    return false;
+  }
+
+  redirectToPortalEntry();
+  return true;
+}
+
+async function verifyPortalSession() {
+  if (window.iPlaygroundPortalAuth?.verifySession) {
+    return window.iPlaygroundPortalAuth.verifySession();
+  }
+
+  return true;
+}
+
+function resolveCurrentFramePath() {
+  try {
+    const framePath = contentFrame.contentWindow?.location?.pathname;
+    if (framePath) {
+      return framePath;
+    }
+  } catch (error) {
+    void error;
+  }
+
+  try {
+    const framePath = contentFrame.contentDocument?.location?.pathname;
+    if (framePath) {
+      return framePath;
+    }
+  } catch (error) {
+    void error;
+  }
+
+  return normaliseFramePath(contentFrame.src || welcomePagePath);
+}
+
+function syncViewFromFrame() {
+  const currentPath = resolveCurrentFramePath();
+  if (currentPath === portalEntryPath) {
+    redirectToPortalEntry();
     return;
   }
 
@@ -477,6 +525,10 @@ async function submitDashboardEventForm() {
       },
       body: JSON.stringify(collectDashboardEventDialogPayload()),
     });
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(responsePayload?.error?.message || "建立活動失敗，請稍後再試。");
@@ -743,6 +795,10 @@ async function loadDashboardCompletionUploadEvents() {
         Accept: "application/json",
       },
     });
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(responsePayload?.error?.message || "活動清單載入失敗。");
@@ -997,6 +1053,10 @@ async function sendDashboardCompletionUploadFileToFrame() {
         eventId: getDashboardCompletionUploadEventName(),
       }),
     });
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw buildDashboardCompletionUploadImportError(responsePayload, "完訓證明資料匯入失敗。");
@@ -1820,23 +1880,39 @@ window.addEventListener("message", (event) => {
   }
 
   if (message.type === eventFormOpenMessageType) {
-    openDashboardEventDialog({
-      mode: message.mode === "edit" ? "edit" : "create",
-      eventData: message.event ?? {},
-    });
+    void (async () => {
+      if (!(await verifyPortalSession())) {
+        return;
+      }
+
+      openDashboardEventDialog({
+        mode: message.mode === "edit" ? "edit" : "create",
+        eventData: message.event ?? {},
+      });
+    })();
     return;
   }
 
   if (message.type === completionUploadOpenMessageType) {
-    openDashboardCompletionUploadDialog();
+    void (async () => {
+      if (await verifyPortalSession()) {
+        openDashboardCompletionUploadDialog();
+      }
+    })();
     return;
   }
 
   if (message.type === taxReceiptUploadOpenMessageType) {
-    openDashboardTaxUploadDialog({
-      mode: message.mode === "edit" ? "edit" : "create",
-      receiptData: message.receipt ?? {},
-    });
+    void (async () => {
+      if (!(await verifyPortalSession())) {
+        return;
+      }
+
+      openDashboardTaxUploadDialog({
+        mode: message.mode === "edit" ? "edit" : "create",
+        receiptData: message.receipt ?? {},
+      });
+    })();
   }
 });
 

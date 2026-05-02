@@ -1712,6 +1712,7 @@ def test_portal_google_auth_callback_sets_session_cookie_and_allows_dashboard_ac
     assert "cloud-identity.groups.readonly" in login_response.headers["Location"]
     session_cookie_header = callback_response.headers["Set-Cookie"]
     session_token = parse_set_cookie_value(session_cookie_header, "portal_google_session")
+    assert "Max-Age=28800" in session_cookie_header
 
     dashboard_response = portal_dashboard_page(
         build_request(
@@ -2663,6 +2664,12 @@ def test_portal_event_cache_js_asset_returns_expected_content_type() -> None:
     assert "refresh" in body
     assert "upsertCachedEvent" in body
     assert "ipg:portal-events:updated" in body
+    assert "iPlaygroundPortalAuth" in body
+    assert "handleUnauthorizedResponse" in body
+    assert "redirectToPortalEntry" in body
+    assert 'const sessionStartedAtKey = "ipg:portal:session-started-at:v1"' in body
+    assert "const sessionMaxAgeMs = 8 * 60 * 60 * 1000" in body
+    assert "verifySession" in body
 
 
 def test_portal_datetime_picker_js_asset_returns_expected_content_type() -> None:
@@ -2783,6 +2790,9 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "document.title = nextTitle" in body
     assert "activateView" in body
     assert "syncViewFromFrame" in body
+    assert "resolveCurrentFramePath" in body
+    assert "handlePortalUnauthorizedResponse" in body
+    assert "verifyPortalSession" in body
     assert "openDashboardEventDialog" in body
     assert "openDashboardCompletionUploadDialog" in body
     assert "portal-completion-upload-file-name" in body
@@ -2909,6 +2919,8 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "button.dataset.viewPath" in body
     assert 'window.location.assign(logoutUrl)' in body
     assert 'window.location.assign(portalEntryPath)' in body
+    assert "contentFrame.contentWindow?.location?.pathname" in body
+    assert "window.iPlaygroundPortalAuth?.redirectToPortalEntry" in body
     assert "window.iPlaygroundPortalEvents" in body
     assert "preload" in body
     assert "upsertCachedEvent" in body
@@ -3033,6 +3045,8 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "getCachedEvents" in body
     assert "refresh" in body
     assert "ipg:portal-events:updated" in body
+    assert "handlePortalUnauthorizedResponse" in body
+    assert "verifyPortalSession" in body
 
 
 def test_portal_dashboard_completion_reviews_js_asset_returns_expected_content_type() -> None:
@@ -3058,6 +3072,11 @@ def test_portal_dashboard_completion_reviews_js_asset_returns_expected_content_t
     assert "修改申請已通過並更新資料。" in body
     assert "修改申請已駁回。" in body
     assert "X-Portal-CSRF-Token" in body
+    assert "handlePortalUnauthorizedResponse" in body
+    assert "targetWindow.location.assign(portalEntryPath)" in body
+    assert "portalSessionStartedAtKey" in body
+    assert "portalSessionMaxAgeMs" in body
+    assert "verifyPortalSession" in body
 
 
 def test_portal_dashboard_tax_receipts_js_asset_returns_expected_content_type() -> None:
@@ -3129,6 +3148,8 @@ def test_portal_dashboard_tax_receipts_js_asset_returns_expected_content_type() 
     assert "window.iPlaygroundPortalEvents" in body
     assert "renderTaxEventSelects" in body
     assert "loadTaxEvents" in body
+    assert "handlePortalUnauthorizedResponse" in body
+    assert "verifyPortalSession" in body
 
 
 def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> None:
@@ -3143,6 +3164,8 @@ def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> Non
     assert response.status_code == 200
     assert response.mimetype == "application/javascript"
     assert 'document.getElementById("event-create-open")' in body
+    assert "handlePortalUnauthorizedResponse" in body
+    assert "verifyPortalSession" in body
     assert "openEventCreateDialog" in body
     assert "openEventEditDialog" in body
     assert "setEventDialogMode" in body

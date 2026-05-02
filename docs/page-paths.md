@@ -336,6 +336,8 @@ status: 尚未串接實際驗證資料
 - 點擊功能項目時，右側 iframe 會切換到對應的獨立頁面
 - 父頁 title 會同步成目前 iframe 顯示頁面的 title
 - `/portal/dashboard` 與其 iframe 子頁都會在伺服器端重新檢查 session cookie 與授權狀態
+- 若 iframe 子頁因 session cookie 過期或失效而被伺服器重新導向 `/portal`，父層 dashboard 會偵測 iframe 實際路徑並將 top-level 視窗導回 `/portal`
+- 若管理端 API 回傳 `401 unauthorized`，dashboard 與各 iframe 子頁的前端腳本會將 top-level 視窗導回 `/portal`
 - 點擊 `登出` 會導向 `/portal/auth/logout`，再回到 `/portal`
 - 管理端會對資料庫造成異動的 API 需要通過伺服器端 session 授權、同源 `Origin` 或 `Referer` 檢查，以及頁面注入的 CSRF token 檢查；第三方網頁即使知道 API 路徑，也不能直接操作
 
