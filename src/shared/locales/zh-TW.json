@@ -39,6 +39,8 @@
     "certificate_change_request_action_label": "提出修改申請",
     "certificate_generate_action_label": "產生證書",
     "certificate_change_request_processing_message": "修改申請正在處理中，管理者確認後會再處理發證。若現在產生證書，將視為放棄本次修改申請。",
+    "certificate_change_request_approved_message": "修改申請已通過，請確認下方顯示資料後產生證書。",
+    "certificate_change_request_rejected_message": "修改申請已駁回，請以目前資料產生證書。",
     "certificate_change_request_title": "修改申請",
     "certificate_change_request_subtitle": "請描述需要調整的證明資料，管理者確認後會再處理發證。",
     "certificate_change_request_summary_label": "目前查詢到的完訓證明資料",

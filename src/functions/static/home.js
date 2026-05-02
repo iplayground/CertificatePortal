@@ -20,6 +20,8 @@ const certificateGenerateAction = document.getElementById("certificate-generate-
 const certificateChangeRequestProcessingFeedback = document.getElementById(
   "certificate-change-request-processing-feedback"
 );
+const certificateChangeRequestProcessingDefaultMessage =
+  certificateChangeRequestProcessingFeedback?.textContent ?? "";
 const certificateChangeRequestView = document.getElementById("certificate-change-request-view");
 const certificateChangeRequestForm = document.getElementById("certificate-change-request-form");
 const certificateChangeRequestTitle = document.getElementById("certificate-change-request-title");
@@ -103,6 +105,7 @@ let lookupPendingMessage = homePage.dataset.lookupPendingMessage ?? "查詢中�
 let isLookupInProgress = false;
 let isChangeRequestInProgress = false;
 let isChangeRequestSubmitted = false;
+let certificateOptionsChangeRequestStatus = null;
 let currentCertificateDocument = null;
 const { installDateTimePicker } = window.iPlaygroundPortalDateTime ?? {};
 
@@ -539,12 +542,55 @@ function renderCertificateCompanyOption(documentData) {
 
 function renderCertificateOptionsStatus(documentData) {
   const isChangeRequested = documentData?.certStatus === "changeRequested";
+  const canRequestChanges = typeof documentData?.canRequestChanges === "boolean"
+    ? documentData.canRequestChanges
+    : documentData?.certStatus === "notIssued";
+  const reviewStatus = documentData?.changeRequestReview?.status;
+  const reviewNote = typeof documentData?.changeRequestReview?.reviewNote === "string"
+    ? documentData.changeRequestReview.reviewNote.trim()
+    : "";
+  let completedReviewMessage = "";
+  let completedReviewTone = "success";
+  if (reviewStatus === "approved") {
+    completedReviewMessage = resolveCertificateOptionCopy(
+      "certificate_change_request_approved_message",
+      "修改申請已通過，請確認下方顯示資料後產生證書。",
+    );
+  } else if (reviewStatus === "rejected") {
+    completedReviewMessage = resolveCertificateOptionCopy(
+      "certificate_change_request_rejected_message",
+      "修改申請已駁回，請以目前資料產生證書。",
+    );
+    completedReviewTone = "error";
+  }
+  if (completedReviewMessage && reviewNote) {
+    completedReviewMessage = `${completedReviewMessage}\n審核備註：${reviewNote}`;
+  }
   if (certificateChangeRequestAction) {
-    certificateChangeRequestAction.hidden = isChangeRequested;
+    certificateChangeRequestAction.hidden = !canRequestChanges;
   }
   if (certificateChangeRequestProcessingFeedback) {
-    certificateChangeRequestProcessingFeedback.hidden = !isChangeRequested;
+    const statusMessage = certificateOptionsChangeRequestStatus?.message
+      || completedReviewMessage
+      || (isChangeRequested ? certificateChangeRequestProcessingDefaultMessage : "");
+    const statusTone = certificateOptionsChangeRequestStatus?.tone || completedReviewTone;
+    certificateChangeRequestProcessingFeedback.hidden = !statusMessage;
+    certificateChangeRequestProcessingFeedback.textContent = statusMessage;
+    certificateChangeRequestProcessingFeedback.classList.toggle("is-active", Boolean(statusMessage));
+    certificateChangeRequestProcessingFeedback.classList.toggle("is-success", Boolean(statusMessage) && statusTone !== "error");
+    certificateChangeRequestProcessingFeedback.classList.toggle("is-error", Boolean(statusMessage) && statusTone === "error");
   }
+}
+
+function setCertificateOptionsChangeRequestStatus(message, tone) {
+  certificateOptionsChangeRequestStatus = { message, tone };
+  if (currentCertificateDocument) {
+    renderCertificateOptionsStatus(currentCertificateDocument);
+  }
+}
+
+function clearCertificateOptionsChangeRequestStatus() {
+  certificateOptionsChangeRequestStatus = null;
 }
 
 function updateCertificateChangeRequestSubmitState() {
@@ -673,7 +719,9 @@ async function submitCertificateChangeRequest() {
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      showCertificateChangeRequestError(resolveChangeRequestFailureMessage(payload));
+      const errorMessage = resolveChangeRequestFailureMessage(payload);
+      showCertificateChangeRequestError(errorMessage);
+      setCertificateOptionsChangeRequestStatus(errorMessage, "error");
       return;
     }
 
@@ -684,13 +732,17 @@ async function submitCertificateChangeRequest() {
     showCertificateChangeRequestFeedback(message);
     if (currentCertificateDocument) {
       currentCertificateDocument.certStatus = "changeRequested";
+      currentCertificateDocument.canRequestChanges = false;
     }
+    setCertificateOptionsChangeRequestStatus(message, "success");
     setChangeRequestSubmitted(true);
   } catch {
-    showCertificateChangeRequestError(resolveCertificateOptionCopy(
+    const errorMessage = resolveCertificateOptionCopy(
       "certificate_change_request_unavailable_message",
       "目前暫時無法送出修改申請，請稍後再試。",
-    ));
+    );
+    showCertificateChangeRequestError(errorMessage);
+    setCertificateOptionsChangeRequestStatus(errorMessage, "error");
   } finally {
     setChangeRequestBusy(false);
   }
@@ -711,6 +763,9 @@ function showCertificateChangeRequest() {
 }
 
 function showCertificateOptionsFromChangeRequest() {
+  if (currentCertificateDocument) {
+    renderCertificateOptionsStatus(currentCertificateDocument);
+  }
   certificateChangeRequestView.hidden = true;
   certificateOptionsView.hidden = false;
   certificateOptionsView.focus?.();
@@ -732,6 +787,7 @@ function setDocumentLookupFieldsLocked(isLocked) {
 
 function showCertificateOptions(documentData) {
   currentCertificateDocument = documentData;
+  clearCertificateOptionsChangeRequestStatus();
   renderCertificateNameOptions(documentData);
   renderCertificateCompanyOption(documentData);
   renderCertificateOptionsStatus(documentData);
@@ -745,6 +801,7 @@ function showDocumentLookupForm() {
   certificateOptionsView.hidden = true;
   certificateChangeRequestView.hidden = true;
   currentCertificateDocument = null;
+  clearCertificateOptionsChangeRequestStatus();
   setChangeRequestSubmitted(false);
   clearCertificateChangeRequestFeedback();
   setDocumentLookupFieldsLocked(false);

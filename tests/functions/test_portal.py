@@ -14,8 +14,11 @@ from src.functions.portal import (
     portal_admin_completion_certs_import_api,
     portal_admin_completion_certs_list_api,
     portal_admin_completion_certs_update_api,
+    portal_admin_completion_cert_change_requests_list_api,
+    portal_admin_completion_cert_change_requests_review_api,
     portal_admin_events_create_api,
     portal_admin_events_update_api,
+    portal_dashboard_completion_reviews_page,
     portal_dashboard_completion_certs_page,
     portal_dashboard_events_page,
     portal_dashboard_page,
@@ -164,6 +167,52 @@ class FakeCompletionCertsContainer:
             ],
             key=lambda item: item["number"],
         )
+
+
+class FakeCompletionCertRequestsContainer:
+    def __init__(self) -> None:
+        self.items: dict[str, dict[str, Any]] = {}
+
+    def read_item(self, item: str, partition_key: str) -> dict[str, Any]:
+        document = self.items.get(item)
+        if document is None or document["eventId"] != partition_key:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        return document
+
+    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]:
+        if item not in self.items:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        self.items[item] = body
+        return body
+
+    def upsert_item(self, body: dict[str, Any]) -> dict[str, Any]:
+        self.items[body["id"]] = body
+        return body
+
+    def query_items(
+        self,
+        query: str,
+        *,
+        parameters: list[dict[str, Any]] | None = None,
+        enable_cross_partition_query: bool,
+        partition_key: str | None = None,
+    ) -> list[dict[str, Any]]:
+        assert "WHERE c.status = @status" in query
+        assert enable_cross_partition_query
+        status = next(
+            parameter["value"]
+            for parameter in parameters or []
+            if parameter["name"] == "@status"
+        )
+        return [
+            item
+            for item in self.items.values()
+            if item["status"] == status
+        ]
 
 
 def build_authorized_portal_api_request(
@@ -911,6 +960,288 @@ def test_portal_admin_completion_certs_update_api_rejects_empty_required_fields(
     assert "完訓證明資料缺少必要欄位值：Email" in body
 
 
+def test_portal_admin_completion_cert_change_requests_list_api_returns_pending_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Ming",
+        "ticketName": "一般票",
+        "name": "王小明",
+        "organization": "舊公司",
+        "email": "ming@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "changeRequested",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    fake_requests_container = FakeCompletionCertRequestsContainer()
+    fake_requests_container.items["ccreq_1"] = {
+        "id": "ccreq_1",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "pending",
+        "requesterEmail": "ming@example.com",
+        "requesterNote": "公司名需要調整",
+        "reviewedBy": None,
+        "reviewedAt": None,
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": None,
+        "createdAt": "2026-04-30T08:00:00Z",
+        "updatedAt": "2026-04-30T08:00:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        lambda: fake_requests_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        method="GET",
+        url="http://localhost:7075/api/v1/admin/completion-cert-change-requests",
+        params={"status": "pending"},
+    )
+
+    response = portal_admin_completion_cert_change_requests_list_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"changeRequests"' in body
+    assert '"id":"ccreq_1"' in body
+    assert '"requesterNote":"公司名需要調整"' in body
+    assert '"completionCert"' in body
+    assert '"number":1' in body
+    assert '"certStatus":"changeRequested"' in body
+
+
+def test_portal_admin_completion_cert_change_requests_review_api_approves_and_updates_cert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Ming",
+        "ticketName": "一般票",
+        "name": "王小明",
+        "organization": "舊公司",
+        "email": "ming@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "changeRequested",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    fake_requests_container = FakeCompletionCertRequestsContainer()
+    fake_requests_container.items["ccreq_1"] = {
+        "id": "ccreq_1",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "pending",
+        "requesterEmail": "ming@example.com",
+        "requesterNote": "公司名需要調整",
+        "reviewedBy": None,
+        "reviewedAt": None,
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": None,
+        "createdAt": "2026-04-30T08:00:00Z",
+        "updatedAt": "2026-04-30T08:00:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        lambda: fake_requests_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "status": "approved",
+                "email": "new@example.com",
+                "name": "王小明",
+                "organization": "新公司",
+                "reviewNote": "已修正",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"requestid": "ccreq_1"},
+        url="http://localhost:7075/api/v1/admin/completion-cert-change-requests/ccreq_1",
+    )
+
+    response = portal_admin_completion_cert_change_requests_review_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"status":"approved"' in body
+    assert fake_completion_container.items["ccert_1"]["email"] == "new@example.com"
+    assert fake_completion_container.items["ccert_1"]["organization"] == "新公司"
+    assert fake_completion_container.items["ccert_1"]["certStatus"] == "notIssued"
+    assert fake_requests_container.items["ccreq_1"]["status"] == "approved"
+    assert fake_requests_container.items["ccreq_1"]["reviewedBy"] == "admin@iplayground.io"
+    assert fake_requests_container.items["ccreq_1"]["reviewedAt"].endswith("Z")
+    assert fake_requests_container.items["ccreq_1"]["reviewNote"] == "已修正"
+
+
+def test_portal_admin_completion_cert_change_requests_review_api_rejects_pending_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Ming",
+        "ticketName": "一般票",
+        "name": "王小明",
+        "organization": "舊公司",
+        "email": "ming@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "changeRequested",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    fake_requests_container = FakeCompletionCertRequestsContainer()
+    fake_requests_container.items["ccreq_1"] = {
+        "id": "ccreq_1",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "pending",
+        "requesterEmail": "ming@example.com",
+        "requesterNote": "公司名需要調整",
+        "reviewedBy": None,
+        "reviewedAt": None,
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": None,
+        "createdAt": "2026-04-30T08:00:00Z",
+        "updatedAt": "2026-04-30T08:00:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        lambda: fake_requests_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "status": "rejected",
+                "email": "changed@example.com",
+                "name": "變更姓名",
+                "organization": "變更公司",
+                "reviewNote": "資料不符",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"requestid": "ccreq_1"},
+        url="http://localhost:7075/api/v1/admin/completion-cert-change-requests/ccreq_1",
+    )
+
+    response = portal_admin_completion_cert_change_requests_review_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"status":"rejected"' in body
+    assert fake_completion_container.items["ccert_1"]["email"] == "ming@example.com"
+    assert fake_completion_container.items["ccert_1"]["name"] == "王小明"
+    assert fake_completion_container.items["ccert_1"]["organization"] == "舊公司"
+    assert fake_completion_container.items["ccert_1"]["certStatus"] == "notIssued"
+    assert fake_requests_container.items["ccreq_1"]["status"] == "rejected"
+    assert fake_requests_container.items["ccreq_1"]["reviewedBy"] == "admin@iplayground.io"
+    assert fake_requests_container.items["ccreq_1"]["reviewedAt"].endswith("Z")
+    assert fake_requests_container.items["ccreq_1"]["reviewNote"] == "資料不符"
+
+
+def test_portal_admin_completion_cert_change_requests_review_api_rejects_once_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Ming",
+        "ticketName": "一般票",
+        "name": "王小明",
+        "organization": "舊公司",
+        "email": "ming@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "changeRequested",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    fake_requests_container = FakeCompletionCertRequestsContainer()
+    fake_requests_container.items["ccreq_1"] = {
+        "id": "ccreq_1",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "approved",
+        "requesterEmail": "ming@example.com",
+        "requesterNote": "公司名需要調整",
+        "reviewedBy": "admin@iplayground.io",
+        "reviewedAt": "2026-04-30T08:30:00Z",
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": None,
+        "createdAt": "2026-04-30T08:00:00Z",
+        "updatedAt": "2026-04-30T08:30:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        lambda: fake_requests_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "status": "rejected",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"requestid": "ccreq_1"},
+        url="http://localhost:7075/api/v1/admin/completion-cert-change-requests/ccreq_1",
+    )
+
+    response = portal_admin_completion_cert_change_requests_review_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 409
+    assert "此修改申請已完成審核" in body
+    assert fake_requests_container.items["ccreq_1"]["status"] == "approved"
+
+
 def test_portal_login_page_shows_group_auth_setup_message_when_group_authorization_is_not_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1169,15 +1500,20 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert body.index('data-view-target="events"') < body.index(
         'data-view-target="completion-certs"'
     )
-    assert body.index('data-view-target="events"') < body.index(
+    assert body.index('data-view-target="completion-certs"') < body.index(
+        'data-view-target="completion-reviews"'
+    )
+    assert body.index('data-view-target="completion-reviews"') < body.index(
         'data-view-target="tax-receipts"'
     )
     assert 'data-view-target="completion-certs"' in body
     assert 'data-view-target="tax-receipts"' in body
+    assert 'data-view-target="completion-reviews"' in body
     assert 'data-view-target="events"' in body
     assert 'data-view-path="/portal/dashboard/welcome"' in body
     assert 'data-view-path="/portal/dashboard/completion-certs"' in body
     assert 'data-view-path="/portal/dashboard/tax-receipts"' in body
+    assert 'data-view-path="/portal/dashboard/completion-reviews"' in body
     assert 'data-view-path="/portal/dashboard/events"' in body
     assert "檢視清單" not in body
     assert "上傳清單" not in body
@@ -1185,6 +1521,8 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert "活動與文件設定" in body
     assert "清單與資料上傳" in body
     assert "PDF/圖檔上傳與管理" in body
+    assert "修改審核" in body
+    assert "完訓證明申請處理" in body
     assert "單筆文件上傳" not in body
     assert "管理活動與可申請文件" not in body
     assert "清單檢視與上傳完訓證明資料" not in body
@@ -1786,6 +2124,65 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert "獨立工作頁" not in body
 
 
+def test_portal_dashboard_completion_reviews_page_returns_html_when_user_is_authorized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch)
+
+    response = portal_dashboard_completion_reviews_page(
+        build_request(
+            "http://localhost:7075/portal/dashboard/completion-reviews",
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert "<title>修改審核 - 文件管理平台 - iPlayground</title>" in body
+    assert 'class="portal-embedded-body"' in body
+    assert "data-portal-csrf-token" in body
+    assert "修改審核" in body
+    assert "完訓證明修改申請清單" in body
+    assert "修改申請載入中..." in body
+    assert 'id="completion-review-refresh"' in body
+    assert 'class="document-list-table completion-review-table"' in body
+    assert 'id="completion-review-table-body"' in body
+    assert 'id="completion-review-row-template"' in body
+    assert '<th scope="col">申請時間</th>' in body
+    assert '<th scope="col">報名序號</th>' in body
+    assert '<th scope="col">目前姓名</th>' in body
+    assert '<th scope="col">Email</th>' in body
+    assert '<th scope="col">申請內容</th>' in body
+    assert '<th scope="col">操作</th>' in body
+    assert "審核修改申請" in body
+    assert 'id="completion-review-dialog"' in body
+    assert 'id="completion-review-requester-note"' in body
+    assert 'id="completion-review-name"' in body
+    assert 'id="completion-review-organization"' in body
+    assert 'id="completion-review-email"' in body
+    assert body.index('id="completion-review-email"') < body.index(
+        'id="completion-review-requester-note"'
+    )
+    assert 'id="completion-review-email" name="completionReviewEmail" type="email" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" readonly' in body
+    assert 'id="completion-review-note"' in body
+    assert 'class="form-textarea-shell completion-review-note-field"' in body
+    assert 'class="form-textarea"' in body
+    assert "駁回" in body
+    assert "退回" not in body
+    assert 'class="event-form-actions completion-review-form-actions"' in body
+    assert body.index('id="completion-review-approve"') < body.index(
+        'id="completion-review-cancel"'
+    )
+    assert body.index('id="completion-review-cancel"') < body.index(
+        'id="completion-review-reject"'
+    )
+    assert 'class="brand-square-action completion-review-reject-button" id="completion-review-reject"' in body
+    assert "通過並更新" in body
+    assert 'src="/assets/page-alert.js"' in body
+    assert 'src="/assets/portal-dashboard-completion-reviews.js"' in body
+
+
 def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2074,8 +2471,10 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".document-filter-submit" not in body
     assert ".document-list-table" in body
     assert ".completion-cert-table" in body
+    assert ".completion-review-table" in body
     assert "table-layout: fixed;" in body
     assert ".completion-cert-col-badge {\n  width: 140px;" in body
+    assert ".completion-review-col-note {\n  width: 330px;" in body
     assert ".completion-cert-col-name {\n  width: 140px;" in body
     assert ".completion-cert-col-email {\n  width: 250px;" in body
     assert ".completion-cert-col-organization,\n.completion-cert-col-ticket" in body
@@ -2085,6 +2484,11 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".document-list-table th,\n.document-list-table td {\n  padding: 15px 16px;\n  border-bottom: 1px solid rgba(81, 121, 254, 0.1);\n  text-align: left;\n  vertical-align: middle;\n  white-space: nowrap;" in body
     assert ".completion-cert-row [data-field=\"organization\"],\n.completion-cert-row [data-field=\"ticketName\"]" in body
     assert ".completion-cert-row [data-field=\"badgeName\"],\n.completion-cert-row [data-field=\"name\"],\n.completion-cert-row [data-field=\"organization\"],\n.completion-cert-row [data-field=\"email\"],\n.completion-cert-row [data-field=\"ticketName\"]" in body
+    assert ".completion-review-row [data-field=\"requesterNote\"]" in body
+    assert ".completion-review-note" in body
+    assert ".completion-review-cancel-button" in body
+    assert ".completion-review-reject-button" in body
+    assert "border-radius: 18px;" in body
     assert "max-width: 10em;" in body
     assert "text-overflow: ellipsis;" in body
     assert ".document-download-button" in body
@@ -2155,6 +2559,10 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert "cursor: pointer;" not in document_type_toggle_css
     assert ".document-type-setting-toggle:focus-visible" in body
     assert ".form-datetime-input" in theme_body
+    assert ".form-textarea" in theme_body
+    assert ".form-textarea-shell" in theme_body
+    assert ".form-textarea:focus" in theme_body
+    assert ".form-textarea::placeholder" in theme_body
     assert ".form-datetime-input:focus" in theme_body
     assert ".form-datetime-picker-proxy" not in body
     assert ".form-datetime-picker" in theme_body
@@ -2625,6 +3033,31 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "getCachedEvents" in body
     assert "refresh" in body
     assert "ipg:portal-events:updated" in body
+
+
+def test_portal_dashboard_completion_reviews_js_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/portal-dashboard-completion-reviews.js",
+            route_params={"asset_name": "portal-dashboard-completion-reviews.js"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert 'document.getElementById("completion-review-refresh")' in body
+    assert 'document.getElementById("completion-review-table-body")' in body
+    assert 'document.getElementById("completion-review-dialog")' in body
+    assert '"/api/v1/admin/completion-cert-change-requests"' in body
+    assert "loadCompletionReviews" in body
+    assert "openCompletionReviewDialog" in body
+    assert "submitCompletionReview" in body
+    assert "status === \"approved\"" in body
+    assert "payload.email" not in body
+    assert "修改申請已通過並更新資料。" in body
+    assert "修改申請已駁回。" in body
+    assert "X-Portal-CSRF-Token" in body
 
 
 def test_portal_dashboard_tax_receipts_js_asset_returns_expected_content_type() -> None:

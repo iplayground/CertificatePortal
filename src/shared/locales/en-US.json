@@ -39,6 +39,8 @@
     "certificate_change_request_action_label": "Request Changes",
     "certificate_generate_action_label": "Generate Certificate",
     "certificate_change_request_processing_message": "Your change request is being processed. An administrator will review it before issuing the certificate. Generating the certificate now will be treated as abandoning this change request.",
+    "certificate_change_request_approved_message": "Your change request was approved. Please review the display options below before generating the certificate.",
+    "certificate_change_request_rejected_message": "Your change request was rejected. Please generate the certificate with the current information.",
     "certificate_change_request_title": "Change Request",
     "certificate_change_request_subtitle": "Describe the certificate information that needs to be corrected. An administrator will review it before issuing the certificate.",
     "certificate_change_request_summary_label": "Current completion certificate details",

@@ -137,12 +137,45 @@ class FakeCompletionCertsContainer:
 
 
 class FakeCompletionCertRequestsContainer:
-    def __init__(self) -> None:
-        self.items: dict[str, dict[str, Any]] = {}
+    def __init__(self, items: dict[str, dict[str, Any]] | None = None) -> None:
+        self.items: dict[str, dict[str, Any]] = items or {}
 
     def upsert_item(self, body: dict[str, Any], **_: Any) -> dict[str, Any]:
         self.items[body["id"]] = body.copy()
         return self.items[body["id"]]
+
+    def query_items(
+        self,
+        query: str,
+        *,
+        parameters: list[dict[str, Any]] | None = None,
+        enable_cross_partition_query: bool,
+        **_: Any,
+    ) -> list[dict[str, Any]]:
+        parameter_values = {parameter["name"]: parameter["value"] for parameter in parameters or []}
+        completion_cert_id = parameter_values.get("@completionCertId")
+        if completion_cert_id is None:
+            return list(self.items.values())
+
+        completed_statuses = {
+            parameter_values.get("@approvedStatus"),
+            parameter_values.get("@rejectedStatus"),
+        }
+        return [
+            {
+                "id": item["id"],
+                "status": item.get("status"),
+                "reviewedAt": item.get("reviewedAt"),
+                "reviewNote": item.get("reviewNote"),
+            }
+            for item in sorted(
+                self.items.values(),
+                key=lambda candidate: str(candidate.get("reviewedAt", "")),
+                reverse=True,
+            )
+            if item.get("completionCertId") == completion_cert_id
+            and item.get("status") in completed_statuses
+        ][:1]
 
 
 class FakeEventsContainer:
@@ -362,6 +395,8 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'id="certificate-change-request-email-value"' in body
     assert 'id="certificate-change-request-current-name-value"' not in body
     assert 'id="certificate-change-request-note"' in body
+    assert 'class="form-textarea"' in body
+    assert 'class="form-textarea-shell certificate-change-request-textarea-shell"' in body
     assert 'maxlength="600"' in body
     assert "例如：想改成本名，或公司名需要調整。" in body
     assert "Badge Name 應改為" not in body
@@ -955,7 +990,8 @@ def test_public_document_lookup_api_does_not_block_success_on_attempt_store_fail
     assert response.status_code == 200
     assert body == (
         '{"document":{"status":"found","documentType":"completionCert",'
-        '"badgeName":"Ming","certStatus":"issued","name":"王小明",'
+        '"badgeName":"Ming","canRequestChanges":false,'
+        '"certStatus":"issued","name":"王小明",'
         '"organization":"iPlayground"}}'
     )
 
@@ -1001,8 +1037,149 @@ def test_public_document_lookup_api_marks_not_generated_completion_cert(
     assert response.status_code == 200
     assert body == (
         '{"document":{"status":"found","documentType":"completionCert",'
-        '"badgeName":"Ming","certStatus":"notIssued","name":"王小明",'
+        '"badgeName":"Ming","canRequestChanges":true,'
+        '"certStatus":"notIssued","name":"王小明",'
         '"organization":"iPlayground"}}'
+    )
+
+
+def test_public_document_lookup_api_marks_completed_change_request_as_not_requestable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: FailingLookupAttemptsContainer(),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(
+            [
+                {
+                    "id": "ccert_1",
+                    "eventId": "evt_1",
+                    "number": 100,
+                    "email": "Ming@example.com",
+                    "badgeName": "Ming",
+                    "name": "王小明",
+                    "organization": "iPlayground",
+                    "certStatus": "notIssued",
+                    "issuedPdfBlobName": None,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_cert_requests_container",
+        lambda: FakeCompletionCertRequestsContainer(
+            {
+                "ccreq_1": {
+                    "id": "ccreq_1",
+                    "completionCertId": "ccert_1",
+                    "eventId": "evt_1",
+                    "status": "approved",
+                    "requesterEmail": "ming@example.com",
+                    "requesterNote": "想改成本名",
+                    "reviewedBy": "admin@iplayground.io",
+                    "reviewedAt": "2026-04-30T08:30:00Z",
+                    "reviewCompletedNotifiedAt": None,
+                    "reviewNote": "已修正",
+                    "createdAt": "2026-04-30T08:00:00Z",
+                    "updatedAt": "2026-04-30T08:30:00Z",
+                }
+            }
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert body == (
+        '{"document":{"status":"found","documentType":"completionCert",'
+        '"badgeName":"Ming","canRequestChanges":false,'
+        '"certStatus":"notIssued","name":"王小明",'
+        '"organization":"iPlayground",'
+        '"changeRequestReview":{"status":"approved",'
+        '"reviewedAt":"2026-04-30T08:30:00Z","reviewNote":"已修正"}}}'
+    )
+
+
+def test_public_document_lookup_api_returns_rejected_change_request_review_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: FailingLookupAttemptsContainer(),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(
+            [
+                {
+                    "id": "ccert_1",
+                    "eventId": "evt_1",
+                    "number": 100,
+                    "email": "Ming@example.com",
+                    "badgeName": "Ming",
+                    "name": "王小明",
+                    "organization": "iPlayground",
+                    "certStatus": "notIssued",
+                    "issuedPdfBlobName": None,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_cert_requests_container",
+        lambda: FakeCompletionCertRequestsContainer(
+            {
+                "ccreq_1": {
+                    "id": "ccreq_1",
+                    "completionCertId": "ccert_1",
+                    "eventId": "evt_1",
+                    "status": "rejected",
+                    "requesterEmail": "ming@example.com",
+                    "requesterNote": "想改成本名",
+                    "reviewedBy": "admin@iplayground.io",
+                    "reviewedAt": "2026-04-30T08:30:00Z",
+                    "reviewCompletedNotifiedAt": None,
+                    "reviewNote": "資料不符",
+                    "createdAt": "2026-04-30T08:00:00Z",
+                    "updatedAt": "2026-04-30T08:30:00Z",
+                }
+            }
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert body == (
+        '{"document":{"status":"found","documentType":"completionCert",'
+        '"badgeName":"Ming","canRequestChanges":false,'
+        '"certStatus":"notIssued","name":"王小明",'
+        '"organization":"iPlayground",'
+        '"changeRequestReview":{"status":"rejected",'
+        '"reviewedAt":"2026-04-30T08:30:00Z","reviewNote":"資料不符"}}}'
     )
 
 
@@ -1047,7 +1224,8 @@ def test_public_document_lookup_api_returns_change_requested_cert_status(
     assert response.status_code == 200
     assert body == (
         '{"document":{"status":"found","documentType":"completionCert",'
-        '"badgeName":"Ming","certStatus":"changeRequested","name":"王小明",'
+        '"badgeName":"Ming","canRequestChanges":false,'
+        '"certStatus":"changeRequested","name":"王小明",'
         '"organization":"iPlayground"}}'
     )
 
@@ -1143,6 +1321,67 @@ def test_public_completion_cert_change_request_api_is_idempotent_for_same_note(
     assert first_response.status_code == 201
     assert second_response.status_code == 201
     assert len(requests_container.items) == 1
+
+
+def test_public_completion_cert_change_request_api_rejects_after_completed_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    certs_container = FakeCompletionCertsContainer(
+        [
+            {
+                "id": "ccert_1",
+                "eventId": "evt_1",
+                "number": 100,
+                "email": "Ming@example.com",
+                "badgeName": "Ming",
+                "name": "王小明",
+                "organization": "iPlayground",
+                "certStatus": "notIssued",
+                "issuedPdfBlobName": None,
+            }
+        ]
+    )
+    requests_container = FakeCompletionCertRequestsContainer(
+        {
+            "ccreq_1": {
+                "id": "ccreq_1",
+                "completionCertId": "ccert_1",
+                "eventId": "evt_1",
+                "status": "rejected",
+                "requesterEmail": "ming@example.com",
+                "requesterNote": "想改成本名",
+                "reviewedBy": "admin@iplayground.io",
+                "reviewedAt": "2026-04-30T08:30:00Z",
+                "reviewCompletedNotifiedAt": None,
+                "reviewNote": "資料不符",
+                "createdAt": "2026-04-30T08:00:00Z",
+                "updatedAt": "2026-04-30T08:30:00Z",
+            }
+        }
+    )
+    monkeypatch.setattr("src.functions.home.get_completion_records_container", lambda: certs_container)
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_cert_requests_container",
+        lambda: requests_container,
+    )
+
+    response = public_completion_cert_change_request_api(
+        build_completion_cert_change_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+                "requesterNote": "想改公司名",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 409
+    assert '"code":"change_request_not_allowed"' in body
+    assert len(requests_container.items) == 1
+    assert certs_container.items[0]["certStatus"] == "notIssued"
 
 
 def test_public_completion_cert_change_request_api_rejects_cross_origin(
@@ -1321,7 +1560,8 @@ def test_public_document_lookup_api_resets_failures_after_success(
     assert response.status_code == 200
     assert body == (
         '{"document":{"status":"found","documentType":"completionCert",'
-        '"badgeName":"Ming","certStatus":"issued","name":"王小明",'
+        '"badgeName":"Ming","canRequestChanges":false,'
+        '"certStatus":"issued","name":"王小明",'
         '"organization":"iPlayground"}}'
     )
     assert attempt_document["ipAddress"] == "203.0.113.10"
@@ -1401,6 +1641,7 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert "margin-inline: auto;" in body
     assert ".feedback.is-error" in body
     assert "var(--theme-feedback-error-color)" in body
+    assert "white-space: pre-line;" in body
     assert ".page-loading-overlay" in body
     assert "position: fixed;" in body
     assert "width: 100vw;" in body
@@ -1412,7 +1653,8 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert ".certificate-options-view" in body
     assert ".certificate-change-request-view" in body
     assert ".certificate-summary-list" in body
-    assert ".certificate-change-request-form textarea" in body
+    assert ".certificate-change-request-form textarea" not in body
+    assert ".form-textarea" in body
     assert ".certificate-choice-option" in body
     assert '.certificate-choice-option input[type="radio"]' in body
     assert ".certificate-choice-option span::before" in body
@@ -1466,6 +1708,10 @@ def test_theme_css_asset_returns_expected_content_type() -> None:
     assert "color-scheme: light;" in body
     assert "grid-template-columns: 22px minmax(0, 1fr);" in body
     assert ".form-datetime-input" in body
+    assert ".form-textarea" in body
+    assert ".form-textarea-shell" in body
+    assert ".form-textarea::placeholder" in body
+    assert ".form-textarea:focus" in body
     assert ".form-datetime-picker" in body
     assert ".form-datetime-picker:focus-within" in body
     assert ".form-datetime-picker-date-native:focus" in body
@@ -1522,10 +1768,22 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert '["notIssued", "changeRequested"].includes(documentData?.certStatus)' in body
     assert "renderCertificateOptionsStatus" in body
     assert "certificateChangeRequestProcessingFeedback" in body
-    assert "certificateChangeRequestAction.hidden = isChangeRequested" in body
-    assert "certificateChangeRequestProcessingFeedback.hidden = !isChangeRequested" in body
+    assert "documentData?.canRequestChanges" in body
+    assert "certificateChangeRequestAction.hidden = !canRequestChanges" in body
+    assert "certificateOptionsChangeRequestStatus?.message" in body
+    assert "documentData?.changeRequestReview?.status" in body
+    assert "certificate_change_request_approved_message" in body
+    assert "certificate_change_request_rejected_message" in body
+    assert "completedReviewTone = \"error\"" in body
+    assert "changeRequestReview?.reviewNote" in body
+    assert "審核備註：" in body
+    assert "certificateChangeRequestProcessingFeedback.hidden = !statusMessage" in body
+    assert "setCertificateOptionsChangeRequestStatus(message, \"success\")" in body
+    assert "setCertificateOptionsChangeRequestStatus(errorMessage, \"error\")" in body
+    assert "currentCertificateDocument.canRequestChanges = false" in body
     assert "showCertificateChangeRequest" in body
     assert "showCertificateOptionsFromChangeRequest" in body
+    assert "renderCertificateOptionsStatus(currentCertificateDocument)" in body
     assert "renderCertificateChangeRequestSummary" in body
     assert "updateCertificateChangeRequestSubmitState" in body
     assert "isChangeRequestSubmitted" in body

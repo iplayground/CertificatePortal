@@ -21,6 +21,8 @@ from src.shared.completion_store import (
     find_completion_cert_document_for_public_lookup,
     get_completion_cert_requests_container,
     get_completion_records_container,
+    has_completed_completion_cert_request_document,
+    read_completed_completion_cert_request_document,
     read_completion_cert_document,
     replace_completion_cert_document,
     upsert_completion_cert_request_document,
@@ -304,6 +306,53 @@ def lookup_public_document(payload: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
+def can_public_document_request_changes(document: dict[str, Any]) -> bool:
+    cert_status = str(document.get("certStatus", "")).strip() or "notIssued"
+    if cert_status != "notIssued":
+        return False
+
+    completion_cert_id = str(document.get("id", "")).strip()
+    if not completion_cert_id:
+        return False
+
+    try:
+        return not has_completed_completion_cert_request_document(
+            container=get_completion_cert_requests_container(),
+            completion_cert_id=completion_cert_id,
+        )
+    except (CompletionStoreConfigurationError, CompletionStoreOperationError):
+        LOGGER.warning("Completion cert request status check is unavailable.", exc_info=True)
+        return True
+
+
+def read_public_document_completed_change_request(document: dict[str, Any]) -> dict[str, str] | None:
+    completion_cert_id = str(document.get("id", "")).strip()
+    if not completion_cert_id:
+        return None
+
+    try:
+        request_document = read_completed_completion_cert_request_document(
+            container=get_completion_cert_requests_container(),
+            completion_cert_id=completion_cert_id,
+        )
+    except (CompletionStoreConfigurationError, CompletionStoreOperationError):
+        LOGGER.warning("Completion cert completed request lookup is unavailable.", exc_info=True)
+        return None
+
+    if request_document is None:
+        return None
+
+    status = str(request_document.get("status", "")).strip()
+    if status not in {"approved", "rejected"}:
+        return None
+
+    return {
+        "status": status,
+        "reviewedAt": str(request_document.get("reviewedAt", "")).strip(),
+        "reviewNote": str(request_document.get("reviewNote", "")).strip(),
+    }
+
+
 def submit_completion_cert_change_request(payload: dict[str, Any]) -> dict[str, Any]:
     records_container = get_completion_records_container()
     public_document = find_completion_cert_document_for_public_lookup(
@@ -323,6 +372,13 @@ def submit_completion_cert_change_request(payload: dict[str, Any]) -> dict[str, 
     if not completion_cert_id:
         raise CompletionStoreOperationError("完訓證明資料缺少識別碼。")
 
+    requests_container = get_completion_cert_requests_container()
+    if has_completed_completion_cert_request_document(
+        container=requests_container,
+        completion_cert_id=completion_cert_id,
+    ):
+        raise PermissionError("completion certificate already has a completed change request")
+
     request_id = build_completion_cert_request_id(
         payload["requesterNote"],
         completion_cert_id=completion_cert_id,
@@ -335,7 +391,7 @@ def submit_completion_cert_change_request(payload: dict[str, Any]) -> dict[str, 
         requester_note=payload["requesterNote"],
     )
     saved_request = upsert_completion_cert_request_document(
-        container=get_completion_cert_requests_container(),
+        container=requests_container,
         document=request_document,
     )
 
@@ -972,17 +1028,23 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
     ):
         return build_document_lookup_unavailable_response()
 
+    completed_change_request = read_public_document_completed_change_request(document)
+    document_payload = {
+        "status": "found",
+        "documentType": payload["documentType"],
+        "badgeName": str(document.get("badgeName", "")).strip(),
+        "canRequestChanges": can_public_document_request_changes(document),
+        "certStatus": str(document.get("certStatus", "")).strip()
+        or "notIssued",
+        "name": str(document.get("name", "")).strip(),
+        "organization": str(document.get("organization", "")).strip(),
+    }
+    if completed_change_request is not None:
+        document_payload["changeRequestReview"] = completed_change_request
+
     return build_home_api_json_response(
         {
-            "document": {
-                "status": "found",
-                "documentType": payload["documentType"],
-                "badgeName": str(document.get("badgeName", "")).strip(),
-                "certStatus": str(document.get("certStatus", "")).strip()
-                or "notIssued",
-                "name": str(document.get("name", "")).strip(),
-                "organization": str(document.get("organization", "")).strip(),
-            },
+            "document": document_payload,
         }
     )
 

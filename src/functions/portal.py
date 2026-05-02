@@ -38,10 +38,14 @@ from src.shared.completion_store import (
     CompletionStoreOperationError,
     build_completion_cert_document,
     build_completion_cert_id,
+    get_completion_cert_requests_container,
     get_completion_records_container,
+    list_completion_cert_request_documents,
     list_completion_cert_documents,
     read_completion_cert_document,
+    read_completion_cert_request_document,
     replace_completion_cert_document,
+    replace_completion_cert_request_document,
     upsert_completion_cert_documents,
 )
 from src.shared.event_store import (
@@ -53,6 +57,7 @@ from src.shared.event_store import (
     get_events_container,
     list_event_documents,
     update_event_document,
+    utc_now_iso,
 )
 from src.shared.page_alerts import (
     DEFAULT_PAGE_ALERT_CONTEXT,
@@ -114,6 +119,9 @@ PORTAL_COMPLETION_CERT_REQUIRED_MUTABLE_FIELDS = frozenset(
 PORTAL_COMPLETION_CERT_ALLOWED_ATTENDANCE_STATUSES = frozenset(
     {"checkedIn", "notCheckedIn"}
 )
+PORTAL_COMPLETION_CERT_REQUEST_ALLOWED_REVIEW_STATUSES = frozenset(
+    {"approved", "rejected"}
+)
 PORTAL_LOGIN_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_login.html"
 PORTAL_DASHBOARD_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_dashboard.html"
 PORTAL_DASHBOARD_WELCOME_TEMPLATE_PATH = (
@@ -123,6 +131,11 @@ PORTAL_DASHBOARD_COMPLETION_CERTS_TEMPLATE_PATH = (
     Path(__file__).resolve().parent
     / "templates"
     / "portal_dashboard_completion_certs.html"
+)
+PORTAL_DASHBOARD_COMPLETION_REVIEWS_TEMPLATE_PATH = (
+    Path(__file__).resolve().parent
+    / "templates"
+    / "portal_dashboard_completion_reviews.html"
 )
 PORTAL_DASHBOARD_TAX_RECEIPTS_TEMPLATE_PATH = (
     Path(__file__).resolve().parent
@@ -157,6 +170,13 @@ def load_portal_dashboard_welcome_template() -> str:
 @lru_cache(maxsize=1)
 def load_portal_dashboard_completion_certs_template() -> str:
     return PORTAL_DASHBOARD_COMPLETION_CERTS_TEMPLATE_PATH.read_text(
+        encoding="utf-8"
+    )
+
+
+@lru_cache(maxsize=1)
+def load_portal_dashboard_completion_reviews_template() -> str:
+    return PORTAL_DASHBOARD_COMPLETION_REVIEWS_TEMPLATE_PATH.read_text(
         encoding="utf-8"
     )
 
@@ -450,6 +470,30 @@ def normalize_completion_cert_for_api(document: dict[str, Any]) -> dict[str, Any
     }
 
 
+def normalize_completion_cert_request_for_api(
+    document: dict[str, Any],
+    *,
+    completion_cert: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "id": str(document.get("id", "")).strip(),
+        "completionCertId": str(document.get("completionCertId", "")).strip(),
+        "eventId": str(document.get("eventId", "")).strip(),
+        "status": str(document.get("status", "")).strip() or "pending",
+        "requesterEmail": str(document.get("requesterEmail", "")).strip(),
+        "requesterNote": str(document.get("requesterNote", "")).strip(),
+        "reviewedBy": document.get("reviewedBy"),
+        "reviewedAt": document.get("reviewedAt"),
+        "reviewCompletedNotifiedAt": document.get("reviewCompletedNotifiedAt"),
+        "reviewNote": document.get("reviewNote"),
+        "createdAt": str(document.get("createdAt", "")).strip(),
+        "updatedAt": str(document.get("updatedAt", "")).strip(),
+    }
+    if completion_cert is not None:
+        payload["completionCert"] = normalize_completion_cert_for_api(completion_cert)
+    return payload
+
+
 def normalize_completion_cert_number(value: Any) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
@@ -648,6 +692,43 @@ def parse_completion_cert_update_payload(
         return None, "簽到狀態不合法。"
 
     return {"eventId": event_id, "updates": updates}, None
+
+
+def parse_completion_cert_request_review_payload(
+    payload: Any,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(payload, dict):
+        return None, "請提供 JSON 物件。"
+
+    event_id = str(payload.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return None, "活動識別碼不合法。"
+
+    review_status = str(payload.get("status", "")).strip()
+    if review_status not in PORTAL_COMPLETION_CERT_REQUEST_ALLOWED_REVIEW_STATUSES:
+        return None, "審核狀態不合法。"
+
+    review_note = str(payload.get("reviewNote", "")).strip()
+    if len(review_note) > 600:
+        return None, "審核備註不可超過 600 字。"
+
+    cert_updates = {}
+    if review_status == "approved":
+        cert_updates = {
+            field_name: str(payload.get(field_name, "")).strip()
+            for field_name in PORTAL_COMPLETION_CERT_MUTABLE_FIELDS
+            if field_name in payload
+        }
+        cert_updates.pop("attendanceStatus", None)
+        if "email" in cert_updates and not cert_updates["email"]:
+            return None, "完訓證明資料缺少必要欄位值：Email。"
+
+    return {
+        "eventId": event_id,
+        "reviewNote": review_note,
+        "status": review_status,
+        "updates": cert_updates,
+    }, None
 
 
 def build_portal_event_row_html(event: dict[str, Any]) -> str:
@@ -1438,6 +1519,185 @@ def portal_admin_completion_certs_update_api(req: func.HttpRequest) -> func.Http
     )
 
 
+@blueprint.function_name(name="portal_admin_completion_cert_change_requests_list_api")
+@blueprint.route(
+    route="api/v1/admin/completion-cert-change-requests",
+    methods=["GET"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_completion_cert_change_requests_list_api(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    access = require_portal_api_read_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    status = str(req.params.get("status", "pending")).strip() or "pending"
+    if status not in {"pending", *PORTAL_COMPLETION_CERT_REQUEST_ALLOWED_REVIEW_STATUSES}:
+        return build_portal_api_error_response(
+            400,
+            "invalid_completion_cert_request_status",
+            "修改申請狀態不合法。",
+        )
+
+    try:
+        requests_container = get_completion_cert_requests_container()
+        certs_container = get_completion_records_container()
+        request_documents = list_completion_cert_request_documents(
+            container=requests_container,
+            status=status,
+        )
+        normalized_requests = []
+        for request_document in request_documents:
+            completion_cert = None
+            completion_cert_id = str(
+                request_document.get("completionCertId", "")
+            ).strip()
+            event_id = str(request_document.get("eventId", "")).strip()
+            if completion_cert_id and event_id:
+                try:
+                    completion_cert = read_completion_cert_document(
+                        cert_id=completion_cert_id,
+                        container=certs_container,
+                        event_id=event_id,
+                    )
+                except CompletionStoreOperationError:
+                    completion_cert = None
+            normalized_requests.append(
+                normalize_completion_cert_request_for_api(
+                    request_document,
+                    completion_cert=completion_cert,
+                )
+            )
+    except CompletionStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_not_configured",
+            str(exc),
+        )
+    except CompletionStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {"changeRequests": normalized_requests},
+        status_code=200,
+    )
+
+
+@blueprint.function_name(name="portal_admin_completion_cert_change_requests_review_api")
+@blueprint.route(
+    route="api/v1/admin/completion-cert-change-requests/{requestid}",
+    methods=["PUT"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_completion_cert_change_requests_review_api(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    access = require_portal_api_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    request_id = str(req.route_params.get("requestid", "")).strip()
+    if not request_id.startswith("ccreq_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_completion_cert_request_id",
+            "完訓證明修改申請識別碼不合法。",
+        )
+
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return build_portal_api_error_response(400, "invalid_json", "請提供合法 JSON。")
+
+    review_payload, payload_error = parse_completion_cert_request_review_payload(payload)
+    if review_payload is None:
+        return build_portal_api_error_response(
+            400,
+            "invalid_completion_cert_request_payload",
+            payload_error or "完訓證明修改申請審核資料格式不合法。",
+        )
+
+    event_id = review_payload["eventId"]
+    try:
+        requests_container = get_completion_cert_requests_container()
+        certs_container = get_completion_records_container()
+        request_document = read_completion_cert_request_document(
+            container=requests_container,
+            event_id=event_id,
+            request_id=request_id,
+        )
+        if str(request_document.get("status", "")).strip() != "pending":
+            return build_portal_api_error_response(
+                409,
+                "completion_cert_request_already_reviewed",
+                "此修改申請已完成審核。",
+            )
+
+        completion_cert_id = str(request_document.get("completionCertId", "")).strip()
+        cert_document = read_completion_cert_document(
+            cert_id=completion_cert_id,
+            container=certs_container,
+            event_id=event_id,
+        )
+        reviewed_at = utc_now_iso()
+        updated_cert_document = {
+            **cert_document,
+            **review_payload["updates"],
+            "certStatus": "notIssued",
+            "updatedAt": reviewed_at,
+        }
+        saved_cert_document = replace_completion_cert_document(
+            container=certs_container,
+            document=updated_cert_document,
+        )
+
+        updated_request_document = {
+            **request_document,
+            "status": review_payload["status"],
+            "reviewedBy": get_portal_api_actor(access),
+            "reviewedAt": reviewed_at,
+            "reviewNote": review_payload["reviewNote"] or None,
+            "updatedAt": reviewed_at,
+        }
+        saved_request_document = replace_completion_cert_request_document(
+            container=requests_container,
+            document=updated_request_document,
+        )
+    except CompletionStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_not_configured",
+            str(exc),
+        )
+    except CompletionStoreOperationError as exc:
+        not_found = str(exc) in {
+            "找不到指定完訓證明修改申請。",
+            "找不到指定完訓證明資料。",
+        }
+        return build_portal_api_error_response(
+            404 if not_found else 503,
+            "completion_cert_request_not_found"
+            if not_found
+            else "completion_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {
+            "changeRequest": normalize_completion_cert_request_for_api(
+                saved_request_document,
+                completion_cert=saved_cert_document,
+            )
+        },
+        status_code=200,
+    )
+
+
 @blueprint.function_name(name="portal_dashboard_page")
 @blueprint.route(
     route="portal/dashboard",
@@ -1492,6 +1752,27 @@ def portal_dashboard_completion_certs_page(
     return build_portal_page_response(
         render_html_template(
             load_portal_dashboard_completion_certs_template(),
+            build_portal_dashboard_context(req, access),
+        )
+    )
+
+
+@blueprint.function_name(name="portal_dashboard_completion_reviews_page")
+@blueprint.route(
+    route="portal/dashboard/completion-reviews",
+    methods=["GET"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_dashboard_completion_reviews_page(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    access = require_portal_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    return build_portal_page_response(
+        render_html_template(
+            load_portal_dashboard_completion_reviews_template(),
             build_portal_dashboard_context(req, access),
         )
     )

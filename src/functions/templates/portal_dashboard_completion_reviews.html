@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="robots" content="noindex, nofollow">
+    <title>修改審核 - 文件管理平台 - iPlayground</title>
+    <link rel="icon" href="/assets/favicon.png" type="image/png" sizes="32x32">
+    <link rel="stylesheet" href="/assets/theme.css">
+    <link rel="stylesheet" href="/assets/portal.css">
+  </head>
+  <body class="portal-embedded-body" data-portal-csrf-token="{{portal_csrf_token}}">
+    <main class="embedded-page-shell">
+      <section class="content-card embedded-page-card document-workspace-card">
+        <div class="event-management-header">
+          <div class="content-section-heading">
+            <h1 class="embedded-page-title">修改審核</h1>
+            <p class="embedded-page-lead">審核首頁送出的完訓證明修改申請，並在通過時更新可發證資料。</p>
+          </div>
+          <button class="secondary-button event-create-button" id="completion-review-refresh" type="button">
+            重新整理
+          </button>
+        </div>
+
+        <div class="document-table-wrap">
+          <table class="document-list-table completion-review-table" aria-label="完訓證明修改申請清單">
+            <colgroup>
+              <col class="completion-review-col-created">
+              <col class="completion-review-col-number">
+              <col class="completion-review-col-name">
+              <col class="completion-review-col-email">
+              <col class="completion-review-col-note">
+              <col class="completion-review-col-actions">
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">申請時間</th>
+                <th scope="col">報名序號</th>
+                <th scope="col">目前姓名</th>
+                <th scope="col">Email</th>
+                <th scope="col">申請內容</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody id="completion-review-table-body">
+              <tr class="document-empty-row" id="completion-review-empty-row">
+                <td colspan="6">修改申請載入中...</td>
+              </tr>
+            </tbody>
+          </table>
+          <template id="completion-review-row-template">
+            <tr class="completion-review-row">
+              <td data-field="createdAt"></td>
+              <td data-field="number"></td>
+              <td data-field="name"></td>
+              <td data-field="email"></td>
+              <td data-field="requesterNote"></td>
+              <td>
+                <span class="document-row-actions">
+                  <button class="secondary-button document-edit-button" type="button">審核</button>
+                </span>
+              </td>
+            </tr>
+          </template>
+        </div>
+
+        <div
+          class="event-dialog-backdrop"
+          id="completion-review-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="completion-review-dialog-title"
+          hidden
+        >
+          <section class="event-dialog completion-review-dialog">
+            <header class="event-dialog-header">
+              <h2 id="completion-review-dialog-title">審核修改申請</h2>
+            </header>
+
+            <form class="event-form" aria-label="審核完訓證明修改申請">
+              <div class="completion-edit-identity-row">
+                <div class="field completion-edit-number-field">
+                  <span class="field-label">報名序號</span>
+                  <div class="field-static-value" id="completion-review-number">-</div>
+                </div>
+                <div class="field">
+                  <span class="field-label">ID</span>
+                  <div class="field-static-value" id="completion-review-kktix-id">-</div>
+                </div>
+                <div class="field">
+                  <span class="field-label">票種</span>
+                  <div class="field-static-value" id="completion-review-ticket-name">-</div>
+                </div>
+              </div>
+
+              <label class="field">
+                <span class="field-label">Email</span>
+                <input id="completion-review-email" name="completionReviewEmail" type="email" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" readonly>
+              </label>
+
+              <div class="field">
+                <span class="field-label">申請內容</span>
+                <div class="field-static-value completion-review-note" id="completion-review-requester-note">-</div>
+              </div>
+
+              <label class="field">
+                <span class="field-label">姓名</span>
+                <input id="completion-review-name" name="completionReviewName" type="text" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other">
+              </label>
+
+              <label class="field">
+                <span class="field-label">公司名</span>
+                <input id="completion-review-organization" name="completionReviewOrganization" type="text" autocomplete="organization">
+              </label>
+
+              <label class="field">
+                <span class="field-label">審核備註</span>
+                <div class="form-textarea-shell completion-review-note-field">
+                  <textarea
+                    class="form-textarea"
+                    id="completion-review-note"
+                    name="completionReviewNote"
+                    rows="3"
+                    maxlength="600"
+                  ></textarea>
+                </div>
+              </label>
+
+              <div class="form-feedback is-error" id="completion-review-feedback" role="status" aria-live="polite" hidden></div>
+
+              <div class="event-form-actions completion-review-form-actions">
+                <button class="submit-button" id="completion-review-approve" type="button">通過並更新</button>
+                <button class="secondary-button event-cancel-button completion-review-cancel-button" id="completion-review-cancel" type="button">取消</button>
+                <button class="brand-square-action completion-review-reject-button" id="completion-review-reject" type="button">駁回</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="/assets/page-alert.js"></script>
+    <script src="/assets/portal-dashboard-completion-reviews.js"></script>
+  </body>
+</html>

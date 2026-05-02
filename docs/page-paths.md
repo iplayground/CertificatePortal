@@ -11,6 +11,7 @@
 | `GET` | `/portal/dashboard` | 管理者登入後的內部工作區頁面 | `text/html` |
 | `GET` | `/portal/dashboard/welcome` | dashboard iframe 預設載入的歡迎頁 | `text/html` |
 | `GET` | `/portal/dashboard/completion-certs` | dashboard iframe 的完訓證明頁 | `text/html` |
+| `GET` | `/portal/dashboard/completion-reviews` | dashboard iframe 的完訓證明修改審核頁 | `text/html` |
 | `GET` | `/portal/dashboard/tax-receipts` | dashboard iframe 的營業稅繳稅證明頁 | `text/html` |
 | `GET` | `/portal/dashboard/events` | dashboard iframe 的活動管理頁 | `text/html` |
 | `GET` | `/api/v1/events` | 公開首頁可申請活動清單 | `application/json` |
@@ -22,6 +23,8 @@
 | `GET` | `/api/v1/admin/completion-certs` | 查詢單一活動的完訓證明清單 | `application/json` |
 | `POST` | `/api/v1/admin/completion-certs/import` | 匯入單一活動的 KKTIX 完訓證明 CSV | `application/json` |
 | `PUT` | `/api/v1/admin/completion-certs/{certid}` | 修改單筆完訓證明資料 | `application/json` |
+| `GET` | `/api/v1/admin/completion-cert-change-requests` | 查詢完訓證明修改申請 | `application/json` |
+| `PUT` | `/api/v1/admin/completion-cert-change-requests/{requestid}` | 審核完訓證明修改申請 | `application/json` |
 | `GET` | `/verify/{certId}` | 公開驗證頁面 | `text/plain` |
 
 ## 內部導向端點
@@ -45,7 +48,7 @@
 - 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓證明 CSV 由後端解析、驗證並寫入 Cosmos DB；營業稅繳稅證明的後端上傳處理與持久化流程尚未串接
 - 完訓證明頁目前已有後端 CSV 匯入、活動篩選、清單載入與單筆資料修改流程
 - 營業稅繳稅證明頁目前已有前端單筆 PDF、PNG 或 JPG/JPEG 新增與頁面暫存清單，用於管理介面流程示意；目前不支援 WebP
-- 首頁完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，會顯示「選擇證明顯示方式」區塊；`notIssued` 時「提出修改申請」會切換到首頁同卡片內的修改申請流程，送出後會寫入 Cosmos DB `completionCertRequests` 並將對應完訓證明狀態改為 `changeRequested`；`changeRequested` 時不再顯示「提出修改申請」，改顯示修改申請處理中提示
+- 首頁完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，會顯示「選擇證明顯示方式」區塊；`notIssued` 時「提出修改申請」會切換到首頁同卡片內的修改申請流程，送出後會寫入 Cosmos DB `completionCertRequests` 並將對應完訓證明狀態改為 `changeRequested`；同一張完訓證明已有 `approved` 或 `rejected` 修改申請時，公開 API 會拒絕再次提出，首頁並顯示已通過或已駁回的審核結果；`changeRequested` 時不再顯示「提出修改申請」，改顯示修改申請處理中提示
 
 ### 表單輸入規則
 
@@ -110,13 +113,14 @@
 - 後端可用 Functions worker 本機記憶體快取已封鎖 IP 的 attempt id，用於封鎖期間快速短路 Cosmos DB；此快取只能作為額外封鎖捷徑，不能取代 Cosmos DB 的權威紀錄，且本機快取期限不得超過 1 小時。
 - 首頁可用 `localStorage` 快取「已被封鎖」狀態與伺服器回傳的封鎖訊息，以減少重整後的等待感並保留 12 小時或 24 小時封鎖文案；此快取只作為使用者體驗提示，不得作為後端安全判斷依據，期限不得超過 1 小時，且必須在到期、格式不合法或查詢成功時清除，避免永久性上鎖。
 - 目前只串接 `completionCert` 的查詢判斷；`taxReceipt` 後端持久化尚未完成前會視為查不到。
-- 完訓證明查詢成功時，回應會包含 `badgeName`、`name`、`organization` 與 `certStatus`，供首頁決定是否顯示「選擇證明顯示方式」及修改申請狀態提示。
+- 完訓證明查詢成功時，回應會包含 `badgeName`、`name`、`organization`、`certStatus` 與 `canRequestChanges`，供首頁決定是否顯示「選擇證明顯示方式」及修改申請狀態提示。
 - `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁會顯示「選擇證明顯示方式」。`issued` 仍顯示一般查詢結果訊息，不進入顯示方式選擇。
 - 「選擇證明顯示方式」區塊會依實際 `name` 與 `badgeName` 產生姓名顯示選項：`姓名`、`Badge Name`、`姓名 (Badge Name)`；若其中一個值為空，或兩者相同，只顯示單一有效選項。
 - 若查詢結果有 `organization`，首頁會顯示是否顯示公司名的 checkbox。
 - 顯示「選擇證明顯示方式」時，首頁會隱藏「查詢文件」按鈕，並鎖定活動、文件類型、報名序號與 email，避免使用者在確認顯示方式時修改查詢條件。
-- 「返回查詢」會回到查詢表單並解除上述鎖定；`notIssued` 時「提出修改申請」會使用同一張首頁卡片切換到修改申請 view state，顯示本次查詢的活動、報名序號與 email，並要求使用者填寫需要修改的內容。送出時會呼叫 `POST /api/v1/completion-cert-change-requests`，後端重新以活動、報名序號與 email 查詢權威完訓證明資料，寫入 `completionCertRequests` 並將 `completionCerts.certStatus` 改為 `changeRequested`。送出成功後，修改申請 textarea 與送出按鈕會保持停用。
+- 「返回查詢」會回到查詢表單並解除上述鎖定；`notIssued` 時「提出修改申請」會使用同一張首頁卡片切換到修改申請 view state，顯示本次查詢的活動、報名序號與 email，並要求使用者填寫需要修改的內容。送出時會呼叫 `POST /api/v1/completion-cert-change-requests`，後端重新以活動、報名序號與 email 查詢權威完訓證明資料；若同一張證明尚未有已完成審核的修改申請，會寫入 `completionCertRequests` 並將 `completionCerts.certStatus` 改為 `changeRequested`。送出成功後，修改申請 textarea 與送出按鈕會保持停用。
 - `changeRequested` 時「選擇證明顯示方式」不顯示「提出修改申請」，並顯示「修改申請正在處理中，管理者確認後會再處理發證。若現在產生證書，將視為放棄本次修改申請。」提示。
+- 若同一張完訓證明已有 `approved` 或 `rejected` 修改申請，首頁查詢回應會附上 `changeRequestReview.status`、`changeRequestReview.reviewedAt` 與 `changeRequestReview.reviewNote`，並在「選擇證明顯示方式」顯示「修改申請已通過」或「修改申請已駁回」提示；若 `reviewNote` 有值，會在提示第二行顯示 `審核備註：...`。
 
 Request JSON 範例：
 
@@ -126,6 +130,27 @@ Request JSON 範例：
   "eventId": "evt_550e8400-e29b-41d4-a716-446655440000",
   "registrationNumber": "100",
   "email": "attendee@example.com"
+}
+```
+
+查詢成功且已有已駁回修改申請的 Response JSON 範例：
+
+```json
+{
+  "document": {
+    "status": "found",
+    "documentType": "completionCert",
+    "badgeName": "Ming",
+    "canRequestChanges": false,
+    "certStatus": "notIssued",
+    "name": "王小明",
+    "organization": "iPlayground",
+    "changeRequestReview": {
+      "status": "rejected",
+      "reviewedAt": "2026-04-30T08:30:00Z",
+      "reviewNote": "資料不符"
+    }
+  }
 }
 ```
 
@@ -145,7 +170,7 @@ Request JSON 範例：
 - 首頁在完訓證明查詢成功且使用者點選「提出修改申請」後呼叫，用於建立完訓證明資料調整申請。
 - 此 API 為公開寫入端點，不要求管理者 session；但若 request 帶有 `Origin`，必須與目前網站同源，避免第三方網站直接跨站送出修改申請。
 - 後端不信任前端傳入的姓名、公司名或證明狀態，只使用 `eventId`、`registrationNumber` 與 `email` 重新查詢 `completionCerts` 權威資料。
-- 只有 `certStatus` 為 `notIssued` 或 `changeRequested` 的完訓證明可建立或重送修改申請；`issued`、`failed` 等狀態會回覆 `409`。
+- 只有 `certStatus` 為 `notIssued` 或 `changeRequested`，且同一張證明尚未有 `approved` 或 `rejected` 修改申請的完訓證明可建立或重送修改申請；`issued`、`failed` 等狀態，或已完成審核的修改申請，會回覆 `409`。
 - 申請 id 由 `completionCertId` 與 `requesterNote` 穩定產生；同一筆證明用相同備註重送會 upsert 同一筆 `completionCertRequests` 文件。
 - 寫入 `completionCertRequests` 成功後，後端會把對應 `completionCerts.certStatus` 更新為 `changeRequested`。
 
@@ -218,11 +243,11 @@ Request JSON 範例：
 - Google 登入與登出統一走 `/portal/auth/google/login`、`/portal/auth/google/callback`、`/portal/auth/logout`
 - 管理平台授權採雙層邊界：OAuth client 的 `Internal` 設定先排除非組織帳號，再由 Google Group 直接成員檢查與伺服器端 session cookie 控制 portal 存取
 - 登入後的文件管理平台目前位於 `/portal/dashboard`
-- 文件管理平台以 iframe 載入歡迎頁、`活動管理`、`完訓證明` 與 `營業稅繳稅證明` 四個獨立頁面
+- 文件管理平台以 iframe 載入歡迎頁、`活動管理`、`完訓證明`、`修改審核` 與 `營業稅繳稅證明` 五個獨立頁面
 - 進入 `/portal/dashboard` 後，伺服器會在背景預先初始化活動管理使用的 Cosmos DB container client，降低第一次進入活動管理時才初始化 SDK 與 credential chain 的延遲
 - 進入 `/portal/dashboard` 後，前端會透過 `portal-event-cache.js` 預載 `GET /api/v1/admin/events`，並將活動清單暫存在同一瀏覽器分頁的 `sessionStorage`；各 iframe 子頁進入時可先用快取渲染，再直接呼叫 `GET /api/v1/admin/events` 取得最新活動清單並回寫快取
-- 左側功能清單固定依序顯示 `活動管理`、`完訓證明` 與 `營業稅繳稅證明`
-- 左側功能清單說明文字：`活動與文件設定`、`清單與資料上傳`、`PDF/PNG/JPG 上傳與管理`
+- 左側功能清單固定依序顯示 `活動管理`、`完訓證明`、`修改審核` 與 `營業稅繳稅證明`
+- 左側功能清單說明文字：`活動與文件設定`、`清單與資料上傳`、`完訓證明申請處理`、`PDF/PNG/JPG 上傳與管理`
 
 ### 主題與 head 規則
 
@@ -243,9 +268,9 @@ Request JSON 範例：
 - 登入後頁面使用 `/portal/...` 子路徑
 - 首頁 `/` 不提供管理平台按鈕入口
 - 文件管理平台目前位於 `/portal/dashboard`
-- dashboard 以 iframe 載入 `welcome`、`events`、`completion-certs`、`tax-receipts` 四個獨立頁面
-- 左側功能清單固定依序顯示 `活動管理`、`完訓證明` 與 `營業稅繳稅證明`
-- 左側功能清單說明文字：`活動與文件設定`、`清單與資料上傳`、`PDF/PNG/JPG 上傳與管理`
+- dashboard 以 iframe 載入 `welcome`、`events`、`completion-certs`、`completion-reviews`、`tax-receipts` 五個獨立頁面
+- 左側功能清單固定依序顯示 `活動管理`、`完訓證明`、`修改審核` 與 `營業稅繳稅證明`
+- 左側功能清單說明文字：`活動與文件設定`、`清單與資料上傳`、`完訓證明申請處理`、`PDF/PNG/JPG 上傳與管理`
 
 ## 各頁面定義
 
@@ -265,8 +290,9 @@ Request JSON 範例：
 - 查詢文件按鈕在目前可見申請資料欄位未完整填寫前維持停用
 - 查詢文件送出後使用滿版 loading 遮罩鎖住整個 window，避免等待期間切換語系或調整表單資料
 - 完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁顯示「選擇證明顯示方式」，讓使用者選擇姓名顯示方式與是否顯示公司名；一旦確認後將無法更改
-- 「選擇證明顯示方式」目前包含 `返回查詢`、`產生證書`，並且只在 `notIssued` 時顯示 `提出修改申請`；其中 `返回查詢` 已可回到查詢表單，`提出修改申請` 已可切換到首頁內修改申請 view state 並寫入後端修改申請資料，`產生證書` 目前僅完成 UI，尚未接後續行為
+- 「選擇證明顯示方式」目前包含 `返回查詢`、`產生證書`，並依 `canRequestChanges` 顯示 `提出修改申請`；其中 `返回查詢` 已可回到查詢表單，`提出修改申請` 已可切換到首頁內修改申請 view state 並寫入後端修改申請資料，`產生證書` 目前僅完成 UI，尚未接後續行為
 - `changeRequested` 時，首頁會在「選擇證明顯示方式」顯示處理中提示，並說明若現在產生證書會視為放棄本次修改申請
+- 已完成審核的修改申請會在「選擇證明顯示方式」顯示通過或駁回結果；若 `reviewNote` 有值，提示會保留換行並在第二行顯示 `審核備註：...`
 - 顯示頁尾版權聲明
 
 ### `/verify/{certId}`
@@ -351,6 +377,17 @@ status: 尚未串接實際驗證資料
 - 上傳視窗可選擇匯入資料所屬活動，預設帶入目前清單篩選活動
 - 上傳視窗僅接受 CSV 檔，並使用管理平台風格的檔案選取區
 - 若直接開啟完訓證明子頁，點擊上傳按鈕後會使用頁內中央上傳視窗作為 fallback
+
+### `/portal/dashboard/completion-reviews`
+
+- 作為 dashboard 右側 iframe 的完訓證明修改申請審核頁
+- 頁面載入後呼叫 `GET /api/v1/admin/completion-cert-change-requests?status=pending` 查詢待審核申請
+- 清單欄位包含申請時間、報名序號、目前姓名、Email、申請內容與操作
+- 每列操作欄提供 `審核` 按鈕，開啟中央審核視窗
+- 審核視窗顯示報名序號、KKTIX ID、票種、Email 與使用者填寫的申請內容；Email 位於申請內容上方且不可編輯
+- 管理者審核通過時可直接修改姓名與公司名，送出後呼叫 `PUT /api/v1/admin/completion-cert-change-requests/{requestid}`，將申請狀態改為 `approved`，並把對應完訓證明資料更新後恢復為 `notIssued`
+- 管理者駁回時會將申請狀態改為 `rejected`，並把對應完訓證明恢復為 `notIssued`
+- 審核完成後該筆資料會從待審核清單移除，並顯示共用 page alert 成功提示
 
 ### `/portal/dashboard/tax-receipts`
 
@@ -605,6 +642,119 @@ Response JSON example:
 }
 ```
 
+### `GET /api/v1/admin/completion-cert-change-requests`
+
+- 查詢完訓證明修改申請，預設查詢 `pending` 狀態
+- 只接受已登入且通過授權的管理者 session，並檢查同源 `Origin` 或 `Referer`
+- 讀取 Cosmos DB `completionCertRequests` container，並依申請內的 `completionCertId` 與 `eventId` 讀取對應 `completionCerts` 權威資料
+
+Request example:
+
+```text
+GET /api/v1/admin/completion-cert-change-requests?status=pending
+```
+
+Response JSON example:
+
+```json
+{
+  "changeRequests": [
+    {
+      "id": "ccreq_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+      "completionCertId": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+      "eventId": "evt_20260425_ipg",
+      "status": "pending",
+      "requesterEmail": "ming@example.com",
+      "requesterNote": "公司名需要調整",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "reviewCompletedNotifiedAt": null,
+      "reviewNote": null,
+      "createdAt": "2026-04-30T08:00:00Z",
+      "updatedAt": "2026-04-30T08:00:00Z",
+      "completionCert": {
+        "id": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+        "eventId": "evt_20260425_ipg",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Ming",
+        "ticketName": "一般票",
+        "name": "王小明",
+        "organization": "舊公司",
+        "email": "ming@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "changeRequested",
+        "issuedPdfBlobName": null,
+        "verificationTokenHash": null,
+        "issuedAt": null,
+        "createdAt": "2026-04-28T06:02:00Z"
+      }
+    }
+  ]
+}
+```
+
+### `PUT /api/v1/admin/completion-cert-change-requests/{requestid}`
+
+- 審核單筆完訓證明修改申請
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
+- `status` 只接受 `approved` 或 `rejected`
+- `approved` 可同時更新 `name`、`organization` 與 `email`；`email` 不可空白
+- 審核完成後，申請文件會寫入 `reviewedBy`、`reviewedAt`、`reviewNote` 與 `updatedAt`
+- 審核完成後，對應完訓證明的 `certStatus` 會恢復為 `notIssued`
+
+Request JSON example:
+
+```json
+{
+  "eventId": "evt_20260425_ipg",
+  "status": "approved",
+  "name": "王小明",
+  "organization": "新公司",
+  "email": "ming@example.com",
+  "reviewNote": "已依申請調整公司名"
+}
+```
+
+Response JSON example:
+
+```json
+{
+  "changeRequest": {
+    "id": "ccreq_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+    "completionCertId": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+    "eventId": "evt_20260425_ipg",
+    "status": "approved",
+    "requesterEmail": "ming@example.com",
+    "requesterNote": "公司名需要調整",
+    "reviewedBy": "admin@iplayground.io",
+    "reviewedAt": "2026-04-30T08:30:00Z",
+    "reviewCompletedNotifiedAt": null,
+    "reviewNote": "已依申請調整公司名",
+    "createdAt": "2026-04-30T08:00:00Z",
+    "updatedAt": "2026-04-30T08:30:00Z",
+    "completionCert": {
+      "id": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+      "eventId": "evt_20260425_ipg",
+      "number": 1,
+      "kktixId": "KKTIX-001",
+      "badgeName": "Ming",
+      "ticketName": "一般票",
+      "name": "王小明",
+      "organization": "新公司",
+      "email": "ming@example.com",
+      "attendanceStatus": "checkedIn",
+      "certStatus": "notIssued",
+      "issuedPdfBlobName": null,
+      "verificationTokenHash": null,
+      "issuedAt": null,
+      "createdAt": "2026-04-28T06:02:00Z"
+    }
+  }
+}
+```
+
 ## 靜態資產
 
 目前頁面透過下列路徑載入樣式、互動與品牌素材：
@@ -617,6 +767,7 @@ Response JSON example:
 | `GET` | `/assets/portal-dashboard.js` | 管理中心頁面互動腳本 |
 | `GET` | `/assets/portal-dashboard-welcome.js` | 管理中心歡迎頁互動腳本 |
 | `GET` | `/assets/portal-dashboard-completion-certs.js` | 完訓證明頁清單與 CSV 匯入腳本 |
+| `GET` | `/assets/portal-dashboard-completion-reviews.js` | 完訓證明修改審核頁互動腳本 |
 | `GET` | `/assets/portal-dashboard-tax-receipts.js` | 營業稅繳稅證明頁清單與單筆 PDF、PNG 或 JPG/JPEG 新增、修改、刪除腳本 |
 | `GET` | `/assets/portal-dashboard-events.js` | 活動管理頁清單列點擊、建立/編輯活動子畫面與 fallback modal 互動腳本 |
 | `GET` | `/assets/page-alert.js` | 共用 alert 元件的關閉與自動消失腳本 |
@@ -638,6 +789,7 @@ Response JSON example:
 - `/portal/dashboard`
 - `/portal/dashboard/welcome`
 - `/portal/dashboard/completion-certs`
+- `/portal/dashboard/completion-reviews`
 - `/portal/dashboard/tax-receipts`
 - `/portal/dashboard/events`
 - `/verify/{certId}`

@@ -24,7 +24,7 @@ iPlayground 完訓證明系統。
 - 首頁與公開驗證頁支援 `zh-TW` 與 `en-US`，並以 `ipg_locale` cookie 搭配 `Accept-Language` 決定語系
 - 語系切換器只出現在首頁 `/`，切換時由前端直接更新文案，不會整頁重新整理
 - 首頁文件查詢期間會顯示全 window 黑色半透明遮罩，中央使用純白 loading panel 顯示查詢中狀態，並阻擋語系切換與表單操作
-- 完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁會顯示「選擇證明顯示方式」UI；`notIssued` 可進入「修改申請」並寫入 Cosmos DB，`changeRequested` 會顯示處理中提示並隱藏「提出修改申請」
+- 完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁會顯示「選擇證明顯示方式」UI；`notIssued` 可進入「修改申請」並寫入 Cosmos DB，`changeRequested` 會顯示處理中提示並隱藏「提出修改申請」；若已有已完成審核的修改申請，首頁會顯示通過或駁回結果，並在有審核備註時以第二行顯示 `審核備註`
 - 管理平台固定使用繁體中文，入口與子路徑統一收斂在 `/portal...`，不納入 i18n 範圍
 - 共用 alert 元件已支援 i18n；若頁面本身未接入 i18n，alert 文案預設使用 `zh-TW`
 - 首頁與管理平台共用 `/assets/theme.css` 主題 token，並依 `prefers-color-scheme` 切換日夜模式
@@ -138,7 +138,7 @@ PYTHONPATH=. pytest
 - 管理平台入口現已統一使用 `/portal`，避免與 Azure Functions runtime 內建保留的 `/admin` 路徑衝突。
 - `/portal` 正式環境目前應明確設定 `PORTAL_GOOGLE_CLIENT_ID`、`PORTAL_GOOGLE_CLIENT_SECRET`、`PORTAL_GOOGLE_REDIRECT_URI` 與 `PORTAL_GOOGLE_ALLOWED_GROUP_KEYS`；建議以 Azure CLI 或 Key Vault reference 寫入 app settings，詳細流程請參考 [docs/portal-authentication.md](docs/portal-authentication.md)。
 - 會異動資料的管理 API 會檢查同源請求與 CSRF token；可選擇設定 `PORTAL_CSRF_SECRET` 作為 CSRF 簽章密鑰，未設定時會優先沿用 `PORTAL_GOOGLE_CLIENT_SECRET`。
-- 目前活動管理已串接 Cosmos DB 的新增、查詢與修改；完訓證明頁已串接活動篩選、CSV 匯入、清單查詢與單筆資料修改。下載流程、證明文件生成流程與營業稅繳稅證明持久化仍待後續串接。
+- 目前活動管理已串接 Cosmos DB 的新增、查詢與修改；完訓證明頁已串接活動篩選、CSV 匯入、清單查詢與單筆資料修改；修改審核頁已串接首頁完訓證明修改申請查詢與審核。下載流程、證明文件生成流程與營業稅繳稅證明持久化仍待後續串接。
 
 ## Azure 部署
 

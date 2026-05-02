@@ -958,8 +958,37 @@ form {
   table-layout: fixed;
 }
 
+.completion-review-table {
+  min-width: 1120px;
+  table-layout: fixed;
+}
+
 .completion-cert-col-number {
   width: 96px;
+}
+
+.completion-review-col-created {
+  width: 174px;
+}
+
+.completion-review-col-number {
+  width: 96px;
+}
+
+.completion-review-col-name {
+  width: 150px;
+}
+
+.completion-review-col-email {
+  width: 250px;
+}
+
+.completion-review-col-note {
+  width: 330px;
+}
+
+.completion-review-col-actions {
+  width: 120px;
 }
 
 .completion-cert-col-badge {
@@ -1021,7 +1050,10 @@ form {
 .completion-cert-row [data-field="name"],
 .completion-cert-row [data-field="organization"],
 .completion-cert-row [data-field="email"],
-.completion-cert-row [data-field="ticketName"] {
+.completion-cert-row [data-field="ticketName"],
+.completion-review-row [data-field="name"],
+.completion-review-row [data-field="email"],
+.completion-review-row [data-field="requesterNote"] {
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1041,6 +1073,18 @@ form {
 
 .completion-cert-row .document-row-actions {
   flex-wrap: nowrap;
+}
+
+.completion-review-note {
+  white-space: pre-wrap;
+}
+
+.completion-review-cancel-button {
+  margin-left: auto;
+}
+
+.completion-review-reject-button {
+  border-radius: 18px;
 }
 
 .completion-cert-table.is-bulk-updating .completion-cert-row {
@@ -1661,6 +1705,10 @@ form {
   .event-form-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .completion-review-cancel-button {
+    margin-left: 0;
   }
 }
 

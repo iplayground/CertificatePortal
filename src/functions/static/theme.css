@@ -232,6 +232,40 @@
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
+.form-textarea-shell {
+  width: 100%;
+  height: 108px;
+}
+
+.form-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  resize: none;
+  padding: 16px 18px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 18px;
+  background: var(--theme-input-bg);
+  color: var(--theme-content-text);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.65;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.form-textarea::placeholder {
+  color: var(--theme-input-placeholder);
+}
+
+.form-textarea:focus {
+  outline: none;
+  border-color: var(--theme-focus-border);
+  box-shadow:
+    0 0 0 5px var(--theme-focus-ring),
+    0 12px 24px var(--theme-focus-shadow);
+  transform: translateY(-1px);
+}
+
 .field select,
 .form-datetime-input {
   appearance: none;
@@ -408,7 +442,9 @@
 
 .custom-select-trigger:disabled,
 .field input:disabled,
-.field select:disabled {
+.field input[readonly],
+.field select:disabled,
+.form-textarea:disabled {
   border-color: var(--theme-input-border);
   background: var(--theme-input-bg);
   color: var(--theme-content-muted);
@@ -419,7 +455,8 @@
 }
 
 .custom-select-trigger:disabled .custom-select-value,
-.field input:disabled::placeholder {
+.field input:disabled::placeholder,
+.field input[readonly]::placeholder {
   color: var(--theme-content-muted);
 }
 
@@ -431,6 +468,8 @@
 .custom-select-trigger:disabled:focus-visible,
 .field input:disabled:hover,
 .field input:disabled:focus,
+.field input[readonly]:hover,
+.field input[readonly]:focus,
 .field select:disabled:hover,
 .field select:disabled:focus {
   outline: none;

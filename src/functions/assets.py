@@ -33,6 +33,11 @@ ASSET_DEFINITIONS: dict[str, tuple[Path, str, bool]] = {
         "application/javascript",
         True,
     ),
+    "portal-dashboard-completion-reviews.js": (
+        STATIC_DIR / "portal-dashboard-completion-reviews.js",
+        "application/javascript",
+        True,
+    ),
     "portal-dashboard-events.js": (
         STATIC_DIR / "portal-dashboard-events.js",
         "application/javascript",

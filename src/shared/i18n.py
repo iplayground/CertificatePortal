@@ -80,6 +80,8 @@ HOME_PAGE_COPY_KEYS = frozenset(
         "certificate_change_request_action_label",
         "certificate_generate_action_label",
         "certificate_change_request_processing_message",
+        "certificate_change_request_approved_message",
+        "certificate_change_request_rejected_message",
         "certificate_change_request_title",
         "certificate_change_request_subtitle",
         "certificate_change_request_summary_label",
