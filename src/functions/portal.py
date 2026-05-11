@@ -422,6 +422,149 @@ def build_portal_events_json_payload() -> dict[str, Any]:
     return {"events": [normalize_portal_event_for_api(event) for event in events]}
 
 
+def build_portal_dashboard_welcome_context(
+    req: func.HttpRequest,
+    access: PortalAccess,
+) -> dict[str, str]:
+    return {
+        **build_portal_dashboard_context(req, access),
+        **build_portal_welcome_completion_metrics_context(),
+    }
+
+
+def build_portal_welcome_completion_metrics_context() -> dict[str, str]:
+    metrics = {
+        "completion_metrics_event_name": "尚無活動資料",
+        "completion_downloadable_count": "0",
+        "completion_downloaded_member_count": "0",
+        "completion_verification_count": "0",
+        "completion_pending_count": "0",
+    }
+
+    try:
+        events = list_event_documents(container=get_events_container())
+        event = resolve_latest_completion_cert_event(events)
+        if event is None:
+            return metrics
+
+        event_id = str(event.get("id", "")).strip()
+        if not event_id:
+            return metrics
+
+        documents = list_completion_cert_documents(
+            container=get_completion_records_container(),
+            event_id=event_id,
+        )
+    except (
+        CompletionStoreConfigurationError,
+        CompletionStoreOperationError,
+        EventStoreConfigurationError,
+        EventStoreOperationError,
+    ):
+        return metrics
+
+    summary = summarize_completion_cert_documents(documents)
+    event_name = str(event.get("name", "")).strip()
+    return {
+        "completion_metrics_event_name": event_name or event_id,
+        "completion_downloadable_count": format_portal_metric_number(
+            summary["downloadableCount"]
+        ),
+        "completion_downloaded_member_count": format_portal_metric_number(
+            summary["downloadedMemberCount"]
+        ),
+        "completion_verification_count": format_portal_metric_number(
+            summary["verificationCount"]
+        ),
+        "completion_pending_count": format_portal_metric_number(summary["pendingCount"]),
+    }
+
+
+def resolve_latest_completion_cert_event(
+    events: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    return next(
+        (
+            event
+            for event in events
+            if "completionCert"
+            in normalize_portal_event_document_types(event.get("documentTypes"))
+        ),
+        None,
+    )
+
+
+def summarize_completion_cert_documents(
+    documents: list[dict[str, Any]],
+) -> dict[str, int]:
+    downloaded_member_emails = {
+        str(document.get("email", "")).strip().lower()
+        for document in documents
+        if has_completion_cert_download_record(document)
+        and str(document.get("email", "")).strip()
+    }
+    anonymous_downloads = sum(
+        1
+        for document in documents
+        if has_completion_cert_download_record(document)
+        and not str(document.get("email", "")).strip()
+    )
+    return {
+        "downloadableCount": sum(
+            1 for document in documents if is_completion_cert_downloadable(document)
+        ),
+        "downloadedMemberCount": len(downloaded_member_emails) + anonymous_downloads,
+        "verificationCount": sum(
+            read_non_negative_int_field(
+                document,
+                ("verificationCount",),
+            )
+            for document in documents
+        ),
+        "pendingCount": sum(
+            1 for document in documents if is_completion_cert_pending(document)
+        ),
+    }
+
+
+def is_completion_cert_downloadable(document: dict[str, Any]) -> bool:
+    return (
+        str(document.get("certStatus", "")).strip() == "issued"
+        and str(document.get("issuedPdfBlobName") or "").strip() != ""
+    )
+
+
+def has_completion_cert_download_record(document: dict[str, Any]) -> bool:
+    if read_non_negative_int_field(document, ("downloadCount", "downloadedCount")) > 0:
+        return True
+
+    return any(
+        str(document.get(field_name) or "").strip()
+        for field_name in ("downloadedAt", "firstDownloadedAt", "lastDownloadedAt")
+    )
+
+
+def is_completion_cert_pending(document: dict[str, Any]) -> bool:
+    cert_status = str(document.get("certStatus", "")).strip() or "notIssued"
+    return cert_status != "issued"
+
+
+def read_non_negative_int_field(
+    document: dict[str, Any],
+    field_names: tuple[str, ...],
+) -> int:
+    for field_name in field_names:
+        value = document.get(field_name)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return max(0, value)
+        if isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
+    return 0
+
+
+def format_portal_metric_number(value: int) -> str:
+    return f"{max(0, value):,}"
+
 
 def read_portal_event(event_id: str) -> dict[str, Any]:
     try:
@@ -472,6 +615,10 @@ def normalize_completion_cert_for_api(document: dict[str, Any]) -> dict[str, Any
         "certStatus": str(document.get("certStatus", "")).strip() or "notIssued",
         "issuedPdfBlobName": document.get("issuedPdfBlobName"),
         "verificationTokenHash": document.get("verificationTokenHash"),
+        "verificationCount": read_non_negative_int_field(
+            document,
+            ("verificationCount",),
+        ),
         "issuedAt": document.get("issuedAt"),
         "createdAt": str(document.get("createdAt", "")).strip(),
     }
@@ -1826,7 +1973,7 @@ def portal_dashboard_welcome_page(req: func.HttpRequest) -> func.HttpResponse:
 
     html = render_html_template(
         load_portal_dashboard_welcome_template(),
-        build_portal_dashboard_context(req, access),
+        build_portal_dashboard_welcome_context(req, access),
     )
     return build_portal_page_response(html)
 

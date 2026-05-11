@@ -47,23 +47,23 @@
           <div class="metric-grid">
             <article class="metric-card">
               <span class="metric-label">系統可下載數</span>
-              <strong class="metric-value">128</strong>
+              <strong class="metric-value">{{completion_downloadable_count}}</strong>
               <p class="metric-note">目前已完成完訓證明檔案建立並可提供下載的數量</p>
             </article>
             <article class="metric-card">
               <span class="metric-label">下載人數</span>
-              <strong class="metric-value">18</strong>
+              <strong class="metric-value">{{completion_downloaded_member_count}}</strong>
               <p class="metric-note">最近一期活動已完成完訓證明下載的會員人數</p>
             </article>
             <article class="metric-card">
               <span class="metric-label">驗證次數</span>
-              <strong class="metric-value">46</strong>
+              <strong class="metric-value">{{completion_verification_count}}</strong>
               <p class="metric-note">完訓證明公開驗證頁面累計收到的查詢次數</p>
             </article>
             <article class="metric-card">
               <span class="metric-label">待處理案件數量</span>
-              <strong class="metric-value">3</strong>
-              <p class="metric-note">尚待匯入、發證或補件確認的完訓證明案件總數</p>
+              <strong class="metric-value">{{completion_pending_count}}</strong>
+              <p class="metric-note">目前尚未完成發證或仍需管理者處理的完訓證明案件總數</p>
             </article>
           </div>
         </section>

@@ -348,6 +348,7 @@ status: 尚未串接實際驗證資料
 - 統計區使用單一 `最近一期活動資料` 標題，避免在各文件類型區段重複顯示
 - 文件類型統計區段使用類似完訓證明頁工作區的大外框樣式包覆，內部為四格指標
 - `完訓證明` 區段顯示最近一期活動的 `系統可下載數`、`下載人數`、`驗證次數`、`待處理案件數量`
+- `驗證次數` 讀取 `completionCerts.verificationCount` 的加總；公開驗證流程尚未實作寫入前，此值會維持 `0`
 - `營業稅繳稅證明` 區段顯示 `收據張數`、`已查詢公司數`、`已下載次數`、`收據總金額`
 - `營業稅繳稅證明` 的 `收據總金額` 使用 `$` 與完整金額格式，例如 `$186,000`，不使用 `NT$` 或 `K` 縮寫
 
@@ -358,7 +359,7 @@ status: 尚未串接實際驗證資料
 - 主畫面提供完訓證明資料的清單檢視區
 - 完訓證明資料依活動 `eventId` 從 `GET /api/v1/admin/completion-certs?eventId=<eventId>` 載入
 - CSV 匯入會呼叫 `POST /api/v1/admin/completion-certs/import`，由後端解析 KKTIX CSV、過濾非白名單欄位，並寫入 Cosmos DB `completionCerts`
-- CSV 匯入後的清單列預設為 `未簽到` 且 `certStatus` 為 `notIssued`；`issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 在會眾申請並完成產生檔案前為 `null`
+- CSV 匯入後的清單列預設為 `未簽到` 且 `certStatus` 為 `notIssued`；`issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 在會眾申請並完成產生檔案前為 `null`，`verificationCount` 預設為 `0`
 - 同一活動再次匯入 CSV 時，會以穩定的 `eventId + number + kktixId` 產生文件 ID 並 upsert 到同一批 Cosmos DB 資料
 - 清單欄位包含報名序號、ID、Badge Name、姓名、公司名、Email、票種、簽到狀態與操作
 - 每列在操作欄提供 `下載` 與 `修改` 按鈕；`下載` 按鈕是否可用依 `certStatus` 判斷，只有 `issued` 可下載，不能用 `attendanceStatus` 或簽到狀態判斷
@@ -558,6 +559,7 @@ Response example:
       "certStatus": "notIssued",
       "issuedPdfBlobName": null,
       "verificationTokenHash": null,
+      "verificationCount": 0,
       "issuedAt": null,
       "createdAt": "2026-04-28T06:02:00Z"
     }
@@ -600,6 +602,7 @@ Response JSON example:
       "certStatus": "notIssued",
       "issuedPdfBlobName": null,
       "verificationTokenHash": null,
+      "verificationCount": 0,
       "issuedAt": null,
       "createdAt": "2026-04-28T06:02:00Z"
     }
@@ -649,6 +652,7 @@ Response JSON example:
     "certStatus": "notIssued",
     "issuedPdfBlobName": null,
     "verificationTokenHash": null,
+    "verificationCount": 0,
     "issuedAt": null,
     "createdAt": "2026-04-28T06:02:00Z"
   }
@@ -699,6 +703,7 @@ Response JSON example:
         "certStatus": "changeRequested",
         "issuedPdfBlobName": null,
         "verificationTokenHash": null,
+        "verificationCount": 0,
         "issuedAt": null,
         "createdAt": "2026-04-28T06:02:00Z"
       }
@@ -761,6 +766,7 @@ Response JSON example:
       "certStatus": "notIssued",
       "issuedPdfBlobName": null,
       "verificationTokenHash": null,
+      "verificationCount": 0,
       "issuedAt": null,
       "createdAt": "2026-04-28T06:02:00Z"
     }

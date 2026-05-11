@@ -676,6 +676,7 @@ def test_portal_admin_completion_certs_import_api_writes_kktix_csv_to_cosmos(
     assert completion_cert["certStatus"] == "notIssued"
     assert completion_cert["issuedPdfBlobName"] is None
     assert completion_cert["verificationTokenHash"] is None
+    assert completion_cert["verificationCount"] == 0
     assert completion_cert["issuedAt"] is None
     assert "不需要欄位" not in completion_cert
 
@@ -898,6 +899,7 @@ def test_portal_admin_completion_certs_list_api_returns_event_partition_rows(
     assert '"number":2' in body
     assert '"organization":"好玩公司"' in body
     assert '"attendanceStatus":"checkedIn"' in body
+    assert '"verificationCount":0' in body
 
 
 def test_portal_admin_completion_certs_update_api_updates_mutable_fields(
@@ -2052,9 +2054,113 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert "尚未下載公司數" not in body
     assert "待確認筆數" not in body
     assert "目前已完成完訓證明檔案建立" in body
+    assert "目前尚未完成發證或仍需管理者處理的完訓證明案件總數" in body
+    assert "尚待匯入、發證或補件確認的完訓證明案件總數" not in body
     assert "最近一期活動已新增營業稅繳稅證明的金額合計" in body
     assert 'href="/assets/favicon.png"' in body
     assert 'src="/assets/portal-dashboard-welcome.js"' in body
+
+
+def test_portal_dashboard_welcome_page_renders_completion_metrics_from_cosmos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch, display_name="系統管理者")
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Ming",
+        "ticketName": "一般票",
+        "name": "王小明",
+        "organization": "好玩公司",
+        "email": "ming@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "issued",
+        "issuedPdfBlobName": "issued/ccert_1.pdf",
+        "verificationTokenHash": "hash-1",
+        "issuedAt": "2026-04-28T06:02:00Z",
+        "downloadCount": 2,
+        "verificationCount": 5,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Hua",
+        "ticketName": "一般票",
+        "name": "王小華",
+        "organization": "好玩公司",
+        "email": "hua@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "issued",
+        "issuedPdfBlobName": "issued/ccert_2.pdf",
+        "verificationTokenHash": "hash-2",
+        "issuedAt": "2026-04-28T06:03:00Z",
+        "lastDownloadedAt": "2026-04-29T06:03:00Z",
+        "verificationCount": 7,
+        "createdAt": "2026-04-28T06:03:00Z",
+    }
+    fake_completion_container.items["ccert_3"] = {
+        "id": "ccert_3",
+        "eventId": "evt_1",
+        "number": 3,
+        "kktixId": "KKTIX-003",
+        "badgeName": "Lin",
+        "ticketName": "一般票",
+        "name": "林小安",
+        "organization": "好玩公司",
+        "email": "lin@example.com",
+        "attendanceStatus": "notCheckedIn",
+        "certStatus": "changeRequested",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "verificationCount": 3,
+        "createdAt": "2026-04-28T06:04:00Z",
+    }
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr(
+        "src.functions.portal.list_event_documents",
+        lambda **_: [
+            {
+                "id": "evt_1",
+                "name": "iPlayground 2026",
+                "status": "open",
+                "documentTypes": ["completionCert"],
+                "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
+            },
+            {
+                "id": "evt_tax",
+                "name": "營業稅活動",
+                "status": "open",
+                "documentTypes": ["taxReceipt"],
+                "completionCertDownloadStartsAt": None,
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+
+    response = portal_dashboard_welcome_page(
+        build_request("http://localhost:7075/portal/dashboard/welcome")
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert "資料來源：iPlayground 2026" not in body
+    assert "<strong class=\"metric-value\">2</strong>" in body
+    assert "<strong class=\"metric-value\">15</strong>" in body
+    assert "<strong class=\"metric-value\">1</strong>" in body
+    assert "<strong class=\"metric-value\">128</strong>" not in body
+    assert "<strong class=\"metric-value\">18</strong>" not in body
+    assert "<strong class=\"metric-value\">46</strong>" not in body
 
 
 def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_authorized(

@@ -69,6 +69,7 @@ def test_build_completion_cert_document_stores_complete_list_row() -> None:
         "certStatus": "notIssued",
         "issuedPdfBlobName": None,
         "verificationTokenHash": None,
+        "verificationCount": 0,
         "issuedAt": None,
         "createdAt": "2026-04-28T06:02:00Z",
     }

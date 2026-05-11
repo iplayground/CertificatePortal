@@ -166,7 +166,7 @@ container: publicLookupAttempts
 partition key: /id
 ```
 
-`completionCerts` 是完訓證明完整清單。名稱沿用活動管理的文件類型代碼 `completionCert`。CSV 匯入資料、簽到狀態、發證狀態、下載檔案 metadata 與驗證 token hash 都記錄在同一筆資料中。CSV 上傳由 Python API 同步解析與寫入；目前預期單次約數百筆資料可在可接受時間內完成，因此不設計 DB 進度狀態或進度條。CSV 匯入當下尚未產生完訓證明檔案與驗證 token，因此 `issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 預設為 `null`；等會眾申請完訓證明且系統完成產生檔案後才回填。
+`completionCerts` 是完訓證明完整清單。名稱沿用活動管理的文件類型代碼 `completionCert`。CSV 匯入資料、簽到狀態、發證狀態、下載檔案 metadata、驗證 token hash 與驗證次數都記錄在同一筆資料中。CSV 上傳由 Python API 同步解析與寫入；目前預期單次約數百筆資料可在可接受時間內完成，因此不設計 DB 進度狀態或進度條。CSV 匯入當下尚未產生完訓證明檔案與驗證 token，因此 `issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 預設為 `null`，`verificationCount` 預設為 `0`；等會眾申請完訓證明且系統完成產生檔案後才回填發證檔案與 token 資料。
 
 `completionCertRequests` 只記錄會眾是否申請資料調整、申請備註、審核狀態與通知狀態。這類資料不是完訓證明權威清單本身，因此獨立存放。
 
@@ -193,6 +193,7 @@ partition key: /id
 | `certStatus` | string | 證書狀態 |
 | `issuedPdfBlobName` | string \| null | `issued-certs` 中的 PDF blob 名稱；CSV 匯入時為 null |
 | `verificationTokenHash` | string \| null | 公開驗證 token 的雜湊值；CSV 匯入時為 null，且不得存明文 token |
+| `verificationCount` | int | 公開驗證端點成功驗證此完訓證明的累計次數；CSV 匯入時為 0 |
 | `issuedAt` | string \| null | 發證時間，UTC ISO 8601；CSV 匯入時為 null |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
 
