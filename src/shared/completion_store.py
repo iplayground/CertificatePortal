@@ -125,8 +125,8 @@ def list_completion_cert_documents(
                     "SELECT c.id, c.eventId, c.number, c.kktixId, c.badgeName, "
                     "c.ticketName, c.name, c.organization, c.email, c.attendanceStatus, "
                     "c.certStatus, c.issuedPdfBlobName, c.verificationTokenHash, "
-                    "c.issuedAt, c.createdAt FROM c WHERE c.eventId = @eventId "
-                    "ORDER BY c.number ASC"
+                    "c.issuedAt, c.createdAt FROM c "
+                    "WHERE c.eventId = @eventId ORDER BY c.number ASC"
                 ),
                 parameters=[{"name": "@eventId", "value": event_id}],
                 partition_key=event_id,

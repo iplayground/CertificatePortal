@@ -441,6 +441,8 @@ status: 尚未串接實際驗證資料
 - 建立活動請求必須帶 `Idempotency-Key` header；同一管理者使用相同 key 重試時會對應同一筆活動 id，避免因網路重送建立重複資料
 - 編輯活動會呼叫 `PUT /api/v1/admin/events/{eventId}`，由後端驗證管理者 session、同源請求與 CSRF token 後更新同一筆 Cosmos DB 文件，不會建立第二筆活動
 - 建立與編輯活動送出後，活動清單不整表刷新；建立時先插入 disabled 暫存列，編輯時鎖定該列，待 DB 回應後以共用 alert 顯示成功或失敗並恢復列狀態
+- `活動開始日期` 與 `活動結束日期` 以純日期 `yyyy-MM-dd` 寫入 API/DB；管理端 UI 顯示為 `yyyy / MM / dd`，不得轉成 UTC datetime
+- `完訓總時數` 單位為小時，由管理者填入，不由系統依活動日期計算
 - `完訓證明開放下載時間` 從管理端台灣時間顯示格式送出前會轉成 UTC ISO 8601，例如 `2026 / 04 / 27 20:38` 送出為 `2026-04-27T12:38:00Z`
 
 ### `GET /api/v1/admin/events`
@@ -460,6 +462,9 @@ status: 尚未串接實際驗證資料
       "documentTypes": [
         "completionCert"
       ],
+      "eventStartDate": "2026-07-24",
+      "eventEndDate": "2026-07-25",
+      "completionHours": 16,
       "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z"
     }
   ]
@@ -482,6 +487,9 @@ status: 尚未串接實際驗證資料
   "documentTypes": [
     "completionCert"
   ],
+  "eventStartDate": "2026-07-24",
+  "eventEndDate": "2026-07-25",
+  "completionHours": 16,
   "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z"
 }
 ```
@@ -497,6 +505,9 @@ status: 尚未串接實際驗證資料
     "documentTypes": [
       "completionCert"
     ],
+    "eventStartDate": "2026-07-24",
+    "eventEndDate": "2026-07-25",
+    "completionHours": 16,
     "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
     "createdAt": "2026-04-27T12:00:00Z",
     "createdBy": "admin@example.com",

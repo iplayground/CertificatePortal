@@ -9,6 +9,11 @@ const dashboardEventFormSubmitButton = document.getElementById("portal-event-for
 const dashboardEventNameInput = document.getElementById("portal-event-name-input");
 const dashboardEventStatusCheckbox = document.getElementById("portal-event-status-checkbox");
 const dashboardEventStatusText = document.getElementById("portal-event-status-text");
+const dashboardEventStartDateInput = document.getElementById("portal-event-start-date");
+const dashboardEventEndDateInput = document.getElementById("portal-event-end-date");
+const dashboardEventCompletionHoursInput = document.getElementById(
+  "portal-event-completion-hours"
+);
 const dashboardEventCompletionDownloadStartsAtInput = document.getElementById(
   "portal-event-completion-download-starts-at"
 );
@@ -142,9 +147,12 @@ let dashboardCompletionUploadEventsSignature = "";
 let dashboardTaxUploadEventsSignature = "";
 
 const {
+  formatIsoDateInputValue,
   formatCurrentDateTimeInputValue,
   formatUtcIsoDateTimeInputValue,
+  installDatePicker,
   installDateTimePicker,
+  normalizeDateInputValue,
   normalizeDateTimeInputValue,
 } = window.iPlaygroundPortalDateTime;
 
@@ -285,6 +293,16 @@ function collectDashboardEventDialogState() {
       dashboardEventStatusCheckbox instanceof HTMLInputElement && dashboardEventStatusCheckbox.checked
         ? "open"
         : "unlisted",
+    eventStartDate:
+      dashboardEventStartDateInput instanceof HTMLInputElement
+        ? formatIsoDateInputValue(dashboardEventStartDateInput.value)
+        : "",
+    eventEndDate:
+      dashboardEventEndDateInput instanceof HTMLInputElement
+        ? formatIsoDateInputValue(dashboardEventEndDateInput.value)
+        : "",
+    completionHours:
+      readDashboardCompletionHoursInputValue(),
     documentTypes: dashboardEventDocumentTypeInputs
       .filter((input) => input instanceof HTMLInputElement && input.checked)
       .map((input) => input.value),
@@ -306,9 +324,51 @@ function hasDashboardEventNameValue() {
   );
 }
 
+function hasDashboardEventDateValues() {
+  return (
+    dashboardEventStartDateInput instanceof HTMLInputElement &&
+    dashboardEventEndDateInput instanceof HTMLInputElement &&
+    formatIsoDateInputValue(dashboardEventStartDateInput.value) !== "" &&
+    formatIsoDateInputValue(dashboardEventEndDateInput.value) !== ""
+  );
+}
+
+function hasDashboardCompletionHoursValue() {
+  const value = readDashboardCompletionHoursInputValue();
+  return Number.isInteger(value) && value > 0;
+}
+
+function hasRequiredDashboardCompletionCertFields() {
+  if (!isDashboardCompletionCertEnabled()) {
+    return true;
+  }
+
+  return (
+    hasDashboardCompletionHoursValue() &&
+    dashboardEventCompletionDownloadStartsAtInput instanceof HTMLInputElement &&
+    formatUtcIsoDateTimeInputValue(dashboardEventCompletionDownloadStartsAtInput.value) !== ""
+  );
+}
+
+function readDashboardCompletionHoursInputValue() {
+  if (!(dashboardEventCompletionHoursInput instanceof HTMLInputElement)) {
+    return null;
+  }
+
+  const rawValue = dashboardEventCompletionHoursInput.value.trim();
+  if (!/^[0-9]+$/.test(rawValue)) {
+    return null;
+  }
+
+  return Number.parseInt(rawValue, 10);
+}
+
 function updateDashboardEventFormSubmitState() {
   if (dashboardEventFormSubmitButton instanceof HTMLButtonElement) {
-    dashboardEventFormSubmitButton.disabled = !hasDashboardEventNameValue();
+    dashboardEventFormSubmitButton.disabled =
+      !hasDashboardEventNameValue() ||
+      !hasDashboardEventDateValues() ||
+      !hasRequiredDashboardCompletionCertFields();
   }
 }
 
@@ -326,13 +386,6 @@ function updateDashboardCompletionDownloadStartsAtVisibility() {
 
   if (dashboardEventCompletionDownloadSetting instanceof HTMLElement) {
     dashboardEventCompletionDownloadSetting.hidden = !isVisible;
-  }
-
-  if (!isVisible && dashboardEventCompletionDownloadStartsAtInput instanceof HTMLInputElement) {
-    dashboardEventCompletionDownloadStartsAtInput.value = "";
-    dashboardEventCompletionDownloadStartsAtInput.dispatchEvent(
-      new Event("input", { bubbles: true })
-    );
   }
 
   if (
@@ -374,6 +427,25 @@ function setDashboardEventDialogMode(mode = "create", eventData = {}) {
 
   if (dashboardEventNameInput instanceof HTMLInputElement) {
     dashboardEventNameInput.value = eventData.name ?? "";
+  }
+
+  if (dashboardEventStartDateInput instanceof HTMLInputElement) {
+    dashboardEventStartDateInput.value =
+      normalizeDateInputValue(eventData.eventStartDate ?? "") || "";
+    dashboardEventStartDateInput.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  if (dashboardEventEndDateInput instanceof HTMLInputElement) {
+    dashboardEventEndDateInput.value =
+      normalizeDateInputValue(eventData.eventEndDate ?? "") || "";
+    dashboardEventEndDateInput.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  if (dashboardEventCompletionHoursInput instanceof HTMLInputElement) {
+    dashboardEventCompletionHoursInput.value =
+      Number.isInteger(eventData.completionHours) && eventData.completionHours > 0
+        ? String(eventData.completionHours)
+        : "";
   }
 
   if (dashboardEventCompletionDownloadStartsAtInput instanceof HTMLInputElement) {
@@ -480,6 +552,12 @@ async function submitDashboardEventForm() {
   if (!hasDashboardEventNameValue()) {
     updateDashboardEventFormSubmitState();
     dashboardEventNameInput?.focus();
+    return;
+  }
+
+  if (!hasDashboardEventDateValues() || !hasRequiredDashboardCompletionCertFields()) {
+    updateDashboardEventFormSubmitState();
+    dashboardEventStartDateInput?.focus();
     return;
   }
 
@@ -1827,6 +1905,11 @@ dashboardEventFormSubmitButton?.addEventListener("click", () => {
   void submitDashboardEventForm();
 });
 dashboardEventNameInput?.addEventListener("input", updateDashboardEventFormSubmitState);
+dashboardEventStartDateInput?.addEventListener("input", updateDashboardEventFormSubmitState);
+dashboardEventEndDateInput?.addEventListener("input", updateDashboardEventFormSubmitState);
+dashboardEventCompletionHoursInput?.addEventListener("input", updateDashboardEventFormSubmitState);
+installDatePicker(dashboardEventStartDateInput);
+installDatePicker(dashboardEventEndDateInput);
 installDateTimePicker(dashboardEventCompletionDownloadStartsAtInput);
 installDateTimePicker(dashboardTaxUploadGeneratedAtInput);
 

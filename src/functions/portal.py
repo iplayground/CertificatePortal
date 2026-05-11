@@ -9,6 +9,7 @@ import json
 import os
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import date
 from functools import lru_cache
 from html import escape
 from http.cookies import SimpleCookie
@@ -421,6 +422,7 @@ def build_portal_events_json_payload() -> dict[str, Any]:
     return {"events": [normalize_portal_event_for_api(event) for event in events]}
 
 
+
 def read_portal_event(event_id: str) -> dict[str, Any]:
     try:
         event = get_events_container().read_item(item=event_id, partition_key=event_id)
@@ -443,6 +445,11 @@ def normalize_portal_event_for_api(event: dict[str, Any]) -> dict[str, Any]:
         "name": str(event.get("name", "")).strip(),
         "status": event_status if event_status in PORTAL_ALLOWED_EVENT_STATUSES else "unlisted",
         "documentTypes": normalize_portal_event_document_types(event.get("documentTypes")),
+        "eventStartDate": str(event.get("eventStartDate") or "").strip(),
+        "eventEndDate": str(event.get("eventEndDate") or "").strip(),
+        "completionHours": normalize_event_completion_hours(
+            event.get("completionHours")
+        ),
         "completionCertDownloadStartsAt": str(
             event.get("completionCertDownloadStartsAt") or ""
         ).strip(),
@@ -749,6 +756,9 @@ def build_portal_event_row_html(event: dict[str, Any]) -> str:
         f'data-event-name="{escape(event_name, quote=True)}" '
         f'data-event-status="{escape(event_status, quote=True)}" '
         f'data-event-document-types="{escape(",".join(document_types), quote=True)}" '
+        f'data-event-start-date="{escape(str(event.get("eventStartDate") or "").strip(), quote=True)}" '
+        f'data-event-end-date="{escape(str(event.get("eventEndDate") or "").strip(), quote=True)}" '
+        f'data-event-completion-hours="{escape(str(normalize_event_completion_hours(event.get("completionHours")) or ""), quote=True)}" '
         'data-event-completion-cert-download-starts-at='
         f'"{escape(completion_cert_download_starts_at, quote=True)}">'
         f"<td>{escape(event_name)}</td>"
@@ -945,6 +955,23 @@ def parse_create_event_payload(payload: Any) -> tuple[dict[str, Any] | None, str
     if status not in PORTAL_ALLOWED_EVENT_STATUSES:
         return None, "活動狀態不合法。"
 
+    event_start_date, event_start_error = parse_event_date_payload(
+        payload.get("eventStartDate"),
+        field_label="活動開始日期",
+    )
+    if event_start_date is None:
+        return None, event_start_error
+
+    event_end_date, event_end_error = parse_event_date_payload(
+        payload.get("eventEndDate"),
+        field_label="活動結束日期",
+    )
+    if event_end_date is None:
+        return None, event_end_error
+
+    if event_end_date < event_start_date:
+        return None, "活動結束日期不可早於活動開始日期。"
+
     document_types_payload = payload.get("documentTypes")
     if not isinstance(document_types_payload, list):
         return None, "可申請文件類型格式不合法。"
@@ -963,21 +990,83 @@ def parse_create_event_payload(payload: Any) -> tuple[dict[str, Any] | None, str
         if completion_starts_at_payload is not None
         else ""
     )
+    completion_hours, completion_hours_error = parse_optional_completion_hours_payload(
+        payload.get("completionHours")
+    )
+    if completion_hours_error is not None:
+        return None, completion_hours_error
+
     if "completionCert" in document_types:
+        if completion_hours is None:
+            return None, "完訓總時數必須是正整數。"
         if parse_utc_iso_datetime(completion_starts_at) is None:
             return None, "完訓證明開放下載時間必須使用 UTC ISO 8601 格式。"
-    else:
-        completion_starts_at = ""
+    elif completion_starts_at and parse_utc_iso_datetime(completion_starts_at) is None:
+        return None, "完訓證明開放下載時間必須使用 UTC ISO 8601 格式。"
 
     return (
         {
             "name": name,
             "status": status,
             "documentTypes": document_types,
+            "eventStartDate": event_start_date.isoformat(),
+            "eventEndDate": event_end_date.isoformat(),
+            "completionHours": completion_hours,
             "completionCertDownloadStartsAt": completion_starts_at or None,
         },
         None,
     )
+
+
+def parse_event_date_payload(
+    value: Any,
+    *,
+    field_label: str,
+) -> tuple[date | None, str | None]:
+    normalized_value = str(value or "").strip()
+    if not normalized_value:
+        return None, f"{field_label}不可空白。"
+
+    try:
+        parsed_date = date.fromisoformat(normalized_value)
+    except ValueError:
+        return None, f"{field_label}必須使用 YYYY-MM-DD 格式。"
+
+    if parsed_date.isoformat() != normalized_value:
+        return None, f"{field_label}必須使用 YYYY-MM-DD 格式。"
+
+    return parsed_date, None
+
+
+def parse_completion_hours_payload(value: Any) -> tuple[int | None, str | None]:
+    if isinstance(value, bool):
+        return None, "完訓總時數必須是正整數。"
+
+    if isinstance(value, int):
+        completion_hours = value
+    elif isinstance(value, str) and value.strip().isdecimal():
+        completion_hours = int(value.strip())
+    else:
+        return None, "完訓總時數必須是正整數。"
+
+    if completion_hours <= 0:
+        return None, "完訓總時數必須是正整數。"
+
+    return completion_hours, None
+
+
+def parse_optional_completion_hours_payload(value: Any) -> tuple[int | None, str | None]:
+    if value is None:
+        return None, None
+    if isinstance(value, str) and value.strip() == "":
+        return None, None
+
+    return parse_completion_hours_payload(value)
+
+
+def normalize_event_completion_hours(value: Any) -> int | None:
+    completion_hours, _ = parse_completion_hours_payload(value)
+    return completion_hours
 
 
 def _resolve_request_origin(req: func.HttpRequest) -> str:
@@ -1212,8 +1301,11 @@ def portal_admin_events_create_api(req: func.HttpRequest) -> func.HttpResponse:
     event_id = build_event_id(idempotency_key, actor=actor)
     event_document = build_event_document(
         actor=actor,
+        completion_hours=event_payload["completionHours"],
         document_types=event_payload["documentTypes"],
+        event_end_date=event_payload["eventEndDate"],
         event_id=event_id,
+        event_start_date=event_payload["eventStartDate"],
         name=event_payload["name"],
         status=event_payload["status"],
         completion_cert_download_starts_at=event_payload[
@@ -1279,12 +1371,15 @@ def portal_admin_events_update_api(req: func.HttpRequest) -> func.HttpResponse:
     try:
         event = update_event_document(
             actor=get_portal_api_actor(access),
+            completion_hours=event_payload["completionHours"],
             completion_cert_download_starts_at=event_payload[
                 "completionCertDownloadStartsAt"
             ],
             container=get_events_container(),
             document_types=event_payload["documentTypes"],
+            event_end_date=event_payload["eventEndDate"],
             event_id=event_id,
+            event_start_date=event_payload["eventStartDate"],
             name=event_payload["name"],
             status=event_payload["status"],
         )

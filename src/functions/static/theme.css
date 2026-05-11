@@ -621,6 +621,10 @@
   position: relative;
 }
 
+.form-date-picker-inline {
+  grid-template-columns: 140px;
+}
+
 .form-datetime-picker-date,
 .form-datetime-picker-time,
 .form-datetime-picker-time-input {
@@ -671,6 +675,22 @@
   text-align: center;
 }
 
+.form-datetime-picker .form-datetime-picker-date-part,
+.form-datetime-picker .form-datetime-picker-time-input {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--theme-content-text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.2;
+  text-align: center;
+  transform: none;
+}
+
 .form-datetime-picker-date-part.is-year {
   text-align: center;
 }
@@ -694,6 +714,18 @@
   color: transparent;
   color-scheme: light;
   font: inherit;
+}
+
+.form-datetime-picker .form-datetime-picker-date-native {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  background: transparent;
+  color: transparent;
+  font: inherit;
+  transform: none;
 }
 
 .form-datetime-picker-date-native::-webkit-datetime-edit {

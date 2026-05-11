@@ -27,6 +27,16 @@
     return parts.join("");
   }
 
+  function formatDateInputValue(year, month, day) {
+    return [
+      year,
+      " / ",
+      padDateTimePart(month),
+      " / ",
+      padDateTimePart(day),
+    ].join("");
+  }
+
   function formatCurrentDateTimeInputValue(options = {}) {
     const now = new Date(Date.now() + taipeiUtcOffsetMinutes * 60 * 1000);
     return formatDateTimeInputValue(
@@ -92,6 +102,37 @@
       minute: minuteValue,
       second: secondValue,
       hasSecond: typeof match[6] === "string",
+    };
+  }
+
+  function parseDisplayDateParts(value) {
+    const match = value
+      .trim()
+      .match(/^([0-9]{4}) \/ ([0-9]{2}) \/ ([0-9]{2})$/);
+
+    if (!match) {
+      return null;
+    }
+
+    const yearValue = Number(match[1]);
+    const monthValue = Number(match[2]);
+    const dayValue = Number(match[3]);
+
+    if (
+      yearValue < minDateTimeYear ||
+      yearValue > maxDateTimeYear ||
+      monthValue < 1 ||
+      monthValue > 12 ||
+      dayValue < 1 ||
+      dayValue > getDaysInMonth(yearValue, monthValue)
+    ) {
+      return null;
+    }
+
+    return {
+      year: yearValue,
+      month: monthValue,
+      day: dayValue,
     };
   }
 
@@ -161,6 +202,34 @@
     };
   }
 
+  function parseIsoDateValue(value) {
+    const match = value.trim().match(/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/);
+    if (!match) {
+      return null;
+    }
+
+    const yearValue = Number(match[1]);
+    const monthValue = Number(match[2]);
+    const dayValue = Number(match[3]);
+
+    if (
+      yearValue < minDateTimeYear ||
+      yearValue > maxDateTimeYear ||
+      monthValue < 1 ||
+      monthValue > 12 ||
+      dayValue < 1 ||
+      dayValue > getDaysInMonth(yearValue, monthValue)
+    ) {
+      return null;
+    }
+
+    return {
+      year: yearValue,
+      month: monthValue,
+      day: dayValue,
+    };
+  }
+
   function formatUtcIsoDateTimeValue(date) {
     return [
       date.getUTCFullYear(),
@@ -213,6 +282,35 @@
     return parseDisplayDateTimeValue(value, options)
       ? value
       : formatDateTimeInputValueFromUtcIso(value, options);
+  }
+
+  function normalizeDateInputValue(value) {
+    const displayParts = parseDisplayDateParts(value);
+    if (displayParts) {
+      return formatDateInputValue(displayParts.year, displayParts.month, displayParts.day);
+    }
+
+    const isoParts = parseIsoDateValue(value);
+    if (!isoParts) {
+      return "";
+    }
+
+    return formatDateInputValue(isoParts.year, isoParts.month, isoParts.day);
+  }
+
+  function formatIsoDateInputValue(value) {
+    const parts = parseDisplayDateParts(value);
+    if (!parts) {
+      return "";
+    }
+
+    return [
+      String(parts.year).padStart(4, "0"),
+      "-",
+      padDateTimePart(parts.month),
+      "-",
+      padDateTimePart(parts.day),
+    ].join("");
   }
 
   function formatUtcIsoDateTimeInputValue(value) {
@@ -523,12 +621,220 @@
     secondInput.addEventListener("blur", () => normalizeAndApplyTimeInput(secondInput));
   }
 
+  function installDatePicker(textInput) {
+    if (!(textInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    const picker = document.createElement("div");
+    const dateGroup = document.createElement("div");
+    const yearInput = document.createElement("input");
+    const monthInput = document.createElement("input");
+    const dayInput = document.createElement("input");
+    const dateInput = document.createElement("input");
+
+    textInput.hidden = true;
+    picker.className = "form-datetime-picker form-date-picker-inline";
+    dateGroup.className = "form-datetime-picker-date";
+    yearInput.type = "text";
+    monthInput.type = "text";
+    dayInput.type = "text";
+    dateInput.type = "date";
+    yearInput.inputMode = "numeric";
+    monthInput.inputMode = "numeric";
+    dayInput.inputMode = "numeric";
+    yearInput.maxLength = 4;
+    monthInput.maxLength = 2;
+    dayInput.maxLength = 2;
+    yearInput.className = "form-datetime-picker-date-part is-year";
+    monthInput.className = "form-datetime-picker-date-part";
+    dayInput.className = "form-datetime-picker-date-part";
+    dateInput.className = "form-datetime-picker-date-native";
+    yearInput.setAttribute("aria-label", "年");
+    monthInput.setAttribute("aria-label", "月");
+    dayInput.setAttribute("aria-label", "日");
+    dateInput.setAttribute("aria-label", "日期選擇器");
+    dateGroup.append(
+      yearInput,
+      document.createTextNode("/"),
+      monthInput,
+      document.createTextNode("/"),
+      dayInput,
+      dateInput
+    );
+    picker.append(dateGroup);
+    textInput.insertAdjacentElement("afterend", picker);
+
+    let isApplyingPickerValue = false;
+    let restoreDisplayValue = "";
+
+    function normalizeDatePart(value) {
+      const digits = value.replace(/\D/g, "").slice(0, 2);
+      return digits ? padDateTimePart(digits) : "";
+    }
+
+    function normalizeYearValue(value) {
+      const digits = value.replace(/\D/g, "").slice(0, 4);
+      return digits.length === 4 ? digits : "";
+    }
+
+    function syncPickerControls() {
+      const normalizedDisplayValue = normalizeDateInputValue(textInput.value);
+      if (normalizedDisplayValue && textInput.value !== normalizedDisplayValue) {
+        textInput.value = normalizedDisplayValue;
+      }
+
+      const isoValue = formatIsoDateInputValue(normalizedDisplayValue || textInput.value);
+      if (!isoValue) {
+        yearInput.value = "";
+        monthInput.value = "";
+        dayInput.value = "";
+        dateInput.value = "";
+        return;
+      }
+
+      const [yearValue, monthValue, dayValue] = isoValue.split("-");
+      yearInput.value = yearValue;
+      monthInput.value = monthValue;
+      dayInput.value = dayValue;
+      dateInput.value = isoValue;
+    }
+
+    function getRestoreDisplayValue() {
+      return normalizeDateInputValue(textInput.value) || normalizeDateInputValue(dateInput.value);
+    }
+
+    function isPickerValueComplete() {
+      return (
+        yearInput.value.length === 4 &&
+        monthInput.value.length === 2 &&
+        dayInput.value.length === 2
+      );
+    }
+
+    function isPickerValueValid() {
+      return Boolean(
+        parseIsoDateValue(`${yearInput.value}-${monthInput.value}-${dayInput.value}`)
+      );
+    }
+
+    function restorePreviousPickerValue() {
+      textInput.value = restoreDisplayValue || getRestoreDisplayValue();
+      isApplyingPickerValue = true;
+      textInput.dispatchEvent(new Event("input", { bubbles: true }));
+      isApplyingPickerValue = false;
+      syncPickerControls();
+    }
+
+    function applyPickerValue() {
+      if (!isPickerValueComplete() || !isPickerValueValid()) {
+        return false;
+      }
+
+      const yearValue = normalizeYearValue(yearInput.value);
+      const monthValue = normalizeDatePart(monthInput.value);
+      const dayValue = normalizeDatePart(dayInput.value);
+      yearInput.value = yearValue;
+      monthInput.value = monthValue;
+      dayInput.value = dayValue;
+      dateInput.value = `${yearValue}-${monthValue}-${dayValue}`;
+      textInput.value = `${yearValue} / ${monthValue} / ${dayValue}`;
+      isApplyingPickerValue = true;
+      textInput.dispatchEvent(new Event("input", { bubbles: true }));
+      isApplyingPickerValue = false;
+      restoreDisplayValue = textInput.value;
+      return true;
+    }
+
+    function handleDateInput(input, nextInput, maxLength) {
+      input.value = input.value.replace(/\D/g, "").slice(0, maxLength);
+      if (input.value.length === maxLength && nextInput instanceof HTMLInputElement) {
+        nextInput.focus();
+        nextInput.select();
+      }
+      applyPickerValue();
+    }
+
+    function normalizeAndApplyDateInput(input) {
+      input.value = input === yearInput
+        ? normalizeYearValue(input.value)
+        : normalizeDatePart(input.value);
+      if (!applyPickerValue()) {
+        restorePreviousPickerValue();
+      }
+    }
+
+    function handleNativeDateInput() {
+      if (!dateInput.value) {
+        return;
+      }
+
+      const [yearValue, monthValue, dayValue] = dateInput.value.split("-");
+      yearInput.value = yearValue;
+      monthInput.value = monthValue;
+      dayInput.value = dayValue;
+      applyPickerValue();
+    }
+
+    function selectDateInputValue(event) {
+      if (event.currentTarget instanceof HTMLInputElement) {
+        restoreDisplayValue = getRestoreDisplayValue();
+        event.currentTarget.select();
+      }
+    }
+
+    function handlePickerPartNavigation(event) {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+
+      const pickerPartInputs = [yearInput, monthInput, dayInput];
+      const currentIndex = pickerPartInputs.indexOf(event.currentTarget);
+      if (currentIndex < 0) {
+        return;
+      }
+
+      event.preventDefault();
+      const direction = event.key === "ArrowLeft" ? -1 : 1;
+      const nextInput = pickerPartInputs[currentIndex + direction];
+      if (nextInput instanceof HTMLInputElement) {
+        nextInput.focus();
+        nextInput.select();
+      }
+    }
+
+    function syncInlinePicker() {
+      if (!isApplyingPickerValue) {
+        syncPickerControls();
+      }
+    }
+
+    syncInlinePicker();
+    textInput.addEventListener("input", syncInlinePicker);
+    [yearInput, monthInput, dayInput].forEach((input) => {
+      input.addEventListener("focus", selectDateInputValue);
+      input.addEventListener("click", selectDateInputValue);
+      input.addEventListener("keydown", handlePickerPartNavigation);
+    });
+    yearInput.addEventListener("input", () => handleDateInput(yearInput, monthInput, 4));
+    monthInput.addEventListener("input", () => handleDateInput(monthInput, dayInput, 2));
+    dayInput.addEventListener("input", () => handleDateInput(dayInput, null, 2));
+    yearInput.addEventListener("blur", () => normalizeAndApplyDateInput(yearInput));
+    monthInput.addEventListener("blur", () => normalizeAndApplyDateInput(monthInput));
+    dayInput.addEventListener("blur", () => normalizeAndApplyDateInput(dayInput));
+    dateInput.addEventListener("input", handleNativeDateInput);
+  }
+
   window.iPlaygroundPortalDateTime = {
+    formatIsoDateInputValue,
     formatDateTimeInputValueFromUtcIso,
     formatCurrentDateTimeInputValue,
     formatUtcIsoDateTimeInputValue,
+    installDatePicker,
     installDateTimePicker,
+    normalizeDateInputValue,
     normalizeDateTimeInputValue,
+    parseDisplayDateParts,
     parseDisplayDateTimeValue,
   };
 })();

@@ -7,6 +7,9 @@ const eventNameInput = document.getElementById("event-name-input");
 const eventStatusCheckbox = document.getElementById("event-status-checkbox");
 const eventStatusText = document.getElementById("event-status-text");
 const eventListBody = document.getElementById("event-list-body");
+const eventStartDateInput = document.getElementById("event-start-date");
+const eventEndDateInput = document.getElementById("event-end-date");
+const eventCompletionHoursInput = document.getElementById("event-completion-hours");
 const eventCompletionDownloadStartsAtInput = document.getElementById(
   "event-completion-download-starts-at"
 );
@@ -36,9 +39,12 @@ let eventEditingId = "";
 let eventRowsSignature = "";
 
 const {
+  formatIsoDateInputValue,
   formatCurrentDateTimeInputValue,
   formatUtcIsoDateTimeInputValue,
+  installDatePicker,
   installDateTimePicker,
+  normalizeDateInputValue,
   normalizeDateTimeInputValue,
 } = window.iPlaygroundPortalDateTime;
 
@@ -101,6 +107,16 @@ function collectEventDialogState() {
     status: eventStatusCheckbox instanceof HTMLInputElement && eventStatusCheckbox.checked
       ? "open"
       : "unlisted",
+    eventStartDate:
+      eventStartDateInput instanceof HTMLInputElement
+        ? formatIsoDateInputValue(eventStartDateInput.value)
+        : "",
+    eventEndDate:
+      eventEndDateInput instanceof HTMLInputElement
+        ? formatIsoDateInputValue(eventEndDateInput.value)
+        : "",
+    completionHours:
+      readCompletionHoursInputValue(),
     documentTypes: eventDocumentTypeInputs
       .filter((input) => input instanceof HTMLInputElement && input.checked)
       .map((input) => input.value),
@@ -119,9 +135,49 @@ function hasEventNameValue() {
   return eventNameInput instanceof HTMLInputElement && eventNameInput.value.trim().length > 0;
 }
 
+function hasEventDateValues() {
+  return (
+    eventStartDateInput instanceof HTMLInputElement &&
+    eventEndDateInput instanceof HTMLInputElement &&
+    formatIsoDateInputValue(eventStartDateInput.value) !== "" &&
+    formatIsoDateInputValue(eventEndDateInput.value) !== ""
+  );
+}
+
+function hasCompletionHoursValue() {
+  const value = readCompletionHoursInputValue();
+  return Number.isInteger(value) && value > 0;
+}
+
+function hasRequiredCompletionCertFields() {
+  if (!isCompletionCertEnabled()) {
+    return true;
+  }
+
+  return (
+    hasCompletionHoursValue() &&
+    eventCompletionDownloadStartsAtInput instanceof HTMLInputElement &&
+    formatUtcIsoDateTimeInputValue(eventCompletionDownloadStartsAtInput.value) !== ""
+  );
+}
+
+function readCompletionHoursInputValue() {
+  if (!(eventCompletionHoursInput instanceof HTMLInputElement)) {
+    return null;
+  }
+
+  const rawValue = eventCompletionHoursInput.value.trim();
+  if (!/^[0-9]+$/.test(rawValue)) {
+    return null;
+  }
+
+  return Number.parseInt(rawValue, 10);
+}
+
 function updateEventFormSubmitState() {
   if (eventFormSubmitButton instanceof HTMLButtonElement) {
-    eventFormSubmitButton.disabled = !hasEventNameValue();
+    eventFormSubmitButton.disabled =
+      !hasEventNameValue() || !hasEventDateValues() || !hasRequiredCompletionCertFields();
   }
 }
 
@@ -139,11 +195,6 @@ function updateCompletionDownloadStartsAtVisibility() {
 
   if (eventCompletionDownloadSetting instanceof HTMLElement) {
     eventCompletionDownloadSetting.hidden = !isVisible;
-  }
-
-  if (!isVisible && eventCompletionDownloadStartsAtInput instanceof HTMLInputElement) {
-    eventCompletionDownloadStartsAtInput.value = "";
-    eventCompletionDownloadStartsAtInput.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   if (
@@ -183,6 +234,25 @@ function setEventDialogMode(mode = "create", eventData = {}) {
 
   if (eventNameInput instanceof HTMLInputElement) {
     eventNameInput.value = eventData.name ?? "";
+  }
+
+  if (eventStartDateInput instanceof HTMLInputElement) {
+    eventStartDateInput.value =
+      normalizeDateInputValue(eventData.eventStartDate ?? "") || "";
+    eventStartDateInput.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  if (eventEndDateInput instanceof HTMLInputElement) {
+    eventEndDateInput.value =
+      normalizeDateInputValue(eventData.eventEndDate ?? "") || "";
+    eventEndDateInput.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  if (eventCompletionHoursInput instanceof HTMLInputElement) {
+    eventCompletionHoursInput.value =
+      Number.isInteger(eventData.completionHours) && eventData.completionHours > 0
+        ? String(eventData.completionHours)
+        : "";
   }
 
   if (eventCompletionDownloadStartsAtInput instanceof HTMLInputElement) {
@@ -242,6 +312,9 @@ function buildEventDataFromRow(row) {
     name: row.dataset.eventName ?? "",
     status: row.dataset.eventStatus ?? "open",
     documentTypes,
+    eventStartDate: row.dataset.eventStartDate ?? "",
+    eventEndDate: row.dataset.eventEndDate ?? "",
+    completionHours: Number.parseInt(row.dataset.eventCompletionHours ?? "", 10),
     completionCertDownloadStartsAt:
       row.dataset.eventCompletionCertDownloadStartsAt ?? "",
   };
@@ -289,9 +362,15 @@ function normalizeLoadedEvent(eventData) {
       typeof eventData?.completionCertDownloadStartsAt === "string"
         ? eventData.completionCertDownloadStartsAt
         : "",
+    completionHours:
+      Number.isInteger(eventData?.completionHours) && eventData.completionHours > 0
+        ? eventData.completionHours
+        : null,
     documentTypes: Array.isArray(eventData?.documentTypes)
       ? eventData.documentTypes.filter((documentType) => typeof documentType === "string")
       : [],
+    eventEndDate: typeof eventData?.eventEndDate === "string" ? eventData.eventEndDate : "",
+    eventStartDate: typeof eventData?.eventStartDate === "string" ? eventData.eventStartDate : "",
     id: typeof eventData?.id === "string" ? eventData.id : "",
     name: typeof eventData?.name === "string" ? eventData.name : "",
     status: eventData?.status === "open" ? "open" : "unlisted",
@@ -389,6 +468,9 @@ function buildEventRow(eventData) {
   row.dataset.eventName = eventName;
   row.dataset.eventStatus = eventData.status;
   row.dataset.eventDocumentTypes = eventData.documentTypes.join(",");
+  row.dataset.eventStartDate = eventData.eventStartDate;
+  row.dataset.eventEndDate = eventData.eventEndDate;
+  row.dataset.eventCompletionHours = String(eventData.completionHours ?? "");
   row.dataset.eventCompletionCertDownloadStartsAt = eventData.completionCertDownloadStartsAt;
 
   nameCell.textContent = eventName;
@@ -571,6 +653,12 @@ async function submitEventForm() {
     return;
   }
 
+  if (!hasEventDateValues() || !hasRequiredCompletionCertFields()) {
+    updateEventFormSubmitState();
+    eventStartDateInput?.focus();
+    return;
+  }
+
   eventFormSubmitButton.disabled = true;
   const isEditMode = eventDialogMode === "edit";
   const idempotencyKey = isEditMode ? "" : buildEventIdempotencyKey();
@@ -663,6 +751,11 @@ eventFormSubmitButton?.addEventListener("click", () => {
   void submitEventForm();
 });
 eventNameInput?.addEventListener("input", updateEventFormSubmitState);
+eventStartDateInput?.addEventListener("input", updateEventFormSubmitState);
+eventEndDateInput?.addEventListener("input", updateEventFormSubmitState);
+eventCompletionHoursInput?.addEventListener("input", updateEventFormSubmitState);
+installDatePicker(eventStartDateInput);
+installDatePicker(eventEndDateInput);
 installDateTimePicker(eventCompletionDownloadStartsAtInput);
 
 eventDocumentTypeInputs.forEach((input) => {

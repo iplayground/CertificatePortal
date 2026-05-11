@@ -54,8 +54,11 @@ def utc_now_iso() -> str:
 def build_event_document(
     *,
     actor: str,
+    completion_hours: int | None,
     document_types: list[str],
+    event_end_date: str,
     event_id: str,
+    event_start_date: str,
     name: str,
     status: str,
     completion_cert_download_starts_at: str | None,
@@ -67,6 +70,9 @@ def build_event_document(
         "name": name,
         "status": status,
         "documentTypes": document_types,
+        "eventStartDate": event_start_date,
+        "eventEndDate": event_end_date,
+        "completionHours": completion_hours,
         "completionCertDownloadStartsAt": completion_cert_download_starts_at,
         "createdAt": timestamp,
         "createdBy": actor,
@@ -102,10 +108,13 @@ def create_event_document(
 def update_event_document(
     *,
     actor: str,
+    completion_hours: int | None,
     completion_cert_download_starts_at: str | None,
     container: EventContainer,
     document_types: list[str],
+    event_end_date: str,
     event_id: str,
+    event_start_date: str,
     name: str,
     status: str,
 ) -> dict[str, Any]:
@@ -117,6 +126,9 @@ def update_event_document(
             "name": name,
             "status": status,
             "documentTypes": document_types,
+            "eventStartDate": event_start_date,
+            "eventEndDate": event_end_date,
+            "completionHours": completion_hours,
             "completionCertDownloadStartsAt": completion_cert_download_starts_at,
             "updatedAt": utc_now_iso(),
             "updatedBy": actor,
@@ -139,6 +151,7 @@ def list_event_documents(*, container: EventContainer) -> list[dict[str, Any]]:
             container.query_items(
                 query=(
                     "SELECT c.id, c.name, c.status, c.documentTypes, "
+                    "c.eventStartDate, c.eventEndDate, c.completionHours, "
                     "c.completionCertDownloadStartsAt FROM c ORDER BY c.createdAt DESC"
                 ),
                 enable_cross_partition_query=True,
@@ -164,6 +177,7 @@ def list_public_event_documents(*, container: EventContainer) -> list[dict[str, 
             container.query_items(
                 query=(
                     "SELECT c.id, c.name, c.documentTypes, "
+                    "c.eventStartDate, c.eventEndDate, c.completionHours, "
                     "c.completionCertDownloadStartsAt FROM c "
                     "WHERE c.status = 'open' ORDER BY c.createdAt DESC"
                 ),

@@ -133,8 +133,11 @@ def test_build_event_id_is_stable_for_idempotency_key_and_actor() -> None:
 def test_build_event_document_uses_utc_timestamps_and_actor() -> None:
     event = build_event_document(
         actor="admin@example.com",
+        completion_hours=16,
         document_types=["completionCert"],
+        event_end_date="2026-07-25",
         event_id="evt_test",
+        event_start_date="2026-07-24",
         name="iPlayground 2026",
         status="unlisted",
         completion_cert_download_starts_at="2026-04-27T12:38:00Z",
@@ -146,6 +149,9 @@ def test_build_event_document_uses_utc_timestamps_and_actor() -> None:
         "name": "iPlayground 2026",
         "status": "unlisted",
         "documentTypes": ["completionCert"],
+        "eventStartDate": "2026-07-24",
+        "eventEndDate": "2026-07-25",
+        "completionHours": 16,
         "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
         "createdAt": "2026-04-27T12:00:00Z",
         "createdBy": "admin@example.com",
@@ -205,10 +211,13 @@ def test_update_event_document_replaces_existing_item_without_changing_created_f
 
     event = update_event_document(
         actor="editor@example.com",
+        completion_hours=16,
         completion_cert_download_starts_at=None,
         container=container,
         document_types=["taxReceipt"],
+        event_end_date="2026-07-25",
         event_id="evt_existing",
+        event_start_date="2026-07-24",
         name="New",
         status="open",
     )
@@ -217,6 +226,9 @@ def test_update_event_document_replaces_existing_item_without_changing_created_f
     assert event["name"] == "New"
     assert event["status"] == "open"
     assert event["documentTypes"] == ["taxReceipt"]
+    assert event["eventStartDate"] == "2026-07-24"
+    assert event["eventEndDate"] == "2026-07-25"
+    assert event["completionHours"] == 16
     assert event["completionCertDownloadStartsAt"] is None
     assert event["createdAt"] == "2026-04-27T12:00:00Z"
     assert event["createdBy"] == "creator@example.com"
@@ -231,6 +243,7 @@ def test_list_event_documents_queries_events_by_created_at_desc() -> None:
     assert list_event_documents(container=container) == events
     assert container.query == (
         "SELECT c.id, c.name, c.status, c.documentTypes, "
+        "c.eventStartDate, c.eventEndDate, c.completionHours, "
         "c.completionCertDownloadStartsAt FROM c ORDER BY c.createdAt DESC"
     )
     assert container.enable_cross_partition_query is True
@@ -243,6 +256,7 @@ def test_list_public_event_documents_queries_open_events_only() -> None:
     assert list_public_event_documents(container=container) == events
     assert container.query == (
         "SELECT c.id, c.name, c.documentTypes, "
+        "c.eventStartDate, c.eventEndDate, c.completionHours, "
         "c.completionCertDownloadStartsAt FROM c "
         "WHERE c.status = 'open' ORDER BY c.createdAt DESC"
     )

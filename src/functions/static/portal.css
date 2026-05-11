@@ -1552,8 +1552,12 @@ form {
 
 .event-form-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.event-name-field {
+  grid-column: 1 / -1;
 }
 
 .completion-edit-identity-row {
@@ -1578,6 +1582,13 @@ form {
 
 .document-type-setting {
   display: grid;
+  gap: 10px;
+  justify-items: start;
+  min-width: 0;
+}
+
+.document-type-setting-row {
+  display: grid;
   grid-template-columns: max-content max-content;
   gap: 8px;
   align-items: center;
@@ -1600,8 +1611,19 @@ form {
 }
 
 .document-type-option-with-setting {
-  grid-template-columns: minmax(0, 1fr) max-content;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.document-type-option-with-setting .document-type-setting {
+  margin-left: 34px;
+}
+
+.document-type-hours-input {
+  width: 72px;
+  min-height: 34px;
+  padding: 7px 10px;
+  text-align: center;
 }
 
 .document-type-checkbox-control {

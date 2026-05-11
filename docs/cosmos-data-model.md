@@ -41,6 +41,9 @@ partition key: /id
 | `name` | string | 活動顯示名稱 |
 | `status` | string | 活動狀態 |
 | `documentTypes` | string[] | 此活動開放申請的文件類型；可為空陣列 |
+| `eventStartDate` | string | 活動開始日期，純日期，格式 `yyyy-MM-dd` |
+| `eventEndDate` | string | 活動結束日期，純日期，格式 `yyyy-MM-dd` |
+| `completionHours` | int | 完訓總時數，單位小時，由管理者填入，不由系統計算 |
 | `completionCertDownloadStartsAt` | string \| null | 完訓證明開放下載時間，UTC ISO 8601；未開放完訓證明時為 null |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
 | `createdBy` | string | 建立者識別 |
@@ -62,6 +65,8 @@ taxReceipt
 ```
 
 `documentTypes` 可為空陣列。空陣列表示活動本身可公開顯示，但目前沒有可申請文件；公開首頁應顯示該活動，並在文件類型欄位提示尚無可申請文件，而不是隱藏活動。
+
+`eventStartDate` 與 `eventEndDate` 是活動日曆日期，不是時間點；後端與前端都不得把它們轉成 UTC datetime。UI 可顯示為 `yyyy / MM / dd`，但 API 與 DB 權威值固定使用 `yyyy-MM-dd`。`completionHours` 單位為小時，由管理者填入，不從活動日期自動計算。
 
 `id` 產生規則：
 
@@ -97,6 +102,9 @@ def build_event_id(idempotency_key: str, *, actor: str) -> str:
   "documentTypes": [
     "completionCert"
   ],
+  "eventStartDate": "2026-07-24",
+  "eventEndDate": "2026-07-25",
+  "completionHours": 16,
   "completionCertDownloadStartsAt": "2026-04-25T03:30:00Z",
   "createdAt": "2026-04-25T03:30:00Z",
   "createdBy": "admin@example.com",
@@ -110,7 +118,9 @@ def build_event_id(idempotency_key: str, *, actor: str) -> str:
 活動清單：
 
 ```sql
-SELECT c.id, c.name, c.status, c.documentTypes, c.completionCertDownloadStartsAt
+SELECT c.id, c.name, c.status, c.documentTypes,
+       c.eventStartDate, c.eventEndDate, c.completionHours,
+       c.completionCertDownloadStartsAt
 FROM c
 ORDER BY c.createdAt DESC
 ```
@@ -120,7 +130,9 @@ ORDER BY c.createdAt DESC
 公開首頁活動清單：
 
 ```sql
-SELECT c.id, c.name, c.documentTypes, c.completionCertDownloadStartsAt
+SELECT c.id, c.name, c.documentTypes,
+       c.eventStartDate, c.eventEndDate, c.completionHours,
+       c.completionCertDownloadStartsAt
 FROM c
 WHERE c.status = 'open'
 ORDER BY c.createdAt DESC

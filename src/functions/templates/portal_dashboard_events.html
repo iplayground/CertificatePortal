@@ -77,7 +77,7 @@
 
             <form class="event-management-form" aria-label="建立活動">
               <div class="event-form-grid">
-                <div class="field">
+                <div class="field event-name-field">
                   <span class="field-label" id="event-name-label">活動名稱</span>
                   <input
                     id="event-name-input"
@@ -91,6 +91,34 @@
                     data-protonpass-ignore="true"
                     data-form-type="other"
                     aria-labelledby="event-name-label"
+                  >
+                </div>
+                <div class="field event-date-field">
+                  <span class="field-label" id="event-start-date-label">活動開始日期</span>
+                  <input
+                    class="form-datetime-input"
+                    id="event-start-date"
+                    name="eventStartDate"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    aria-labelledby="event-start-date-label"
+                    placeholder="---- / -- / --"
+                    pattern="[0-9]{4} / [0-9]{2} / [0-9]{2}"
+                  >
+                </div>
+                <div class="field event-date-field">
+                  <span class="field-label" id="event-end-date-label">活動結束日期</span>
+                  <input
+                    class="form-datetime-input"
+                    id="event-end-date"
+                    name="eventEndDate"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    aria-labelledby="event-end-date-label"
+                    placeholder="---- / -- / --"
+                    pattern="[0-9]{4} / [0-9]{2} / [0-9]{2}"
                   >
                 </div>
               </div>
@@ -115,26 +143,41 @@
                     </span>
                   </label>
                   <div class="document-type-setting" id="event-completion-download-setting">
-                    <span
-                      class="field-label document-type-setting-toggle"
-                      id="event-completion-download-starts-at-label"
-                      role="button"
-                      tabindex="0"
-                      data-completion-download-toggle
-                    >
-                      完訓證明開放下載時間
-                    </span>
-                    <input
-                      class="form-datetime-input document-type-datetime-input"
-                      id="event-completion-download-starts-at"
-                      name="completionCertDownloadStartsAt"
-                      type="text"
-                      inputmode="numeric"
-                      autocomplete="off"
-                      aria-labelledby="event-completion-download-starts-at-label"
-                      placeholder="---- / -- / -- --:--"
-                      pattern="[0-9]{4} / [0-9]{2} / [0-9]{2} ([01][0-9]|2[0-3]):[0-5][0-9]"
-                    >
+                    <div class="document-type-setting-row">
+                      <span class="field-label" id="event-completion-hours-label">完訓總時數</span>
+                      <input
+                        class="form-datetime-input document-type-hours-input"
+                        id="event-completion-hours"
+                        name="completionHours"
+                        type="text"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        aria-labelledby="event-completion-hours-label"
+                        pattern="[0-9]+"
+                      >
+                    </div>
+                    <div class="document-type-setting-row">
+                      <span
+                        class="field-label document-type-setting-toggle"
+                        id="event-completion-download-starts-at-label"
+                        role="button"
+                        tabindex="0"
+                        data-completion-download-toggle
+                      >
+                        完訓證明開放下載時間
+                      </span>
+                      <input
+                        class="form-datetime-input document-type-datetime-input"
+                        id="event-completion-download-starts-at"
+                        name="completionCertDownloadStartsAt"
+                        type="text"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        aria-labelledby="event-completion-download-starts-at-label"
+                        placeholder="---- / -- / -- --:--"
+                        pattern="[0-9]{4} / [0-9]{2} / [0-9]{2} ([01][0-9]|2[0-3]):[0-5][0-9]"
+                      >
+                    </div>
                   </div>
                 </div>
                 <label class="form-checkbox-option document-type-option">

@@ -372,6 +372,8 @@ def test_portal_admin_events_create_api_creates_event_with_utc_iso_time(
         monkeypatch,
         body=(
             b'{"name":"iPlayground 2026","status":"unlisted",'
+            b'"eventStartDate":"2026-07-24","eventEndDate":"2026-07-25",'
+            b'"completionHours":16,'
             b'"documentTypes":["completionCert"],'
             b'"completionCertDownloadStartsAt":"2026-04-27T12:38:00Z"}'
         ),
@@ -388,9 +390,62 @@ def test_portal_admin_events_create_api_creates_event_with_utc_iso_time(
     assert event["name"] == "iPlayground 2026"
     assert event["status"] == "unlisted"
     assert event["documentTypes"] == ["completionCert"]
+    assert event["eventStartDate"] == "2026-07-24"
+    assert event["eventEndDate"] == "2026-07-25"
+    assert event["completionHours"] == 16
     assert event["completionCertDownloadStartsAt"] == "2026-04-27T12:38:00Z"
     assert event["createdBy"] == "admin@iplayground.io"
     assert event["updatedBy"] == "admin@iplayground.io"
+
+
+def test_portal_admin_events_create_api_allows_non_completion_event_without_hours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_container = FakeEventsContainer()
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_container)
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=(
+            b'{"name":"iPlayground 2026","status":"open",'
+            b'"eventStartDate":"2026-07-24","eventEndDate":"2026-07-25",'
+            b'"completionHours":null,'
+            b'"documentTypes":["taxReceipt"],'
+            b'"completionCertDownloadStartsAt":""}'
+        ),
+    )
+
+    response = portal_admin_events_create_api(request)
+
+    assert response.status_code == 201
+    event = next(iter(fake_container.items.values()))
+    assert event["documentTypes"] == ["taxReceipt"]
+    assert event["completionHours"] is None
+    assert event["completionCertDownloadStartsAt"] is None
+
+
+def test_portal_admin_events_create_api_preserves_completion_settings_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_container = FakeEventsContainer()
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_container)
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=(
+            b'{"name":"iPlayground 2026","status":"open",'
+            b'"eventStartDate":"2026-07-24","eventEndDate":"2026-07-25",'
+            b'"completionHours":16,'
+            b'"documentTypes":["taxReceipt"],'
+            b'"completionCertDownloadStartsAt":"2026-04-27T12:38:00Z"}'
+        ),
+    )
+
+    response = portal_admin_events_create_api(request)
+
+    assert response.status_code == 201
+    event = next(iter(fake_container.items.values()))
+    assert event["documentTypes"] == ["taxReceipt"]
+    assert event["completionHours"] == 16
+    assert event["completionCertDownloadStartsAt"] == "2026-04-27T12:38:00Z"
 
 
 def test_portal_admin_events_create_api_rejects_local_display_time(
@@ -400,6 +455,8 @@ def test_portal_admin_events_create_api_rejects_local_display_time(
         monkeypatch,
         body=(
             b'{"name":"iPlayground 2026","status":"open",'
+            b'"eventStartDate":"2026-07-24","eventEndDate":"2026-07-25",'
+            b'"completionHours":16,'
             b'"documentTypes":["completionCert"],'
             b'"completionCertDownloadStartsAt":"2026 / 04 / 27 20:38"}'
         ),
@@ -425,6 +482,8 @@ def test_portal_admin_events_create_api_returns_json_when_event_store_is_unavail
         monkeypatch,
         body=(
             b'{"name":"iPlayground 2026","status":"unlisted",'
+            b'"eventStartDate":"2026-07-24","eventEndDate":"2026-07-25",'
+            b'"completionHours":16,'
             b'"documentTypes":["completionCert"],'
             b'"completionCertDownloadStartsAt":"2026-04-27T12:38:00Z"}'
         ),
@@ -458,6 +517,8 @@ def test_portal_admin_events_update_api_updates_existing_event_without_creating_
         monkeypatch,
         body=(
             b'{"name":"Updated Event","status":"open",'
+            b'"eventStartDate":"2026-07-24","eventEndDate":"2026-07-25",'
+            b'"completionHours":16,'
             b'"documentTypes":["taxReceipt"],'
             b'"completionCertDownloadStartsAt":null}'
         ),
@@ -475,6 +536,9 @@ def test_portal_admin_events_update_api_updates_existing_event_without_creating_
     assert event["name"] == "Updated Event"
     assert event["status"] == "open"
     assert event["documentTypes"] == ["taxReceipt"]
+    assert event["eventStartDate"] == "2026-07-24"
+    assert event["eventEndDate"] == "2026-07-25"
+    assert event["completionHours"] == 16
     assert event["completionCertDownloadStartsAt"] is None
     assert event["createdAt"] == "2026-04-27T12:00:00Z"
     assert event["createdBy"] == "creator@example.com"
@@ -493,6 +557,9 @@ def test_portal_admin_events_list_api_returns_events_without_blocking_page_rende
                 "name": "iPlayground 2026",
                 "status": "open",
                 "documentTypes": ["completionCert", "taxReceipt"],
+                "eventStartDate": "2026-07-24",
+                "eventEndDate": "2026-07-25",
+                "completionHours": 16,
                 "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
                 "createdAt": "2026-04-27T12:00:00Z",
             }
@@ -509,6 +576,9 @@ def test_portal_admin_events_list_api_returns_events_without_blocking_page_rende
     assert '"name":"iPlayground 2026"' in body
     assert '"status":"open"' in body
     assert '"documentTypes":["completionCert","taxReceipt"]' in body
+    assert '"eventStartDate":"2026-07-24"' in body
+    assert '"eventEndDate":"2026-07-25"' in body
+    assert '"completionHours":16' in body
     assert '"completionCertDownloadStartsAt":"2026-04-27T12:38:00Z"' in body
 
 
@@ -524,6 +594,9 @@ def test_portal_admin_events_list_api_includes_unlisted_and_non_completion_event
                 "name": "下架活動",
                 "status": "unlisted",
                 "documentTypes": ["taxReceipt"],
+                "eventStartDate": "2026-07-24",
+                "eventEndDate": "2026-07-25",
+                "completionHours": 16,
                 "completionCertDownloadStartsAt": "",
             },
             {
@@ -531,6 +604,9 @@ def test_portal_admin_events_list_api_includes_unlisted_and_non_completion_event
                 "name": "開放活動",
                 "status": "open",
                 "documentTypes": [],
+                "eventStartDate": "2026-07-24",
+                "eventEndDate": "2026-07-25",
+                "completionHours": 16,
                 "completionCertDownloadStartsAt": "",
             },
         ],
@@ -1550,6 +1626,17 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'for="portal-event-completion-download-starts-at"' not in body
     assert 'id="portal-event-completion-download-starts-at"' in body
     assert 'name="completionCertDownloadStartsAt"' in body
+    assert 'id="portal-event-start-date"' in body
+    assert 'name="eventStartDate"' in body
+    assert 'id="portal-event-end-date"' in body
+    assert 'name="eventEndDate"' in body
+    assert 'class="field event-date-field"' in body
+    assert 'class="document-type-setting-row"' in body
+    assert 'id="portal-event-completion-hours"' in body
+    assert 'name="completionHours"' in body
+    assert "完訓總時數" in body
+    assert 'class="form-datetime-input document-type-hours-input"' in body
+    assert 'type="number"' not in body
     assert 'class="form-datetime-input document-type-datetime-input"' in body
     assert 'type="datetime-local"' not in body
     assert 'type="text"' in body
@@ -1557,7 +1644,7 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'placeholder="---- / -- / -- --:--"' in body
     assert "2[0-3]" in body
     assert "截止" not in body
-    assert body.count('autocomplete="off"') == 5
+    assert body.count('autocomplete="off"') == 8
     assert body.count('data-1p-ignore="true"') == 4
     assert body.count('data-op-ignore="true"') == 4
     assert body.count('data-lpignore="true"') == 4
@@ -2325,6 +2412,7 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert "活動管理" in body
     assert "活動清單" in body
     assert 'class="event-list-col-name"' in body
+    assert 'class="event-list-col-time"' not in body
     assert 'class="event-list-col-code"' not in body
     assert 'class="event-list-col-documents"' in body
     assert 'class="event-list-col-status"' in body
@@ -2337,6 +2425,7 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert 'data-event-status="open"' not in body
     assert 'data-event-document-types="completionCert"' not in body
     assert "活動載入中" in body
+    assert "活動時間" not in body
     assert "尚未建立活動" not in body
     assert "活動代碼" not in body
     assert "ipg-2026" not in body
@@ -2347,7 +2436,7 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert 'id="event-create-open"' in body
     assert "建立活動" in body
     assert 'id="event-create-dialog"' in body
-    assert body.count('autocomplete="off"') == 2
+    assert body.count('autocomplete="off"') == 5
     assert body.count('data-1p-ignore="true"') == 1
     assert body.count('data-op-ignore="true"') == 1
     assert body.count('data-lpignore="true"') == 1
@@ -2360,6 +2449,19 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert 'id="event-create-close"' not in body
     assert "關閉建立活動畫面" not in body
     assert "活動狀態" in body
+    assert 'id="event-start-date"' in body
+    assert 'name="eventStartDate"' in body
+    assert 'id="event-end-date"' in body
+    assert 'name="eventEndDate"' in body
+    assert 'class="field event-date-field"' in body
+    assert 'class="document-type-setting-row"' in body
+    assert 'id="event-completion-hours"' in body
+    assert 'name="completionHours"' in body
+    assert 'class="form-datetime-input document-type-hours-input"' in body
+    assert 'type="number"' not in body
+    assert "活動開始日期" in body
+    assert "活動結束日期" in body
+    assert "完訓總時數" in body
     assert 'id="event-status-text">下架</strong>' in body
     assert 'class="event-status-switch-option"' in body
     assert 'class="event-status-switch-input"' in body
@@ -2516,6 +2618,7 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".event-list-toolbar" not in body
     assert ".event-list-table" in body
     assert ".event-list-col-documents" in body
+    assert ".event-list-col-time" not in body
     assert ".event-list-col-code" not in body
     assert ".event-list-row" in body
     assert "white-space: nowrap;" in body
@@ -2547,8 +2650,11 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".document-type-checkbox-control" in body
     assert ".document-type-setting" in body
     assert "grid-template-columns: 140px 70px;" in theme_body
+    assert "grid-template-columns: 140px;" in theme_body
     assert "grid-template-columns: 130px 65px;" in theme_body
-    assert "grid-template-columns: minmax(0, 1fr) max-content;" in body
+    assert "grid-template-columns: minmax(0, 1fr);" in body
+    assert ".document-type-option-with-setting .document-type-setting" in body
+    assert "margin-left: 34px;" in body
     assert ".document-type-option-with-setting {\n    grid-template-columns: 1fr;" not in body
     assert ".document-type-setting {\n    grid-template-columns: 1fr;" not in body
     assert ".document-type-setting[hidden]" in body
@@ -2568,6 +2674,7 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".form-datetime-picker-proxy" not in body
     assert ".form-datetime-picker" in theme_body
     assert ".form-datetime-picker-inline" in theme_body
+    assert ".form-date-picker-inline" in theme_body
     assert ".form-datetime-picker-date" in theme_body
     assert ".form-datetime-picker-date-part" in theme_body
     assert ".form-datetime-picker-date-part.is-year" in theme_body
@@ -2688,12 +2795,17 @@ def test_portal_datetime_picker_js_asset_returns_expected_content_type() -> None
     assert "const maxDateTimeYear = 2099" in body
     assert "const taipeiUtcOffsetMinutes = 8 * 60" in body
     assert "formatCurrentDateTimeInputValue" in body
+    assert "function formatDateInputValue" in body
+    assert "function formatIsoDateInputValue" in body
     assert "now.getUTCHours()" in body
     assert "function formatDateTimeInputValue" in body
     assert "function formatUtcIsoDateTimeInputValue" in body
     assert "function formatDateTimeInputValueFromUtcIso" in body
     assert "function normalizeDateTimeInputValue" in body
+    assert "function normalizeDateInputValue" in body
     assert "function parseUtcIsoDateTimeValue" in body
+    assert "function parseIsoDateValue" in body
+    assert "function parseDisplayDateParts" in body
     assert "formatUtcIsoDateTimeValue(utcDate)" in body
     assert "function getDaysInMonth" in body
     assert "function isValidDateTimeParts" in body
@@ -2703,6 +2815,8 @@ def test_portal_datetime_picker_js_asset_returns_expected_content_type() -> None
     assert "!isValidDateTimeParts(yearValue, monthValue, dayValue, hourValue, minuteValue, secondValue)" in body
     assert "function installDateTimePicker" in body
     assert "function installDateTimePicker(textInput, options = {})" in body
+    assert "function installDatePicker(textInput)" in body
+    assert "form-datetime-picker form-date-picker-inline" in body
     assert "const includeSeconds = options.includeSeconds === true" in body
     assert "textInput.type = \"datetime-local\"" not in body
     assert "textInput.showPicker()" not in body
@@ -2874,11 +2988,20 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "openDashboardEventStatusSelect" not in body
     assert "closeDashboardEventStatusSelect" not in body
     assert "collectDashboardEventDialogState" in body
+    assert "dashboardEventStartDateInput" in body
+    assert "dashboardEventEndDateInput" in body
+    assert "dashboardEventCompletionHoursInput" in body
+    assert "eventStartDate" in body
+    assert "eventEndDate" in body
+    assert "completionHours" in body
     assert "dashboardEventCompletionDownloadStartsAtInput" in body
     assert "dashboardEventCompletionDownloadToggle" in body
     assert "dashboardEventCompletionDocumentTypeOption" in body
     assert "completionCertDownloadStartsAt" in body
     assert "updateDashboardCompletionDownloadStartsAtVisibility" in body
+    assert "hasRequiredDashboardCompletionCertFields" in body
+    assert "readDashboardCompletionHoursInputValue()" in body
+    assert "completionCertEnabled ? readDashboardCompletionHoursInputValue() : null" not in body
     assert "toggleDashboardCompletionCertDocumentType" in body
     assert "dashboardEventCompletionDownloadToggle?.addEventListener(\"click\"" in body
     assert "dashboardEventCompletionDownloadToggle?.addEventListener(\"keydown\"" in body
@@ -2887,8 +3010,11 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "completionCertInput.dispatchEvent(new Event(\"change\", { bubbles: true }))" in body
     assert "window.iPlaygroundPortalDateTime" in body
     assert "formatCurrentDateTimeInputValue" in body
+    assert "formatIsoDateInputValue" in body
     assert "formatUtcIsoDateTimeInputValue" in body
+    assert "normalizeDateInputValue" in body
     assert "normalizeDateTimeInputValue" in body
+    assert "installDatePicker" in body
     assert "installDateTimePicker" in body
     assert "function installDateTimePicker" not in body
     assert "function padDateTimePart" not in body
@@ -2896,6 +3022,8 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "textInput.type = \"datetime-local\"" not in body
     assert "document.createElement(\"select\")" not in body
     assert "installDateTimePicker(dashboardEventCompletionDownloadStartsAtInput)" in body
+    assert "installDatePicker(dashboardEventStartDateInput)" in body
+    assert "installDatePicker(dashboardEventEndDateInput)" in body
     assert "installDateTimePicker(dashboardTaxUploadGeneratedAtInput)" in body
     assert "dashboardEventDocumentTypeInputs.forEach" in body
     assert "updateDashboardEventFormSubmitState" in body
@@ -3175,6 +3303,12 @@ def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> Non
     assert "openEventStatusSelect" not in body
     assert "closeEventStatusSelect" not in body
     assert "collectEventDialogState" in body
+    assert "eventStartDateInput" in body
+    assert "eventEndDateInput" in body
+    assert "eventCompletionHoursInput" in body
+    assert "eventStartDate" in body
+    assert "eventEndDate" in body
+    assert "completionHours" in body
     assert "eventCompletionDownloadStartsAtInput" in body
     assert "eventCompletionDownloadToggle" in body
     assert "const adminEventsApiPath = \"/api/v1/admin/events\"" in body
@@ -3187,6 +3321,9 @@ def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> Non
     assert "eventCompletionDocumentTypeOption" in body
     assert "completionCertDownloadStartsAt" in body
     assert "updateCompletionDownloadStartsAtVisibility" in body
+    assert "hasRequiredCompletionCertFields" in body
+    assert "readCompletionHoursInputValue()" in body
+    assert "completionCertEnabled ? readCompletionHoursInputValue() : null" not in body
     assert "toggleCompletionCertDocumentType" in body
     assert "eventCompletionDownloadToggle?.addEventListener(\"click\"" in body
     assert "eventCompletionDownloadToggle?.addEventListener(\"keydown\"" in body
@@ -3195,8 +3332,11 @@ def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> Non
     assert "completionCertInput.dispatchEvent(new Event(\"change\", { bubbles: true }))" in body
     assert "window.iPlaygroundPortalDateTime" in body
     assert "formatCurrentDateTimeInputValue" in body
+    assert "formatIsoDateInputValue" in body
     assert "formatUtcIsoDateTimeInputValue" in body
+    assert "normalizeDateInputValue" in body
     assert "normalizeDateTimeInputValue" in body
+    assert "installDatePicker" in body
     assert "installDateTimePicker" in body
     assert "function installDateTimePicker" not in body
     assert "function padDateTimePart" not in body
@@ -3204,6 +3344,8 @@ def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> Non
     assert "textInput.type = \"datetime-local\"" not in body
     assert "document.createElement(\"select\")" not in body
     assert "installDateTimePicker(eventCompletionDownloadStartsAtInput)" in body
+    assert "installDatePicker(eventStartDateInput)" in body
+    assert "installDatePicker(eventEndDateInput)" in body
     assert "updateEventFormSubmitState" in body
     assert "eventNameInput?.addEventListener(\"input\"" in body
     assert "confirmEventDialogClose" in body
