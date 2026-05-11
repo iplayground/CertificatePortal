@@ -107,6 +107,13 @@ az functionapp config appsettings set \
 - 1 個綁定到 `main` 分支的 federated credential
 - Function App 執行所需的 Storage 與 Cosmos DB 存取設定
 
+Blob container 用途：
+
+- `function-releases`：Flex Consumption 部署套件
+- `source-uploads`：來源上傳檔，例如未來 CSV、Excel 或稅務文件來源檔
+- `cert-templates`：不進 git 的固定證明附件；目前已使用 `completion-certificate/organization-seal.png` 存放單位印章圖
+- `issued-certs`：產生後可再次下載的完訓證明 PDF
+
 ## 部署後需要設定的 GitHub Actions Secrets 與 Variables
 
 目前 workflow 直接使用下列 GitHub Actions secrets，避免 Azure OIDC 識別資訊出現在公開 repository variables 或未遮罩的 workflow log：

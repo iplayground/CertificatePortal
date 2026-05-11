@@ -170,7 +170,7 @@ partition key: /id
 
 `completionCertRequests` 只記錄會眾是否申請資料調整、申請備註、審核狀態與通知狀態。這類資料不是完訓證明權威清單本身，因此獨立存放。
 
-目前不保留原始 CSV 檔案。產生後 PDF 應存放於 Blob Storage `issued-certs` container。Cosmos DB 只儲存完訓證明清單資料、狀態與產生後檔案的 blob 名稱，不儲存 CSV 原文或 PDF 二進位。
+目前不保留原始 CSV 檔案。完訓證明 PDF 底圖模板跟隨 git 版控，因欄位座標需要與模板版本同步；固定印章圖存放於 Blob Storage `cert-templates` container，目前 blob 名稱為 `completion-certificate/organization-seal.png`。產生後 PDF 應存放於 Blob Storage `issued-certs` container。Cosmos DB 只儲存完訓證明清單資料、狀態與產生後檔案的 blob 名稱，不儲存 CSV 原文、印章圖或 PDF 二進位。
 
 ### 完訓證明清單文件
 
