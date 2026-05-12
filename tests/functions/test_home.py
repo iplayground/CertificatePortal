@@ -1981,6 +1981,10 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "document_type_loading_option" in body
     assert "document_type_empty_option" in body
     assert "applyDocumentTypeLoadingState" in body
+    assert "startEventNameLoadingAnimation" in body
+    assert "stopEventNameLoadingAnimation" in body
+    assert "eventNameLoadingAnimationDotCount = (eventNameLoadingAnimationDotCount % 6) + 1" in body
+    assert "}, 250)" in body
     assert "syncCurrentEventMetadata" in body
     assert "eventNameInput.dataset.eventDocumentTypes" in body
     assert "applyAvailableDocumentTypes(getSelectedEventDocumentTypes(normalizedValue))" in body

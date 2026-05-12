@@ -121,6 +121,10 @@ let isCertificateIssueInProgress = false;
 let certificateOptionsChangeRequestStatus = null;
 let currentCertificateDocument = null;
 let certificatePreviewImageRequestId = 0;
+let eventNameLoadingAnimationTimer = null;
+let eventNameLoadingAnimationBaseText = "";
+let eventNameLoadingAnimationDotCount = 0;
+let isHomeEventsLoading = true;
 const { installDateTimePicker } = window.iPlaygroundPortalDateTime ?? {};
 
 function parseHomePageI18n() {
@@ -168,6 +172,40 @@ function updateMetaContent(element, content) {
   }
 
   element.content = content;
+}
+
+function renderEventNameLoadingAnimationFrame() {
+  if (!eventNameValue || !eventNameLoadingAnimationBaseText || eventNameInput.value) {
+    return;
+  }
+
+  const dots = ".".repeat(eventNameLoadingAnimationDotCount);
+  updateTextContent(eventNameValue, `${eventNameLoadingAnimationBaseText}${dots}`);
+}
+
+function startEventNameLoadingAnimation(baseText) {
+  if (!baseText || eventNameInput.value || !isHomeEventsLoading) {
+    return;
+  }
+
+  stopEventNameLoadingAnimation();
+  eventNameLoadingAnimationBaseText = baseText;
+  eventNameLoadingAnimationDotCount = 0;
+  renderEventNameLoadingAnimationFrame();
+  eventNameLoadingAnimationTimer = window.setInterval(() => {
+    eventNameLoadingAnimationDotCount = (eventNameLoadingAnimationDotCount % 6) + 1;
+    renderEventNameLoadingAnimationFrame();
+  }, 250);
+}
+
+function stopEventNameLoadingAnimation() {
+  if (eventNameLoadingAnimationTimer !== null) {
+    window.clearInterval(eventNameLoadingAnimationTimer);
+    eventNameLoadingAnimationTimer = null;
+  }
+
+  eventNameLoadingAnimationBaseText = "";
+  eventNameLoadingAnimationDotCount = 0;
 }
 
 function syncEventNameControlRefs() {
@@ -422,6 +460,8 @@ function renderMultipleEventControl(events) {
 }
 
 function renderHomeEvents(events) {
+  isHomeEventsLoading = false;
+  stopEventNameLoadingAnimation();
   const normalizedEvents = Array.isArray(events)
     ? events.filter((eventData) => {
         return eventData?.id && eventData?.name && Array.isArray(eventData.documentTypes);
@@ -453,6 +493,11 @@ function renderHomeEvents(events) {
 }
 
 async function loadHomeEvents() {
+  isHomeEventsLoading = true;
+  const currentBundle = getLocaleBundle(currentLocale);
+  const currentHomePageCopy = currentBundle?.home_page ?? {};
+  startEventNameLoadingAnimation(currentHomePageCopy.event_name_loading_option ?? "");
+
   try {
     const response = await fetch(eventsApiPath, {
       credentials: "same-origin",
@@ -461,12 +506,16 @@ async function loadHomeEvents() {
       },
     });
     if (!response.ok) {
+      isHomeEventsLoading = false;
+      stopEventNameLoadingAnimation();
       return;
     }
 
     const payload = await response.json();
     renderHomeEvents(payload?.events);
   } catch {
+    isHomeEventsLoading = false;
+    stopEventNameLoadingAnimation();
     return;
   }
 }
@@ -1426,11 +1475,19 @@ function applyHomePageLocale(nextLocale) {
   updateTextContent(formSubtitle, homePageCopy.form_subtitle);
   updateTextContent(eventNameLabel, homePageCopy.event_name_label);
   if (!eventNameInput.value && eventNameValue) {
-    updateTextContent(
-      eventNameValue,
-      homePageCopy.event_name_loading_option ?? homePageCopy.event_name_empty_option,
-    );
+    if (isHomeEventsLoading) {
+      startEventNameLoadingAnimation(homePageCopy.event_name_loading_option ?? "");
+      updateTextContent(
+        eventNameValue,
+        eventNameLoadingAnimationBaseText || homePageCopy.event_name_empty_option,
+      );
+      renderEventNameLoadingAnimationFrame();
+    } else {
+      stopEventNameLoadingAnimation();
+      updateTextContent(eventNameValue, homePageCopy.event_name_empty_option);
+    }
   } else {
+    stopEventNameLoadingAnimation();
     applyEventNameValue(eventNameInput.value);
   }
   updateTextContent(documentTypeLabel, homePageCopy.document_type_label);
