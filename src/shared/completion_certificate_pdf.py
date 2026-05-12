@@ -14,6 +14,12 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
+from src.shared.i18n import (
+    DEFAULT_LOCALE,
+    SUPPORTED_LOCALES,
+    Locale,
+    get_completion_certificate_pdf_copy,
+)
 
 PDF_TEMPLATE_DIR: Final[Path] = Path(__file__).resolve().parent / "pdf_templates"
 DEFAULT_COMPLETION_CERTIFICATE_TEMPLATE: Final[Path] = (
@@ -34,16 +40,8 @@ PDF_ACCENT_TEXT_COLOR: Final[tuple[float, float, float]] = (
 )
 PDF_WHITE_COLOR: Final[tuple[float, float, float]] = (1, 1, 1)
 
-COMPLETION_CERTIFICATE_COPY: Final[dict[str, dict[str, str]]] = {
+COMPLETION_CERTIFICATE_RENDER_SETTINGS: Final[dict[Locale, dict[str, str]]] = {
     "zh-TW": {
-        "title": "完訓證明",
-        "number_label": "證明編號",
-        "organization_label": "任職單位",
-        "statement_prefix": "茲證明已參與並完成「",
-        "statement_suffix": "」，特發此證明。",
-        "event_period_label": "活動期間",
-        "completion_hours_label": "完訓時數",
-        "completion_hours_unit": "小時",
         "font_name": PDF_CJK_FONT_NAME,
         "latin_font_name": PDF_LATIN_FONT_NAME,
         "title_font_name": PDF_CJK_BOLD_FONT_NAME,
@@ -51,14 +49,6 @@ COMPLETION_CERTIFICATE_COPY: Final[dict[str, dict[str, str]]] = {
         "title_font_size": "40",
     },
     "en-US": {
-        "title": "Certificate of Completion",
-        "number_label": "Certificate No.",
-        "organization_label": "Organization",
-        "statement_prefix": 'This certifies completion of "',
-        "statement_suffix": '".',
-        "event_period_label": "Event Period",
-        "completion_hours_label": "Duration",
-        "completion_hours_unit": "hours",
         "font_name": PDF_LATIN_FONT_NAME,
         "latin_font_name": PDF_LATIN_FONT_NAME,
         "title_font_name": PDF_LATIN_BOLD_FONT_NAME,
@@ -259,7 +249,11 @@ def register_completion_certificate_fonts() -> str:
 
 
 def resolve_completion_certificate_copy(locale: str) -> dict[str, str]:
-    return COMPLETION_CERTIFICATE_COPY.get(locale, COMPLETION_CERTIFICATE_COPY["zh-TW"])
+    resolved_locale: Locale = locale if locale in SUPPORTED_LOCALES else DEFAULT_LOCALE
+    return {
+        **get_completion_certificate_pdf_copy(resolved_locale),
+        **COMPLETION_CERTIFICATE_RENDER_SETTINGS[resolved_locale],
+    }
 
 
 def set_fill_color(

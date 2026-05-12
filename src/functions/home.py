@@ -79,24 +79,6 @@ PUBLIC_LOOKUP_STORE_EXECUTOR = ThreadPoolExecutor(
 
 HOME_PAGE_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "home.html"
 HOME_ALLOWED_DOCUMENT_TYPES = frozenset({"completionCert", "taxReceipt"})
-HOME_LOOKUP_NOT_FOUND_MESSAGE = "查不到符合條件的文件，請確認資料後再試。"
-HOME_LOOKUP_BLOCKED_MESSAGE = "查詢失敗次數過多，已暫停查詢 24 小時。"
-HOME_LOOKUP_BLOCKED_REMAINING_HOURS_MESSAGE_TEMPLATE = (
-    "查詢失敗次數過多，已暫停查詢 {hours} 小時。"
-)
-HOME_LOOKUP_BLOCKED_REMAINING_MINUTES_MESSAGE_TEMPLATE = (
-    "查詢失敗次數過多，已暫停查詢 {minutes} 分鐘。"
-)
-HOME_LOOKUP_UNAVAILABLE_MESSAGE = "目前暫時無法查詢文件，請稍後再試。"
-HOME_LOOKUP_NOT_AVAILABLE_YET_MESSAGE = "完訓證明尚未開放下載，請於開放時間後再查詢。"
-HOME_CHANGE_REQUEST_INVALID_MESSAGE = "修改申請資料不完整，請確認後再送出。"
-HOME_CHANGE_REQUEST_UNAVAILABLE_MESSAGE = "目前暫時無法送出修改申請，請稍後再試。"
-HOME_CHANGE_REQUEST_NOT_ALLOWED_MESSAGE = "此完訓證明目前無法提出修改申請。"
-HOME_CHANGE_REQUEST_FORBIDDEN_MESSAGE = "請從本網站頁面送出修改申請。"
-HOME_CERT_ISSUE_INVALID_MESSAGE = "發證資料不完整，請重新查詢後再試。"
-HOME_CERT_ISSUE_FORBIDDEN_MESSAGE = "請從本網站頁面產生證書。"
-HOME_CERT_ISSUE_NOT_ALLOWED_MESSAGE = "此完訓證明目前無法產生證書。"
-HOME_CERT_ISSUE_UNAVAILABLE_MESSAGE = "目前暫時無法產生證書，請稍後再試。"
 COMPLETION_CERT_SEAL_BLOB_NAME = "completion-cert/organization-seal.png"
 COMPLETION_CERT_PREVIEW_BLOB_PREFIX = "completion-cert/previews/png"
 COMPLETION_CERT_PREVIEW_IDS = frozenset(
@@ -234,6 +216,10 @@ def build_home_api_error_response(
         },
         status_code=status_code,
     )
+
+
+def get_home_api_message(req: func.HttpRequest, key: str) -> str:
+    return get_home_page_context(resolve_locale(req))[key]
 
 
 def resolve_public_lookup_client_ip(req: func.HttpRequest) -> str | None:
@@ -432,7 +418,7 @@ def submit_completion_cert_change_request(payload: dict[str, Any]) -> dict[str, 
 
     completion_cert_id = str(public_document.get("id", "")).strip()
     if not completion_cert_id:
-        raise CompletionStoreOperationError("完訓證明資料缺少識別碼。")
+        raise CompletionStoreOperationError("Completion certificate record is missing an id.")
 
     requests_container = get_completion_cert_requests_container()
     if has_completed_completion_cert_request_document(
@@ -486,7 +472,7 @@ def issue_completion_cert_pdf(payload: dict[str, Any], req: func.HttpRequest) ->
 
     completion_cert_id = str(public_document.get("id", "")).strip()
     if not completion_cert_id:
-        raise CompletionStoreOperationError("完訓證明資料缺少識別碼。")
+        raise CompletionStoreOperationError("Completion certificate record is missing an id.")
 
     cert_document = read_completion_cert_document(
         cert_id=completion_cert_id,
@@ -724,125 +710,136 @@ def is_completion_cert_lookup_available(payload: dict[str, Any]) -> bool | None:
     return parsed_download_starts_at <= datetime.now(timezone.utc)
 
 
-def build_document_lookup_not_found_response() -> func.HttpResponse:
+def build_document_lookup_not_found_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         404,
         "document_not_found",
-        HOME_LOOKUP_NOT_FOUND_MESSAGE,
+        get_home_api_message(req, "lookup_not_found_message"),
     )
 
 
-def build_document_lookup_not_available_yet_response() -> func.HttpResponse:
+def build_document_lookup_not_available_yet_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         403,
         "document_not_available_yet",
-        HOME_LOOKUP_NOT_AVAILABLE_YET_MESSAGE,
+        get_home_api_message(req, "lookup_not_available_yet_message"),
     )
 
 
 def build_document_lookup_blocked_response(
+    req: func.HttpRequest,
     attempt_document: dict[str, Any] | None = None,
 ) -> func.HttpResponse:
     return build_home_api_error_response(
         429,
         "lookup_blocked",
-        build_document_lookup_blocked_message(attempt_document),
+        build_document_lookup_blocked_message(attempt_document, req=req),
     )
 
 
 def build_document_lookup_blocked_message(
     attempt_document: dict[str, Any] | None,
+    *,
+    req: func.HttpRequest | None = None,
 ) -> str:
+    home_copy = (
+        get_home_page_context(resolve_locale(req))
+        if req is not None
+        else get_home_page_context("zh-TW")
+    )
+    blocked_message = home_copy["lookup_blocked_message"]
     if not attempt_document:
-        return HOME_LOOKUP_BLOCKED_MESSAGE
+        return blocked_message
 
     blocked_until = _parse_utc_iso(str(attempt_document.get("blockedUntil", "")))
     if blocked_until is None:
-        return HOME_LOOKUP_BLOCKED_MESSAGE
+        return blocked_message
 
     remaining_seconds = (blocked_until - datetime.now(timezone.utc)).total_seconds()
     if remaining_seconds <= 0:
-        return HOME_LOOKUP_BLOCKED_MESSAGE
+        return blocked_message
 
     if remaining_seconds < 3600:
         remaining_minutes = max(1, ceil(remaining_seconds / 60))
-        return HOME_LOOKUP_BLOCKED_REMAINING_MINUTES_MESSAGE_TEMPLATE.format(
+        return home_copy["lookup_blocked_remaining_minutes_message_template"].format(
             minutes=remaining_minutes,
         )
 
     remaining_hours = ceil(remaining_seconds / 3600)
-    return HOME_LOOKUP_BLOCKED_REMAINING_HOURS_MESSAGE_TEMPLATE.format(hours=remaining_hours)
+    return home_copy["lookup_blocked_remaining_hours_message_template"].format(
+        hours=remaining_hours,
+    )
 
 
-def build_document_lookup_unavailable_response() -> func.HttpResponse:
+def build_document_lookup_unavailable_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         503,
         "lookup_unavailable",
-        HOME_LOOKUP_UNAVAILABLE_MESSAGE,
+        get_home_api_message(req, "lookup_unavailable_message"),
     )
 
 
-def build_change_request_invalid_response() -> func.HttpResponse:
+def build_change_request_invalid_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         400,
         "invalid_change_request",
-        HOME_CHANGE_REQUEST_INVALID_MESSAGE,
+        get_home_api_message(req, "certificate_change_request_invalid_message"),
     )
 
 
-def build_change_request_forbidden_response() -> func.HttpResponse:
+def build_change_request_forbidden_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         403,
         "same_origin_required",
-        HOME_CHANGE_REQUEST_FORBIDDEN_MESSAGE,
+        get_home_api_message(req, "certificate_change_request_forbidden_message"),
     )
 
 
-def build_change_request_not_allowed_response() -> func.HttpResponse:
+def build_change_request_not_allowed_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         409,
         "change_request_not_allowed",
-        HOME_CHANGE_REQUEST_NOT_ALLOWED_MESSAGE,
+        get_home_api_message(req, "certificate_change_request_not_allowed_message"),
     )
 
 
-def build_change_request_unavailable_response() -> func.HttpResponse:
+def build_change_request_unavailable_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         503,
         "change_request_unavailable",
-        HOME_CHANGE_REQUEST_UNAVAILABLE_MESSAGE,
+        get_home_api_message(req, "certificate_change_request_unavailable_message"),
     )
 
 
-def build_cert_issue_invalid_response() -> func.HttpResponse:
+def build_cert_issue_invalid_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         400,
         "invalid_certificate_issue",
-        HOME_CERT_ISSUE_INVALID_MESSAGE,
+        get_home_api_message(req, "certificate_issue_invalid_message"),
     )
 
 
-def build_cert_issue_forbidden_response() -> func.HttpResponse:
+def build_cert_issue_forbidden_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         403,
         "same_origin_required",
-        HOME_CERT_ISSUE_FORBIDDEN_MESSAGE,
+        get_home_api_message(req, "certificate_issue_forbidden_message"),
     )
 
 
-def build_cert_issue_not_allowed_response() -> func.HttpResponse:
+def build_cert_issue_not_allowed_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         409,
         "certificate_issue_not_allowed",
-        HOME_CERT_ISSUE_NOT_ALLOWED_MESSAGE,
+        get_home_api_message(req, "certificate_issue_not_allowed_message"),
     )
 
 
-def build_cert_issue_unavailable_response() -> func.HttpResponse:
+def build_cert_issue_unavailable_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         503,
         "certificate_issue_unavailable",
-        HOME_CERT_ISSUE_UNAVAILABLE_MESSAGE,
+        get_home_api_message(req, "certificate_issue_unavailable_message"),
     )
 
 
@@ -1246,7 +1243,7 @@ def _read_issued_certs_container_name() -> str:
     container_name = os.getenv("BLOB_ISSUED_CERT_CONTAINER", "").strip()
     if not container_name:
         raise BlobStoreConfigurationError(
-            "Blob Storage 發證容器尚未設定完成。請設定 BLOB_ISSUED_CERT_CONTAINER。"
+            "Blob Storage issued certificate container is not configured. Set BLOB_ISSUED_CERT_CONTAINER."
         )
     return container_name
 
@@ -1304,17 +1301,17 @@ def home_page(req: func.HttpRequest) -> func.HttpResponse:
 def public_events_list_api(req: func.HttpRequest) -> func.HttpResponse:
     try:
         payload = build_public_events_json_payload()
-    except EventStoreConfigurationError as exc:
+    except EventStoreConfigurationError:
         return build_home_api_error_response(
             503,
             "event_store_not_configured",
-            str(exc),
+            get_home_api_message(req, "event_list_unavailable_message"),
         )
-    except EventStoreOperationError as exc:
+    except EventStoreOperationError:
         return build_home_api_error_response(
             503,
             "event_store_unavailable",
-            str(exc),
+            get_home_api_message(req, "event_list_unavailable_message"),
         )
 
     return build_home_api_json_response(payload)
@@ -1331,7 +1328,8 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
     attempt_id = build_public_lookup_attempt_id(client_ip) if client_ip else None
     if attempt_id is not None and is_public_lookup_blocked_by_local_cache(attempt_id=attempt_id):
         return build_document_lookup_blocked_response(
-            read_public_lookup_cached_attempt_document(attempt_id=attempt_id)
+            req,
+            read_public_lookup_cached_attempt_document(attempt_id=attempt_id),
         )
 
     try:
@@ -1345,7 +1343,7 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
                 attempt_id=attempt_id,
                 attempt_document=attempt_document or {},
             )
-            return build_document_lookup_blocked_response(attempt_document)
+            return build_document_lookup_blocked_response(req, attempt_document)
 
         payload = parse_document_lookup_payload(req)
         lookup_available = (
@@ -1368,9 +1366,9 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
                     attempt_id=attempt_id,
                     attempt_document=updated_attempt_document or {},
                 )
-                return build_document_lookup_blocked_response(updated_attempt_document)
+                return build_document_lookup_blocked_response(req, updated_attempt_document)
 
-            return build_document_lookup_not_available_yet_response()
+            return build_document_lookup_not_available_yet_response(req)
 
         document = lookup_public_document(payload) if payload else None
         if document is None:
@@ -1388,9 +1386,9 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
                     attempt_id=attempt_id,
                     attempt_document=updated_attempt_document or {},
                 )
-                return build_document_lookup_blocked_response(updated_attempt_document)
+                return build_document_lookup_blocked_response(req, updated_attempt_document)
 
-            return build_document_lookup_not_found_response()
+            return build_document_lookup_not_found_response(req)
 
         if attempt_id is not None and client_ip is not None:
             schedule_public_lookup_success_record(
@@ -1404,7 +1402,7 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
         EventStoreConfigurationError,
         EventStoreOperationError,
     ):
-        return build_document_lookup_unavailable_response()
+        return build_document_lookup_unavailable_response(req)
 
     completed_change_request = read_public_document_completed_change_request(document)
     document_payload = {
@@ -1435,20 +1433,20 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
 )
 def public_completion_cert_change_request_api(req: func.HttpRequest) -> func.HttpResponse:
     if not _is_same_origin_request(req):
-        return build_change_request_forbidden_response()
+        return build_change_request_forbidden_response(req)
 
     payload = parse_completion_cert_change_request_payload(req)
     if payload is None:
-        return build_change_request_invalid_response()
+        return build_change_request_invalid_response(req)
 
     try:
         request_document = submit_completion_cert_change_request(payload)
     except LookupError:
-        return build_document_lookup_not_found_response()
+        return build_document_lookup_not_found_response(req)
     except PermissionError:
-        return build_change_request_not_allowed_response()
+        return build_change_request_not_allowed_response(req)
     except (CompletionStoreConfigurationError, CompletionStoreOperationError):
-        return build_change_request_unavailable_response()
+        return build_change_request_unavailable_response(req)
 
     return build_home_api_json_response(
         {
@@ -1473,18 +1471,18 @@ def public_completion_cert_change_request_api(req: func.HttpRequest) -> func.Htt
 )
 def public_completion_cert_issue_api(req: func.HttpRequest) -> func.HttpResponse:
     if not _is_same_origin_request(req):
-        return build_cert_issue_forbidden_response()
+        return build_cert_issue_forbidden_response(req)
 
     payload = parse_completion_cert_issue_payload(req)
     if payload is None:
-        return build_cert_issue_invalid_response()
+        return build_cert_issue_invalid_response(req)
 
     try:
         pdf_bytes, filename = issue_completion_cert_pdf(payload, req)
     except LookupError:
-        return build_document_lookup_not_found_response()
+        return build_document_lookup_not_found_response(req)
     except PermissionError:
-        return build_cert_issue_not_allowed_response()
+        return build_cert_issue_not_allowed_response(req)
     except (
         BlobStoreConfigurationError,
         BlobStoreOperationError,
@@ -1495,7 +1493,7 @@ def public_completion_cert_issue_api(req: func.HttpRequest) -> func.HttpResponse
         ValueError,
     ):
         LOGGER.warning("Completion certificate issue failed.", exc_info=True)
-        return build_cert_issue_unavailable_response()
+        return build_cert_issue_unavailable_response(req)
 
     return build_completion_cert_pdf_response(pdf_bytes, filename=filename)
 
@@ -1516,14 +1514,14 @@ def public_completion_cert_preview_api(
         return build_home_api_error_response(
             404,
             "certificate_preview_not_found",
-            HOME_LOOKUP_NOT_FOUND_MESSAGE,
+            get_home_api_message(req, "lookup_not_found_message"),
         )
     except (BlobStoreConfigurationError, BlobStoreOperationError):
         LOGGER.warning("Completion certificate preview failed.", exc_info=True)
         return build_home_api_error_response(
             503,
             "certificate_preview_unavailable",
-            HOME_LOOKUP_UNAVAILABLE_MESSAGE,
+            get_home_api_message(req, "lookup_unavailable_message"),
         )
 
     return build_completion_cert_preview_image_response(image_bytes)

@@ -14,6 +14,7 @@
     "event_name_label": "Event",
     "event_name_loading_option": "Loading events",
     "event_name_empty_option": "No available events",
+    "event_list_unavailable_message": "Events are temporarily unavailable. Please try again later.",
     "document_type_label": "Document type",
     "document_type_loading_option": "Loading document types",
     "document_type_empty_option": "No available documents",
@@ -55,6 +56,7 @@
     "certificate_change_request_processing_message": "Your change request is being processed. An administrator will review it before issuing the certificate. Confirming certificate generation now will be treated as abandoning this change request.",
     "certificate_change_request_approved_message": "Your change request was approved. Please review the display options below, then preview and generate the certificate.",
     "certificate_change_request_rejected_message": "Your change request was rejected. Please preview and generate the certificate with the current information.",
+    "certificate_change_request_review_note_label": "Review note",
     "certificate_change_request_title": "Change Request",
     "certificate_change_request_subtitle": "Describe the certificate information that needs to be corrected. An administrator will review it before issuing the certificate.",
     "certificate_change_request_summary_label": "Current completion certificate details",
@@ -66,13 +68,20 @@
     "certificate_change_request_submit_action_label": "Submit Request",
     "certificate_change_request_submitted_message": "Your change request was submitted. An administrator will review it before issuing the certificate.",
     "certificate_change_request_invalid_message": "The change request is incomplete. Please check it and submit again.",
+    "certificate_change_request_forbidden_message": "Please submit change requests from this website.",
     "certificate_change_request_unavailable_message": "Change requests are temporarily unavailable. Please try again later.",
     "certificate_issue_pending_message": "Generating certificate. Please wait.",
     "certificate_download_pending_message": "Preparing certificate download. Please wait.",
+    "certificate_issue_invalid_message": "The certificate issue data is incomplete. Please look it up again and try once more.",
+    "certificate_issue_forbidden_message": "Please generate certificates from this website.",
+    "certificate_issue_not_allowed_message": "This completion certificate cannot be generated right now.",
+    "certificate_issue_unavailable_message": "Certificate generation is temporarily unavailable. Please try again later.",
     "certificate_change_request_not_allowed_message": "This completion certificate cannot request changes right now.",
     "lookup_not_found_message": "No matching document was found. Please check your information and try again.",
     "lookup_not_available_yet_message": "Completion certificates are not available for download yet. Please try again after the opening time.",
     "lookup_blocked_message": "Too many failed lookups. Lookup is paused for 24 hours.",
+    "lookup_blocked_remaining_hours_message_template": "Too many failed lookups. Lookup is paused for {hours} hours.",
+    "lookup_blocked_remaining_minutes_message_template": "Too many failed lookups. Lookup is paused for {minutes} minutes.",
     "lookup_unavailable_message": "Document lookup is temporarily unavailable. Please try again later.",
     "lookup_pending_message": "Looking up documents. Please wait.",
     "copyright_notice": "All website content and related materials are owned by Taipei Elite Software Developer Association (77212283). Unauthorized reproduction, redistribution, or commercial use is prohibited.",
@@ -90,5 +99,15 @@
   "page_alert": {
     "dismiss_label": "Got it",
     "dismiss_aria_label": "Dismiss alert"
+  },
+  "completion_certificate_pdf": {
+    "title": "Certificate of Completion",
+    "number_label": "Certificate No.",
+    "organization_label": "Organization",
+    "statement_prefix": "This certifies completion of \"",
+    "statement_suffix": "\".",
+    "event_period_label": "Event Period",
+    "completion_hours_label": "Duration",
+    "completion_hours_unit": "hours"
   }
 }

@@ -55,6 +55,7 @@ HOME_PAGE_COPY_KEYS = frozenset(
         "event_name_label",
         "event_name_loading_option",
         "event_name_empty_option",
+        "event_list_unavailable_message",
         "document_type_label",
         "document_type_loading_option",
         "document_type_empty_option",
@@ -96,6 +97,7 @@ HOME_PAGE_COPY_KEYS = frozenset(
         "certificate_change_request_processing_message",
         "certificate_change_request_approved_message",
         "certificate_change_request_rejected_message",
+        "certificate_change_request_review_note_label",
         "certificate_change_request_title",
         "certificate_change_request_subtitle",
         "certificate_change_request_summary_label",
@@ -107,13 +109,20 @@ HOME_PAGE_COPY_KEYS = frozenset(
         "certificate_change_request_submit_action_label",
         "certificate_change_request_submitted_message",
         "certificate_change_request_invalid_message",
+        "certificate_change_request_forbidden_message",
         "certificate_change_request_unavailable_message",
         "certificate_issue_pending_message",
         "certificate_download_pending_message",
+        "certificate_issue_invalid_message",
+        "certificate_issue_forbidden_message",
+        "certificate_issue_not_allowed_message",
+        "certificate_issue_unavailable_message",
         "certificate_change_request_not_allowed_message",
         "lookup_not_found_message",
         "lookup_not_available_yet_message",
         "lookup_blocked_message",
+        "lookup_blocked_remaining_hours_message_template",
+        "lookup_blocked_remaining_minutes_message_template",
         "lookup_unavailable_message",
         "lookup_pending_message",
         "copyright_notice",
@@ -137,6 +146,18 @@ PAGE_ALERT_COPY_KEYS = frozenset(
         "dismiss_aria_label",
     }
 )
+COMPLETION_CERTIFICATE_PDF_COPY_KEYS = frozenset(
+    {
+        "title",
+        "number_label",
+        "organization_label",
+        "statement_prefix",
+        "statement_suffix",
+        "event_period_label",
+        "completion_hours_label",
+        "completion_hours_unit",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -145,6 +166,7 @@ class LocaleCatalog:
     home_page: dict[str, str]
     verify_page: dict[str, str]
     page_alert: dict[str, str]
+    completion_certificate_pdf: dict[str, str]
 
 
 def get_home_page_context(locale: Locale) -> dict[str, str]:
@@ -169,6 +191,10 @@ def get_verify_page_copy(locale: Locale) -> dict[str, str]:
 
 def get_page_alert_copy(locale: Locale) -> dict[str, str]:
     return load_locale_catalog(locale).page_alert.copy()
+
+
+def get_completion_certificate_pdf_copy(locale: Locale) -> dict[str, str]:
+    return load_locale_catalog(locale).completion_certificate_pdf.copy()
 
 
 def localized_response_headers(locale: Locale) -> dict[str, str]:
@@ -313,6 +339,12 @@ def load_locale_catalog(locale: Locale) -> LocaleCatalog:
         home_page=_validate_string_map(locale, "home_page", raw_catalog.get("home_page"), HOME_PAGE_COPY_KEYS),
         verify_page=_validate_string_map(locale, "verify_page", raw_catalog.get("verify_page"), VERIFY_PAGE_COPY_KEYS),
         page_alert=_validate_string_map(locale, "page_alert", raw_catalog.get("page_alert"), PAGE_ALERT_COPY_KEYS),
+        completion_certificate_pdf=_validate_string_map(
+            locale,
+            "completion_certificate_pdf",
+            raw_catalog.get("completion_certificate_pdf"),
+            COMPLETION_CERTIFICATE_PDF_COPY_KEYS,
+        ),
     )
 
 

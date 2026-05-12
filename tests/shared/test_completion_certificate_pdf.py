@@ -8,6 +8,7 @@ from src.shared.completion_certificate_pdf import (
     DEFAULT_COMPLETION_CERTIFICATE_TEMPLATE,
     format_completion_certificate_number,
     render_completion_certificate_pdf,
+    resolve_completion_certificate_copy,
 )
 
 
@@ -71,6 +72,13 @@ def test_render_completion_certificate_pdf_supports_english_copy(
     assert "Event Period: May 3-4, 2026" in output_text
     assert "Duration: 6 hours" in output_text
     assert "Issue Date" not in output_text
+
+
+def test_resolve_completion_certificate_copy_uses_locale_catalog() -> None:
+    copy = resolve_completion_certificate_copy("en-US")
+
+    assert copy["title"] == "Certificate of Completion"
+    assert copy["font_name"] == "Helvetica"
 
 
 def test_render_completion_certificate_pdf_accepts_runtime_seal_image(

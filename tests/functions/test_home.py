@@ -678,6 +678,32 @@ def test_public_events_list_api_returns_json_error_when_event_store_is_unavailab
     assert response.status_code == 503
     assert response.mimetype == "application/json"
     assert '"code":"event_store_unavailable"' in body
+    assert "event store unavailable" not in body
+
+
+def test_public_events_list_api_localizes_error_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.functions.home.get_events_container", lambda: object())
+
+    def raise_event_store_error(**_: object) -> list[dict[str, object]]:
+        raise EventStoreOperationError("公開活動資料讀取暫時失敗。")
+
+    monkeypatch.setattr("src.functions.home.list_public_event_documents", raise_event_store_error)
+
+    response = public_events_list_api(
+        build_request(
+            "http://localhost:7075/api/v1/events",
+            headers={"Cookie": "ipg_locale=en-US"},
+        )
+    )
+    payload = json.loads(response.get_body().decode("utf-8"))
+
+    assert response.status_code == 503
+    assert payload["error"] == {
+        "code": "event_store_unavailable",
+        "message": "Events are temporarily unavailable. Please try again later.",
+    }
 
 
 def test_public_document_lookup_api_returns_generic_failure_and_records_attempt(
@@ -1474,6 +1500,28 @@ def test_public_completion_cert_change_request_api_rejects_invalid_payload() -> 
     assert '"code":"invalid_change_request"' in body
 
 
+def test_public_completion_cert_change_request_api_localizes_error_message() -> None:
+    response = public_completion_cert_change_request_api(
+        build_completion_cert_change_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+                "requesterNote": "",
+            },
+            headers={"Cookie": "ipg_locale=en-US"},
+        )
+    )
+    payload = json.loads(response.get_body().decode("utf-8"))
+
+    assert response.status_code == 400
+    assert payload["error"] == {
+        "code": "invalid_change_request",
+        "message": "The change request is incomplete. Please check it and submit again.",
+    }
+
+
 def test_public_completion_cert_change_request_api_rejects_issued_cert(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1511,6 +1559,28 @@ def test_public_completion_cert_change_request_api_rejects_issued_cert(
 
     assert response.status_code == 409
     assert '"code":"change_request_not_allowed"' in body
+
+
+def test_public_completion_cert_issue_api_localizes_error_message() -> None:
+    response = public_completion_cert_issue_api(
+        build_completion_cert_issue_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+                "nameDisplay": "",
+            },
+            headers={"Cookie": "ipg_locale=en-US"},
+        )
+    )
+    payload = json.loads(response.get_body().decode("utf-8"))
+
+    assert response.status_code == 400
+    assert payload["error"] == {
+        "code": "invalid_certificate_issue",
+        "message": "The certificate issue data is incomplete. Please look it up again and try once more.",
+    }
 
 
 def test_public_document_lookup_api_uses_local_block_cache_before_cosmos(
@@ -1824,9 +1894,9 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "documentData?.changeRequestReview?.status" in body
     assert "certificate_change_request_approved_message" in body
     assert "certificate_change_request_rejected_message" in body
+    assert "certificate_change_request_review_note_label" in body
     assert "completedReviewTone = \"error\"" in body
     assert "changeRequestReview?.reviewNote" in body
-    assert "審核備註：" in body
     assert "certificateChangeRequestProcessingFeedback.hidden = !statusMessage" in body
     assert "setCertificateOptionsChangeRequestStatus(message, \"success\")" in body
     assert "setCertificateOptionsChangeRequestStatus(errorMessage, \"error\")" in body
@@ -1869,8 +1939,13 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "certificate_options_download_subtitle" in body
     assert "certificate_issue_pending_message" in body
     assert "certificate_download_pending_message" in body
+    assert "certificate_issue_invalid_message" in body
+    assert "certificate_issue_forbidden_message" in body
+    assert "certificate_issue_not_allowed_message" in body
+    assert "certificate_issue_unavailable_message" in body
     assert "certificate_generate_warning" in body
     assert "certificate_change_request_submitted_message" in body
+    assert "certificate_change_request_forbidden_message" in body
     assert "certificate_change_request_unavailable_message" in body
     assert "certificateGenerateAction" in body
     assert "certificateNameDisplay" in body

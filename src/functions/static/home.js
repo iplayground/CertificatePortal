@@ -102,17 +102,18 @@ const certificatePreviewApiPath =
   homePage.dataset.certificatePreviewApiPath ?? "/api/v1/completion-cert-previews";
 const lookupBlockedStorageKey = "ipg_document_lookup_blocked_until";
 const lookupBlockedClientCacheMs = 60 * 60 * 1000;
-let emptyNameText = homePage.dataset.emptyNameText ?? "未填寫姓名";
-let emptyEmailText = homePage.dataset.emptyEmailText ?? "未填寫 email";
+let emptyNameText = homePage.dataset.emptyNameText ?? "";
+let emptyEmailText = homePage.dataset.emptyEmailText ?? "";
 let previewFeedbackTemplate = homePage.dataset.previewFeedbackTemplate ?? "";
-let lookupNotFoundMessage = homePage.dataset.lookupNotFoundMessage ?? "查不到符合條件的文件，請確認資料後再試。";
-let lookupNotAvailableYetMessage =
-  homePage.dataset.lookupNotAvailableYetMessage ?? "完訓證明尚未開放下載，請於開放時間後再查詢。";
-let lookupBlockedMessage = homePage.dataset.lookupBlockedMessage ?? "查詢失敗次數過多，已暫停查詢 24 小時。";
-let lookupUnavailableMessage = homePage.dataset.lookupUnavailableMessage ?? "目前暫時無法查詢文件，請稍後再試。";
-let lookupPendingMessage = homePage.dataset.lookupPendingMessage ?? "查詢中，請稍候。";
-let certificateIssuePendingMessage = "證書產生中，請稍候。";
-let certificateDownloadPendingMessage = "證書下載準備中，請稍候。";
+let lookupNotFoundMessage = homePage.dataset.lookupNotFoundMessage ?? "";
+let lookupNotAvailableYetMessage = homePage.dataset.lookupNotAvailableYetMessage ?? "";
+let lookupBlockedMessage = homePage.dataset.lookupBlockedMessage ?? "";
+let lookupUnavailableMessage = homePage.dataset.lookupUnavailableMessage ?? "";
+let lookupPendingMessage = homePage.dataset.lookupPendingMessage ?? "";
+let certificateIssuePendingMessage =
+  getLocaleBundle(currentLocale)?.certificate_issue_pending_message ?? "證書產生中，請稍候。";
+let certificateDownloadPendingMessage =
+  getLocaleBundle(currentLocale)?.certificate_download_pending_message ?? "證書下載準備中，請稍候。";
 let isLookupInProgress = false;
 let isChangeRequestInProgress = false;
 let isChangeRequestSubmitted = false;
@@ -554,9 +555,6 @@ function renderCertificateGenerateAction(documentData) {
     certificateOptionsSubtitle,
     resolveCertificateOptionCopy(
       isIssued ? "certificate_options_download_subtitle" : "certificate_options_subtitle",
-      isIssued
-        ? "請確認您希望顯示在完訓證明上的資訊；一旦確認後，將無法更改。"
-        : "請確認您希望顯示在完訓證明上的資訊。",
     ),
   );
   if (certificateGenerateWarning) {
@@ -566,7 +564,6 @@ function renderCertificateGenerateAction(documentData) {
     certificateGenerateAction,
     resolveCertificateOptionCopy(
       isIssued ? "certificate_download_action_label" : "certificate_generate_action_label",
-      isIssued ? "下載證書" : "確認產生證書",
     ),
   );
 }
@@ -581,7 +578,7 @@ function renderCertificateCompanyOption(documentData) {
   certificateCompanyVisible.checked = Boolean(organization);
   if (organization) {
     certificateCompanyOptionText.textContent = formatPreviewMessage(
-      resolveCertificateOptionCopy("certificate_company_option_text", "顯示公司名：{organization}"),
+      resolveCertificateOptionCopy("certificate_company_option_text"),
       { organization },
     );
   }
@@ -601,17 +598,16 @@ function renderCertificateOptionsStatus(documentData) {
   if (reviewStatus === "approved") {
     completedReviewMessage = resolveCertificateOptionCopy(
       "certificate_change_request_approved_message",
-      "修改申請已通過，請確認下方顯示資料後預覽並產生證書。",
     );
   } else if (reviewStatus === "rejected") {
     completedReviewMessage = resolveCertificateOptionCopy(
       "certificate_change_request_rejected_message",
-      "修改申請已駁回，請以目前資料預覽並產生證書。",
     );
     completedReviewTone = "error";
   }
   if (completedReviewMessage && reviewNote) {
-    completedReviewMessage = `${completedReviewMessage}\n審核備註：${reviewNote}`;
+    const reviewNoteLabel = resolveCertificateOptionCopy("certificate_change_request_review_note_label");
+    completedReviewMessage = `${completedReviewMessage}\n${reviewNoteLabel}: ${reviewNote}`;
   }
   if (certificateChangeRequestAction) {
     certificateChangeRequestAction.hidden = !canRequestChanges;
@@ -792,7 +788,6 @@ function renderCertificateIssuePreview() {
   nextImage.src = imageSrc;
   certificatePreviewImage.alt = resolveCertificateOptionCopy(
     "certificate_preview_title",
-    "證書預覽",
   );
 }
 
@@ -825,19 +820,26 @@ function resetCertificateIssuePreview() {
   }
   updateTextContent(
     certificateGenerateAction,
-    resolveCertificateOptionCopy("certificate_generate_action_label", "確認產生證書"),
+    resolveCertificateOptionCopy("certificate_generate_action_label"),
   );
 }
 
 function resolveCertificateIssueFailureMessage(payload) {
-  const message = payload?.error?.message;
-  if (typeof message === "string" && message.trim()) {
-    return message;
-  }
+  const code = payload?.error?.code;
+  const fallbackByCode = {
+    certificate_issue_not_allowed: resolveCertificateOptionCopy(
+      "certificate_issue_not_allowed_message",
+    ),
+    invalid_certificate_issue: resolveCertificateOptionCopy(
+      "certificate_issue_invalid_message",
+    ),
+    same_origin_required: resolveCertificateOptionCopy(
+      "certificate_issue_forbidden_message",
+    ),
+  };
 
-  return resolveCertificateOptionCopy(
-    "certificate_change_request_unavailable_message",
-    "目前暫時無法產生證書，請稍後再試。",
+  return fallbackByCode[code] || resolveCertificateOptionCopy(
+    "certificate_issue_unavailable_message",
   );
 }
 
@@ -916,8 +918,7 @@ async function issueCompletionCertificate() {
   } catch {
     setCertificateOptionsChangeRequestStatus(
       resolveCertificateOptionCopy(
-        "certificate_change_request_unavailable_message",
-        "目前暫時無法產生證書，請稍後再試。",
+        "certificate_issue_unavailable_message",
       ),
       "error",
     );
@@ -928,29 +929,20 @@ async function issueCompletionCertificate() {
 
 function resolveChangeRequestFailureMessage(payload) {
   const code = payload?.error?.code;
-  const message = payload?.error?.message;
-  if (typeof message === "string" && message.trim()) {
-    return message;
-  }
-
   const fallbackByCode = {
     change_request_not_allowed: resolveCertificateOptionCopy(
       "certificate_change_request_not_allowed_message",
-      "此完訓證明目前無法提出修改申請。",
     ),
     invalid_change_request: resolveCertificateOptionCopy(
       "certificate_change_request_invalid_message",
-      "修改申請資料不完整，請確認後再送出。",
     ),
     same_origin_required: resolveCertificateOptionCopy(
-      "certificate_change_request_invalid_message",
-      "修改申請資料不完整，請確認後再送出。",
+      "certificate_change_request_forbidden_message",
     ),
   };
 
   return fallbackByCode[code] || resolveCertificateOptionCopy(
     "certificate_change_request_unavailable_message",
-    "目前暫時無法送出修改申請，請稍後再試。",
   );
 }
 
@@ -982,7 +974,6 @@ async function submitCertificateChangeRequest() {
 
     const message = resolveCertificateOptionCopy(
       "certificate_change_request_submitted_message",
-      "修改申請已送出，管理者確認後會再處理發證。",
     );
     showCertificateChangeRequestFeedback(message);
     if (currentCertificateDocument) {
@@ -994,7 +985,6 @@ async function submitCertificateChangeRequest() {
   } catch {
     const errorMessage = resolveCertificateOptionCopy(
       "certificate_change_request_unavailable_message",
-      "目前暫時無法送出修改申請，請稍後再試。",
     );
     showCertificateChangeRequestError(errorMessage);
     setCertificateOptionsChangeRequestStatus(errorMessage, "error");
