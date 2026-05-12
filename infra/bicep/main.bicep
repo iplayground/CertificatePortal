@@ -74,11 +74,14 @@ var logAnalyticsWorkspaceName = take('${normalizedFunctionAppName}-law', 63)
 var githubIdentityName = '${normalizedFunctionAppName}-gh-oidc'
 var effectiveCosmosAccountName = empty(cosmosAccountName) ? take('cosmos-${take(replace(normalizedFunctionAppName, '-', ''), 20)}-${uniqueString(resourceGroup().id, functionAppName)}', 44) : toLower(cosmosAccountName)
 var deploymentContainerName = 'function-releases'
+var sourceUploadsContainerName = 'source-uploads'
+var documentAssetsContainerName = 'document-assets'
+var issuedCertsContainerName = 'issued-certs'
 var blobContainers = [
   deploymentContainerName
-  'source-uploads'
-  'cert-templates'
-  'issued-certs'
+  sourceUploadsContainerName
+  documentAssetsContainerName
+  issuedCertsContainerName
 ]
 var githubOidcSubject = 'repo:${githubRepository}:ref:refs/heads/${githubBranch}'
 var tags = {
@@ -370,6 +373,18 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER'
           value: cosmosPublicLookupAttemptsContainer.name
+        }
+        {
+          name: 'BLOB_SOURCE_CONTAINER'
+          value: sourceUploadsContainerName
+        }
+        {
+          name: 'BLOB_DOCUMENT_ASSETS_CONTAINER'
+          value: documentAssetsContainerName
+        }
+        {
+          name: 'BLOB_ISSUED_CERT_CONTAINER'
+          value: issuedCertsContainerName
         }
         {
           name: 'PORTAL_GOOGLE_CLIENT_ID'

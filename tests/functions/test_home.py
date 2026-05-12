@@ -12,6 +12,8 @@ from src.functions.home import (
     build_document_lookup_blocked_message,
     home_page,
     public_completion_cert_change_request_api,
+    public_completion_cert_issue_api,
+    public_completion_cert_preview_api,
     public_document_lookup_api,
     public_events_list_api,
     resolve_public_lookup_client_ip,
@@ -186,6 +188,9 @@ class FakeEventsContainer:
                 "name": "iPlayground 2026",
                 "status": "open",
                 "documentTypes": ["completionCert"],
+                "eventStartDate": "2026-04-25",
+                "eventEndDate": "2026-04-26",
+                "completionHours": 12,
                 "completionCertDownloadStartsAt": None,
             }
         }
@@ -236,6 +241,22 @@ def build_completion_cert_change_request(
 ) -> func.HttpRequest:
     return build_request(
         "http://localhost:7075/api/v1/completion-cert-change-requests",
+        method="POST",
+        body=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            **(headers or {}),
+        },
+    )
+
+
+def build_completion_cert_issue_request(
+    *,
+    body: dict[str, Any],
+    headers: dict[str, str] | None = None,
+) -> func.HttpRequest:
+    return build_request(
+        "http://localhost:7075/api/v1/completion-certs/issue",
         method="POST",
         body=json.dumps(body).encode("utf-8"),
         headers={
@@ -357,6 +378,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'data-current-locale="zh-TW"' in body
     assert 'data-locale-cookie-name="ipg_locale"' in body
     assert 'data-certificate-change-request-api-path="/api/v1/completion-cert-change-requests"' in body
+    assert 'data-certificate-issue-api-path="/api/v1/completion-certs/issue"' in body
     assert 'id="locale-trigger"' in body
     assert 'id="locale-options"' in body
     assert 'id="home-page-i18n"' in body
@@ -379,13 +401,27 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "營業稅繳稅證明" in body
     assert "查詢文件" in body
     assert "選擇證明顯示方式" in body
-    assert "一旦確認後，將無法更改" in body
+    assert "請確認您希望顯示在完訓證明上的資訊。" in body
+    assert "請確認您希望顯示在完訓證明上的資訊；一旦確認後，將無法更改。" in body
+    assert "確認後將無法更改。" in body
     assert "姓名顯示方式" in body
     assert "顯示公司名：{organization}" in body
+    assert "證書預覽" in body
+    assert "請確認證書版面與顯示方式。" in body
+    assert "載入預覽中" in body
+    assert 'id="certificate-preview" hidden' in body
+    assert 'id="certificate-preview-image"' in body
+    assert 'id="certificate-preview-loading"' in body
+    assert 'data-certificate-preview-api-path="/api/v1/completion-cert-previews"' in body
+    assert "確認產生證書" in body
+    assert "下載證書" in body
+    assert "證書產生中，請稍候。" in body
+    assert "證書下載準備中，請稍候。" in body
     assert "提出修改申請" in body
     assert 'id="certificate-change-request-action"' in body
     assert 'id="certificate-change-request-processing-feedback"' in body
-    assert "若現在產生證書，將視為放棄本次修改申請。" in body
+    assert 'class="feedback is-active is-warning"' in body
+    assert "若現在確認產生證書，將視為放棄本次修改申請。" in body
     assert "修改申請" in body
     assert "請描述需要調整的證明資料" in body
     assert 'id="certificate-change-request-view" hidden tabindex="-1"' in body
@@ -404,7 +440,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "返回顯示方式" in body
     assert "送出申請" in body
     assert "修改申請已送出，管理者確認後會再處理發證。" in body
-    assert "產生證書" in body
+    assert "確認產生證書" in body
     assert 'id="certificate-generate-action"' in body
     assert 'id="certificate-options-step-label"' not in body
     assert 'id="certificate-options-view" hidden tabindex="-1"' in body
@@ -489,10 +525,17 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert '<span id="document-type-value" class="custom-select-value">Loading document types</span>' in body
     assert "Look Up Documents" in body
     assert "Choose Certificate Display" in body
-    assert "Once confirmed, it cannot be changed." in body
+    assert "Confirm the information you want shown on the completion certificate." in body
+    assert "Confirm the information you want shown on the completion certificate; once confirmed, it cannot be changed." in body
+    assert "Cannot be changed after confirmation." in body
     assert "Name display" in body
     assert "Show company name: {organization}" in body
-    assert "Generate Certificate" in body
+    assert "Certificate Preview" in body
+    assert "Review the certificate layout and display options." in body
+    assert "Confirm Generate Certificate" in body
+    assert "Download Certificate" in body
+    assert "Preparing certificate download. Please wait." in body
+    assert "Generating certificate. Please wait." in body
     assert "Back to Search" in body
     assert "Make sure the information matches the registration record." not in body
     assert "Taipei Elite Software Developer Association (77212283)" in body
@@ -1640,7 +1683,11 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert 'url("/assets/language_icon.svg")' in body
     assert "margin-inline: auto;" in body
     assert ".feedback.is-error" in body
+    assert ".feedback.is-warning" in body
+    assert ".certificate-preview-loading" in body
+    assert ".certificate-preview-frame img.is-loading" in body
     assert "var(--theme-feedback-error-color)" in body
+    assert "var(--theme-feedback-warning-color)" in body
     assert "white-space: pre-line;" in body
     assert ".page-loading-overlay" in body
     assert "position: fixed;" in body
@@ -1667,6 +1714,9 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert "min-height: 0;" in body
     assert '.certificate-company-option input[type="checkbox"]:focus-visible' in body
     assert ".certificate-actions" in body
+    assert ".certificate-generate-warning" in body
+    assert ".certificate-choice-option:has(input:disabled)" in body
+    assert ".certificate-choice-option:has(input:disabled:checked)" in body
     assert ".certificate-change-request-action" in body
     assert "margin-left: auto;" in body
     assert "form.is-certificate-options-active .field-static-value" in body
@@ -1765,7 +1815,7 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert 'documentRequestForm.classList.toggle("is-certificate-options-active", isLocked)' in body
     assert "buildCertificateNameChoices" in body
     assert "showCertificateOptions" in body
-    assert '["notIssued", "changeRequested"].includes(documentData?.certStatus)' in body
+    assert '["notIssued", "changeRequested", "issued"].includes(documentData?.certStatus)' in body
     assert "renderCertificateOptionsStatus" in body
     assert "certificateChangeRequestProcessingFeedback" in body
     assert "documentData?.canRequestChanges" in body
@@ -1796,8 +1846,30 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "certificateChangeRequestAction" in body
     assert "certificateChangeRequestForm?.addEventListener" in body
     assert "certificateChangeRequestApiPath" in body
+    assert "certificateIssueApiPath" in body
     assert "submitCertificateChangeRequest" in body
     assert "fetch(certificateChangeRequestApiPath" in body
+    assert "issueCompletionCertificate" in body
+    assert "showCertificateIssuePreview" in body
+    assert "resetCertificateIssuePreview" in body
+    assert "renderCertificateIssuePreview" in body
+    assert "buildCertificatePreviewImageId" in body
+    assert "renderCertificateCompanyOption(currentCertificateDocument)" in body
+    assert "setCertificateDisplayControlsLocked" in body
+    assert "renderCertificateGenerateAction" in body
+    assert "showCertificateIssuePreview();" in body
+    assert 'documentData?.certStatus !== "issued"' in body
+    assert 'currentCertificateDocument?.certStatus === "issued"' in body
+    assert "certificatePreviewImageRequestId" in body
+    assert "nextImage.onload" in body
+    assert "fetch(certificateIssueApiPath" in body
+    assert "certificatePreviewImage.src" in body
+    assert "downloadPdfBlob" in body
+    assert "certificate_download_action_label" in body
+    assert "certificate_options_download_subtitle" in body
+    assert "certificate_issue_pending_message" in body
+    assert "certificate_download_pending_message" in body
+    assert "certificate_generate_warning" in body
     assert "certificate_change_request_submitted_message" in body
     assert "certificate_change_request_unavailable_message" in body
     assert "certificateGenerateAction" in body
@@ -1854,6 +1926,214 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert 'homePage.classList.add("is-locale-menu-open")' in body
     assert 'homePage.classList.remove("is-locale-menu-open")' in body
     assert 'localeMenu?.addEventListener("pointerdown"' in body
+
+
+def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records_container = FakeCompletionCertsContainer(
+        [
+            {
+                "id": "ccert_1",
+                "eventId": "evt_1",
+                "number": 12,
+                "kktixId": "KKTIX-987",
+                "badgeName": "Ming",
+                "ticketName": "一般票",
+                "name": "王小明",
+                "organization": "iPlayground",
+                "email": "ming@example.com",
+                "attendanceStatus": "checkedIn",
+                "certStatus": "notIssued",
+                "issuedPdfBlobName": None,
+                "verificationTokenHash": None,
+                "verificationCount": 0,
+                "issuedAt": None,
+                "createdAt": "2026-04-01T00:00:00Z",
+            }
+        ]
+    )
+    uploaded_blobs: list[dict[str, Any]] = []
+    rendered_data: list[Any] = []
+    monkeypatch.setattr("src.functions.home.get_completion_records_container", lambda: records_container)
+    monkeypatch.setattr(
+        "src.functions.home.generate_completion_cert_verification_token",
+        lambda: "1234567890abcdef1234567890abcdef",
+    )
+    monkeypatch.setenv("BLOB_DOCUMENT_ASSETS_CONTAINER", "document-assets")
+    monkeypatch.setenv("BLOB_ISSUED_CERT_CONTAINER", "issued-certs")
+
+    def fake_download_blob_to_path(*, container_name: str, blob_name: str, output_path) -> object:
+        assert container_name == "document-assets"
+        assert blob_name == "completion-cert/organization-seal.png"
+        output_path.write_bytes(b"seal")
+        return output_path
+
+    def fake_render_completion_certificate_pdf(data, output_path, **_: Any) -> object:
+        rendered_data.append(data)
+        output_path.write_bytes(b"%PDF-1.4\nissued")
+        return output_path
+
+    def fake_upload_pdf_blob(
+        *,
+        container_name: str,
+        blob_name: str,
+        data: bytes,
+        standard_blob_tier: str = "Cool",
+    ) -> str:
+        uploaded_blobs.append(
+            {
+                "container_name": container_name,
+                "blob_name": blob_name,
+                "data": data,
+                "standard_blob_tier": standard_blob_tier,
+            }
+        )
+        return blob_name
+
+    monkeypatch.setattr("src.functions.home.download_blob_to_path", fake_download_blob_to_path)
+    monkeypatch.setattr("src.functions.home.render_completion_certificate_pdf", fake_render_completion_certificate_pdf)
+    monkeypatch.setattr("src.functions.home.upload_pdf_blob", fake_upload_pdf_blob)
+
+    response = public_completion_cert_issue_api(
+        build_completion_cert_issue_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "12",
+                "email": "ming@example.com",
+                "locale": "zh-TW",
+                "nameDisplay": "nameWithBadge",
+                "showOrganization": True,
+            },
+            headers={"Origin": "http://localhost:7075"},
+        )
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    assert response.get_body() == b"%PDF-1.4\nissued"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Content-Disposition"] == (
+        'attachment; filename="certificate.pdf"'
+    )
+    assert uploaded_blobs == [
+        {
+            "container_name": "issued-certs",
+            "blob_name": "evt_1/ccert_1.pdf",
+            "data": b"%PDF-1.4\nissued",
+            "standard_blob_tier": "Cool",
+        }
+    ]
+    assert rendered_data[0].certificate_number == "KKTIX-987-12"
+    assert rendered_data[0].recipient_name == "王小明 (Ming)"
+    assert rendered_data[0].organization == "iPlayground"
+    assert rendered_data[0].event_name == "iPlayground 2026"
+    assert rendered_data[0].event_period_text == "2026/04/25 - 2026/04/26"
+    assert rendered_data[0].completion_hours == 12
+    assert rendered_data[0].verification_url == (
+        "http://localhost:7075/verify/1234567890abcdef1234567890abcdef"
+    )
+    assert records_container.items[0]["certStatus"] == "issued"
+    assert records_container.items[0]["issuedPdfBlobName"] == "evt_1/ccert_1.pdf"
+    assert records_container.items[0]["verificationTokenHash"] == "1234567890abcdef1234567890abcdef"
+    assert records_container.items[0]["certificateDisplayName"] == "王小明 (Ming)"
+    assert records_container.items[0]["certificateDisplayOrganization"] == "iPlayground"
+    assert records_container.items[0]["certificateLocale"] == "zh-TW"
+    assert records_container.items[0]["issuedAt"].endswith("Z")
+
+
+def test_public_completion_cert_issue_api_downloads_existing_issued_pdf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records_container = FakeCompletionCertsContainer(
+        [
+            {
+                "id": "ccert_issued",
+                "eventId": "evt_1",
+                "number": 5,
+                "kktixId": "KKTIX-005",
+                "badgeName": "Ming",
+                "name": "王小明",
+                "organization": "iPlayground",
+                "email": "ming@example.com",
+                "certStatus": "issued",
+                "issuedPdfBlobName": "evt_1/ccert_issued.pdf",
+                "issuedAt": "2026-05-01T00:00:00Z",
+            }
+        ]
+    )
+    monkeypatch.setattr("src.functions.home.get_completion_records_container", lambda: records_container)
+    monkeypatch.setenv("BLOB_ISSUED_CERT_CONTAINER", "issued-certs")
+    monkeypatch.setattr(
+        "src.functions.home.download_blob_bytes",
+        lambda *, container_name, blob_name: b"%PDF-existing",
+    )
+
+    response = public_completion_cert_issue_api(
+        build_completion_cert_issue_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "5",
+                "email": "ming@example.com",
+                "locale": "en-US",
+                "nameDisplay": "name",
+                "showOrganization": False,
+            },
+            headers={"Origin": "http://localhost:7075"},
+        )
+    )
+
+    assert response.status_code == 200
+    assert response.get_body() == b"%PDF-existing"
+    assert response.headers["Content-Disposition"] == (
+        'attachment; filename="certificate.pdf"'
+    )
+    assert records_container.items[0]["certStatus"] == "issued"
+
+
+def test_public_completion_cert_preview_api_returns_png(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+    monkeypatch.setenv("BLOB_DOCUMENT_ASSETS_CONTAINER", "document-assets")
+
+    def fake_download_blob_bytes(*, container_name: str, blob_name: str) -> bytes:
+        captured["container_name"] = container_name
+        captured["blob_name"] = blob_name
+        return b"png-bytes"
+
+    monkeypatch.setattr(
+        "src.functions.home.download_blob_bytes",
+        fake_download_blob_bytes,
+    )
+
+    response = public_completion_cert_preview_api(
+        build_request(
+            "http://localhost:7075/api/v1/completion-cert-previews/zh-TW-name-org.png",
+            route_params={"preview_id": "zh-TW-name-org.png"},
+        )
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    assert response.get_body() == b"png-bytes"
+    assert captured == {
+        "container_name": "document-assets",
+        "blob_name": "completion-cert/previews/png/zh-TW-name-org.png",
+    }
+
+
+def test_public_completion_cert_preview_api_rejects_unknown_preview() -> None:
+    response = public_completion_cert_preview_api(
+        build_request(
+            "http://localhost:7075/api/v1/completion-cert-previews/unknown.png",
+            route_params={"preview_id": "unknown.png"},
+        )
+    )
+
+    assert response.status_code == 404
 
 
 def test_language_icon_svg_asset_returns_expected_content_type() -> None:

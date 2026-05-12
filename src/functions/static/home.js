@@ -14,9 +14,15 @@ const certificateCompanyOptionField = document.getElementById("certificate-compa
 const certificateCompanyOptionLabel = document.getElementById("certificate-company-option-label");
 const certificateCompanyOptionText = document.getElementById("certificate-company-option-text");
 const certificateCompanyVisible = document.getElementById("certificate-company-visible");
+const certificatePreview = document.getElementById("certificate-preview");
+const certificatePreviewTitle = document.getElementById("certificate-preview-title");
+const certificatePreviewSubtitle = document.getElementById("certificate-preview-subtitle");
+const certificatePreviewImage = document.getElementById("certificate-preview-image");
+const certificatePreviewLoading = document.getElementById("certificate-preview-loading");
 const certificateOptionsBackAction = document.getElementById("certificate-options-back-action");
 const certificateChangeRequestAction = document.getElementById("certificate-change-request-action");
 const certificateGenerateAction = document.getElementById("certificate-generate-action");
+const certificateGenerateWarning = document.getElementById("certificate-generate-warning");
 const certificateChangeRequestProcessingFeedback = document.getElementById(
   "certificate-change-request-processing-feedback"
 );
@@ -91,6 +97,9 @@ const eventsApiPath = homePage.dataset.eventsApiPath ?? "/api/v1/events";
 const documentLookupApiPath = homePage.dataset.documentLookupApiPath ?? "/api/v1/document-lookup";
 const certificateChangeRequestApiPath =
   homePage.dataset.certificateChangeRequestApiPath ?? "/api/v1/completion-cert-change-requests";
+const certificateIssueApiPath = homePage.dataset.certificateIssueApiPath ?? "/api/v1/completion-certs/issue";
+const certificatePreviewApiPath =
+  homePage.dataset.certificatePreviewApiPath ?? "/api/v1/completion-cert-previews";
 const lookupBlockedStorageKey = "ipg_document_lookup_blocked_until";
 const lookupBlockedClientCacheMs = 60 * 60 * 1000;
 let emptyNameText = homePage.dataset.emptyNameText ?? "未填寫姓名";
@@ -102,11 +111,15 @@ let lookupNotAvailableYetMessage =
 let lookupBlockedMessage = homePage.dataset.lookupBlockedMessage ?? "查詢失敗次數過多，已暫停查詢 24 小時。";
 let lookupUnavailableMessage = homePage.dataset.lookupUnavailableMessage ?? "目前暫時無法查詢文件，請稍後再試。";
 let lookupPendingMessage = homePage.dataset.lookupPendingMessage ?? "查詢中，請稍候。";
+let certificateIssuePendingMessage = "證書產生中，請稍候。";
+let certificateDownloadPendingMessage = "證書下載準備中，請稍候。";
 let isLookupInProgress = false;
 let isChangeRequestInProgress = false;
 let isChangeRequestSubmitted = false;
+let isCertificateIssueInProgress = false;
 let certificateOptionsChangeRequestStatus = null;
 let currentCertificateDocument = null;
+let certificatePreviewImageRequestId = 0;
 const { installDateTimePicker } = window.iPlaygroundPortalDateTime ?? {};
 
 function parseHomePageI18n() {
@@ -524,6 +537,40 @@ function renderCertificateNameOptions(documentData) {
   });
 }
 
+function setCertificateDisplayControlsLocked(isLocked) {
+  certificateNameOptions
+    ?.querySelectorAll('input[name="certificateNameDisplay"]')
+    .forEach((input) => {
+      input.disabled = isLocked;
+    });
+  if (certificateCompanyVisible) {
+    certificateCompanyVisible.disabled = isLocked;
+  }
+}
+
+function renderCertificateGenerateAction(documentData) {
+  const isIssued = documentData?.certStatus === "issued";
+  updateTextContent(
+    certificateOptionsSubtitle,
+    resolveCertificateOptionCopy(
+      isIssued ? "certificate_options_download_subtitle" : "certificate_options_subtitle",
+      isIssued
+        ? "請確認您希望顯示在完訓證明上的資訊；一旦確認後，將無法更改。"
+        : "請確認您希望顯示在完訓證明上的資訊。",
+    ),
+  );
+  if (certificateGenerateWarning) {
+    certificateGenerateWarning.hidden = isIssued;
+  }
+  updateTextContent(
+    certificateGenerateAction,
+    resolveCertificateOptionCopy(
+      isIssued ? "certificate_download_action_label" : "certificate_generate_action_label",
+      isIssued ? "下載證書" : "確認產生證書",
+    ),
+  );
+}
+
 function renderCertificateCompanyOption(documentData) {
   const organization = normalizeLookupDocumentText(documentData?.organization);
   if (!certificateCompanyOptionField || !certificateCompanyOptionText || !certificateCompanyVisible) {
@@ -554,12 +601,12 @@ function renderCertificateOptionsStatus(documentData) {
   if (reviewStatus === "approved") {
     completedReviewMessage = resolveCertificateOptionCopy(
       "certificate_change_request_approved_message",
-      "修改申請已通過，請確認下方顯示資料後產生證書。",
+      "修改申請已通過，請確認下方顯示資料後預覽並產生證書。",
     );
   } else if (reviewStatus === "rejected") {
     completedReviewMessage = resolveCertificateOptionCopy(
       "certificate_change_request_rejected_message",
-      "修改申請已駁回，請以目前資料產生證書。",
+      "修改申請已駁回，請以目前資料預覽並產生證書。",
     );
     completedReviewTone = "error";
   }
@@ -573,13 +620,21 @@ function renderCertificateOptionsStatus(documentData) {
     const statusMessage = certificateOptionsChangeRequestStatus?.message
       || completedReviewMessage
       || (isChangeRequested ? certificateChangeRequestProcessingDefaultMessage : "");
-    const statusTone = certificateOptionsChangeRequestStatus?.tone || completedReviewTone;
+    const statusTone = certificateOptionsChangeRequestStatus?.tone
+      || (completedReviewMessage ? completedReviewTone : "warning");
     certificateChangeRequestProcessingFeedback.hidden = !statusMessage;
     certificateChangeRequestProcessingFeedback.textContent = statusMessage;
     certificateChangeRequestProcessingFeedback.classList.toggle("is-active", Boolean(statusMessage));
-    certificateChangeRequestProcessingFeedback.classList.toggle("is-success", Boolean(statusMessage) && statusTone !== "error");
+    certificateChangeRequestProcessingFeedback.classList.toggle("is-success", Boolean(statusMessage) && statusTone === "success");
+    certificateChangeRequestProcessingFeedback.classList.toggle("is-warning", Boolean(statusMessage) && statusTone === "warning");
     certificateChangeRequestProcessingFeedback.classList.toggle("is-error", Boolean(statusMessage) && statusTone === "error");
   }
+  const isIssued = documentData?.certStatus === "issued";
+  setCertificateDisplayControlsLocked(isIssued);
+  if (isIssued) {
+    resetCertificateIssuePreview();
+  }
+  renderCertificateGenerateAction(documentData);
 }
 
 function setCertificateOptionsChangeRequestStatus(message, tone) {
@@ -669,6 +724,206 @@ function buildCertificateChangeRequestPayload() {
     registrationNumber: registrationNumber.value.trim(),
     requesterNote: certificateChangeRequestNote?.value.trim() ?? "",
   };
+}
+
+function getSelectedCertificateNameDisplay() {
+  const selectedOption = certificateNameOptions?.querySelector(
+    'input[name="certificateNameDisplay"]:checked',
+  );
+  return selectedOption instanceof HTMLInputElement ? selectedOption.value : "name";
+}
+
+function buildCertificateIssuePayload() {
+  return {
+    documentType: "completionCert",
+    email: email.value.trim(),
+    eventId: eventNameInput.dataset.eventId ?? "",
+    locale: currentLocale,
+    nameDisplay: getSelectedCertificateNameDisplay(),
+    registrationNumber: registrationNumber.value.trim(),
+    showOrganization: Boolean(certificateCompanyVisible?.checked),
+  };
+}
+
+function buildCertificatePreviewImageId() {
+  const nameDisplay = getSelectedCertificateNameDisplay();
+  const organizationDisplay = certificateCompanyVisible?.checked ? "org" : "no-org";
+  return `${currentLocale}-${nameDisplay}-${organizationDisplay}.png`;
+}
+
+function renderCertificateIssuePreview() {
+  if (!certificatePreviewImage) {
+    return;
+  }
+
+  const imageId = buildCertificatePreviewImageId();
+  const imageSrc = `${certificatePreviewApiPath}/${encodeURIComponent(imageId)}`;
+  if (certificatePreviewImage.dataset.previewImageId === imageId) {
+    return;
+  }
+
+  const requestId = ++certificatePreviewImageRequestId;
+  certificatePreviewImage.dataset.previewImageId = imageId;
+  certificatePreviewImage.classList.add("is-loading");
+  if (certificatePreviewLoading) {
+    certificatePreviewLoading.hidden = false;
+  }
+
+  const nextImage = new Image();
+  nextImage.onload = () => {
+    if (requestId !== certificatePreviewImageRequestId) {
+      return;
+    }
+    certificatePreviewImage.src = imageSrc;
+    certificatePreviewImage.classList.remove("is-loading");
+    if (certificatePreviewLoading) {
+      certificatePreviewLoading.hidden = true;
+    }
+  };
+  nextImage.onerror = () => {
+    if (requestId !== certificatePreviewImageRequestId) {
+      return;
+    }
+    certificatePreviewImage.classList.remove("is-loading");
+    if (certificatePreviewLoading) {
+      certificatePreviewLoading.hidden = true;
+    }
+  };
+  nextImage.src = imageSrc;
+  certificatePreviewImage.alt = resolveCertificateOptionCopy(
+    "certificate_preview_title",
+    "證書預覽",
+  );
+}
+
+function showCertificateIssuePreview() {
+  if (currentCertificateDocument?.certStatus === "issued") {
+    resetCertificateIssuePreview();
+    renderCertificateGenerateAction(currentCertificateDocument);
+    return;
+  }
+  renderCertificateIssuePreview();
+  if (certificatePreview) {
+    certificatePreview.hidden = false;
+  }
+  renderCertificateGenerateAction(currentCertificateDocument);
+  certificatePreview?.scrollIntoView?.({ block: "nearest" });
+}
+
+function resetCertificateIssuePreview() {
+  if (certificatePreview) {
+    certificatePreview.hidden = true;
+  }
+  if (certificatePreviewImage) {
+    certificatePreviewImage.removeAttribute("src");
+    certificatePreviewImage.removeAttribute("data-preview-image-id");
+    certificatePreviewImage.classList.remove("is-loading");
+  }
+  certificatePreviewImageRequestId += 1;
+  if (certificatePreviewLoading) {
+    certificatePreviewLoading.hidden = true;
+  }
+  updateTextContent(
+    certificateGenerateAction,
+    resolveCertificateOptionCopy("certificate_generate_action_label", "確認產生證書"),
+  );
+}
+
+function resolveCertificateIssueFailureMessage(payload) {
+  const message = payload?.error?.message;
+  if (typeof message === "string" && message.trim()) {
+    return message;
+  }
+
+  return resolveCertificateOptionCopy(
+    "certificate_change_request_unavailable_message",
+    "目前暫時無法產生證書，請稍後再試。",
+  );
+}
+
+function setCertificateIssueBusy(isBusy) {
+  isCertificateIssueInProgress = isBusy;
+  const isCertificateIssued = currentCertificateDocument?.certStatus === "issued";
+  updatePageLoadingText(
+    isBusy
+      ? (isCertificateIssued ? certificateDownloadPendingMessage : certificateIssuePendingMessage)
+      : lookupPendingMessage,
+  );
+  setCertificateDisplayControlsLocked(isBusy || isCertificateIssued);
+  if (certificateGenerateAction) {
+    certificateGenerateAction.disabled = isBusy;
+  }
+  [
+    certificateOptionsBackAction,
+    certificateChangeRequestAction,
+  ].filter(Boolean).forEach((control) => {
+    control.disabled = isBusy;
+  });
+  certificateOptionsView?.classList.toggle("is-lookup-busy", isBusy);
+  certificateOptionsView?.setAttribute("aria-busy", String(isBusy));
+  if (pageLoadingOverlay) {
+    pageLoadingOverlay.hidden = !isBusy;
+  }
+}
+
+function resolveCertificatePdfFilename(response) {
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/i);
+  return match?.[1] || "certificate.pdf";
+}
+
+function downloadPdfBlob(pdfBlob, filename) {
+  const objectUrl = window.URL.createObjectURL(pdfBlob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(objectUrl);
+  }, 1000);
+}
+
+async function issueCompletionCertificate() {
+  if (isCertificateIssueInProgress || !currentCertificateDocument) {
+    return;
+  }
+
+  setCertificateIssueBusy(true);
+  try {
+    const response = await fetch(certificateIssueApiPath, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/pdf, application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildCertificateIssuePayload()),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setCertificateOptionsChangeRequestStatus(resolveCertificateIssueFailureMessage(payload), "error");
+      return;
+    }
+
+    const pdfBlob = await response.blob();
+    downloadPdfBlob(pdfBlob, resolveCertificatePdfFilename(response));
+    currentCertificateDocument.certStatus = "issued";
+    currentCertificateDocument.canRequestChanges = false;
+    renderCertificateOptionsStatus(currentCertificateDocument);
+  } catch {
+    setCertificateOptionsChangeRequestStatus(
+      resolveCertificateOptionCopy(
+        "certificate_change_request_unavailable_message",
+        "目前暫時無法產生證書，請稍後再試。",
+      ),
+      "error",
+    );
+  } finally {
+    setCertificateIssueBusy(false);
+  }
 }
 
 function resolveChangeRequestFailureMessage(payload) {
@@ -788,9 +1043,13 @@ function setDocumentLookupFieldsLocked(isLocked) {
 function showCertificateOptions(documentData) {
   currentCertificateDocument = documentData;
   clearCertificateOptionsChangeRequestStatus();
+  resetCertificateIssuePreview();
   renderCertificateNameOptions(documentData);
   renderCertificateCompanyOption(documentData);
   renderCertificateOptionsStatus(documentData);
+  if (documentData?.certStatus !== "issued") {
+    showCertificateIssuePreview();
+  }
   setDocumentLookupFieldsLocked(true);
   certificateChangeRequestView.hidden = true;
   certificateOptionsView.hidden = false;
@@ -802,6 +1061,7 @@ function showDocumentLookupForm() {
   certificateChangeRequestView.hidden = true;
   currentCertificateDocument = null;
   clearCertificateOptionsChangeRequestStatus();
+  resetCertificateIssuePreview();
   setChangeRequestSubmitted(false);
   clearCertificateChangeRequestFeedback();
   setDocumentLookupFieldsLocked(false);
@@ -876,8 +1136,14 @@ function updatePreviewActionState() {
   previewAction.disabled = isLookupInProgress || !isUserDataComplete();
 }
 
+function updatePageLoadingText(message) {
+  const pageLoadingText = pageLoadingOverlay?.querySelector(".page-loading-text");
+  updateTextContent(pageLoadingText, message);
+}
+
 function setLookupBusy(isBusy) {
   isLookupInProgress = isBusy;
+  updatePageLoadingText(lookupPendingMessage);
   documentRequestForm.classList.toggle("is-lookup-busy", isBusy);
   homePage.classList.toggle("is-lookup-busy", isBusy);
   documentRequestForm.setAttribute("aria-busy", String(isBusy));
@@ -967,7 +1233,7 @@ function clearLookupFeedback() {
 }
 
 function shouldShowCertificateOptions(documentData) {
-  return ["notIssued", "changeRequested"].includes(documentData?.certStatus);
+  return ["notIssued", "changeRequested", "issued"].includes(documentData?.certStatus);
 }
 
 function readClientLookupBlockedUntil() {
@@ -1192,9 +1458,12 @@ function applyHomePageLocale(nextLocale) {
   updateTextContent(certificateOptionsSubtitle, homePageCopy.certificate_options_subtitle);
   updateTextContent(certificateNameOptionsLabel, homePageCopy.certificate_name_options_label);
   updateTextContent(certificateCompanyOptionLabel, homePageCopy.certificate_company_option_label);
+  updateTextContent(certificatePreviewTitle, homePageCopy.certificate_preview_title);
+  updateTextContent(certificatePreviewSubtitle, homePageCopy.certificate_preview_subtitle);
   updateTextContent(certificateOptionsBackAction, homePageCopy.certificate_options_back_action_label);
   updateTextContent(certificateChangeRequestAction, homePageCopy.certificate_change_request_action_label);
   updateTextContent(certificateGenerateAction, homePageCopy.certificate_generate_action_label);
+  updateTextContent(certificateGenerateWarning, homePageCopy.certificate_generate_warning);
   updateTextContent(
     certificateChangeRequestProcessingFeedback,
     homePageCopy.certificate_change_request_processing_message,
@@ -1238,6 +1507,16 @@ function applyHomePageLocale(nextLocale) {
     renderCertificateChangeRequestSummary();
   }
 
+  if (currentCertificateDocument && !certificateOptionsView.hidden) {
+    renderCertificateCompanyOption(currentCertificateDocument);
+    renderCertificateOptionsStatus(currentCertificateDocument);
+  }
+
+  if (currentCertificateDocument && !certificatePreview.hidden) {
+    renderCertificateIssuePreview();
+    renderCertificateGenerateAction(currentCertificateDocument);
+  }
+
   if (typeof homePageCopy.empty_name_text === "string") {
     emptyNameText = homePageCopy.empty_name_text;
     homePage.dataset.emptyNameText = emptyNameText;
@@ -1276,8 +1555,15 @@ function applyHomePageLocale(nextLocale) {
   if (typeof homePageCopy.lookup_pending_message === "string") {
     lookupPendingMessage = homePageCopy.lookup_pending_message;
     homePage.dataset.lookupPendingMessage = lookupPendingMessage;
-    const pageLoadingText = pageLoadingOverlay?.querySelector(".page-loading-text");
-    updateTextContent(pageLoadingText, lookupPendingMessage);
+    updatePageLoadingText(lookupPendingMessage);
+  }
+
+  if (typeof homePageCopy.certificate_issue_pending_message === "string") {
+    certificateIssuePendingMessage = homePageCopy.certificate_issue_pending_message;
+  }
+
+  if (typeof homePageCopy.certificate_download_pending_message === "string") {
+    certificateDownloadPendingMessage = homePageCopy.certificate_download_pending_message;
   }
 
   closeLocaleMenu({ blurTrigger: true });
@@ -1686,6 +1972,18 @@ certificateOptionsBackAction?.addEventListener("click", () => {
 
 certificateChangeRequestAction?.addEventListener("click", () => {
   showCertificateChangeRequest();
+});
+
+certificateGenerateAction?.addEventListener("click", () => {
+  void issueCompletionCertificate();
+});
+
+certificateNameOptions?.addEventListener("change", () => {
+  renderCertificateIssuePreview();
+});
+
+certificateCompanyVisible?.addEventListener("change", () => {
+  renderCertificateIssuePreview();
 });
 
 certificateChangeRequestBackAction?.addEventListener("click", () => {

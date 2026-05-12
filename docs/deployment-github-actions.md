@@ -93,7 +93,7 @@ az functionapp config appsettings set \
 - 4 個 Blob containers
 - `function-releases`
 - `source-uploads`
-- `cert-templates`
+- `document-assets`
 - `issued-certs`
 - 1 個 Azure Cosmos DB for NoSQL serverless account，使用 Session consistency，並停用 local auth
 - 1 個 Cosmos DB SQL database，預設名稱 `ipg-certificate`
@@ -111,8 +111,8 @@ Blob container 用途：
 
 - `function-releases`：Flex Consumption 部署套件
 - `source-uploads`：來源上傳檔，例如未來 CSV、Excel 或稅務文件來源檔
-- `cert-templates`：不進 git 的固定證明附件；目前已使用 `completion-certificate/organization-seal.png` 存放單位印章圖
-- `issued-certs`：產生後可再次下載的完訓證明 PDF
+- `document-assets`：不進 git 的固定證明附件；目前已使用 `completion-cert/organization-seal.png` 存放單位印章圖，並使用 `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png` 存放首頁證明預覽圖，預覽 PDF 備份則存放於 `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並使用 Archive tier
+- `issued-certs`：產生後可再次下載的完訓證明 PDF；應以 Cool tier 儲存
 
 ## 部署後需要設定的 GitHub Actions Secrets 與 Variables
 
@@ -210,7 +210,16 @@ rollback 會重新 checkout rollback ref，並再次透過 `Azure/functions-acti
 - Cosmos DB local auth：停用，Function App 以 system-assigned managed identity 取得 database 範圍的 Cosmos DB Built-in Data Contributor 權限
 - Cosmos Portal inspection：可透過 `cosmosPortalDataReaderPrincipalIds` 為管理者安全群組授與 account 範圍 Cosmos DB Built-in Data Reader
 - Cosmos app settings：`COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER`、`COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER` 與 `COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER` 由 Bicep 寫入 Function App
+- Blob app settings：`BLOB_SOURCE_CONTAINER`、`BLOB_DOCUMENT_ASSETS_CONTAINER` 與 `BLOB_ISSUED_CERT_CONTAINER` 由 Bicep 寫入 Function App，預設分別指向 `source-uploads`、`document-assets` 與 `issued-certs`
 - Cosmos containers：`events` 使用 `/id` 作為 partition key，供活動管理資料使用；完訓證明 containers 依 [cosmos-data-model.md](cosmos-data-model.md) 使用 `/eventId`
+
+Bicep 只建立 Blob containers 與 Function App app settings，不會上傳不進 git 的固定素材。重新建立環境後，仍需將單位印章圖與首頁證明預覽圖上傳到 `document-assets`：
+
+- `completion-cert/organization-seal.png`
+- `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`
+- `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf`，上傳後應設定為 Archive tier
+
+首頁發證流程會在產生完訓證明 PDF 後上傳到 `issued-certs`，並由程式指定為 Cool tier；若以手動方式補上或修正 `issued-certs` 內的已發證 PDF，也應同步設定為 Cool tier。
 
 ## 注意事項
 

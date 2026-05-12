@@ -47,9 +47,9 @@
 - 公開驗證頁面目前為靜態純文字輸出
 - 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓證明 CSV 由後端解析、驗證並寫入 Cosmos DB；營業稅繳稅證明的後端上傳處理與持久化流程尚未串接
 - 完訓證明頁目前已有後端 CSV 匯入、活動篩選、清單載入與單筆資料修改流程
-- 完訓證明 PDF 合成邏輯已建立於 `src/shared/completion_certificate_pdf.py`，模板檔跟隨 git 版控，單位印章圖位於 Azure Storage `cert-templates/completion-certificate/organization-seal.png`；首頁確認後發證、PDF 上傳 `issued-certs` 與再次下載 API 尚未串接
+- 完訓證明 PDF 合成邏輯已建立於 `src/shared/completion_certificate_pdf.py`，模板檔跟隨 git 版控，單位印章圖預設位於 Azure Storage `document-assets/completion-cert/organization-seal.png`；首頁確認後會發證、以 Cool tier 上傳 PDF 至 `issued-certs`，已發證資料再次查詢時會下載既有 PDF
 - 營業稅繳稅證明頁目前已有前端單筆 PDF、PNG 或 JPG/JPEG 新增與頁面暫存清單，用於管理介面流程示意；目前不支援 WebP
-- 首頁完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，會顯示「選擇證明顯示方式」區塊；`notIssued` 時「提出修改申請」會切換到首頁同卡片內的修改申請流程，送出後會寫入 Cosmos DB `completionCertRequests` 並將對應完訓證明狀態改為 `changeRequested`；同一張完訓證明已有 `approved` 或 `rejected` 修改申請時，公開 API 會拒絕再次提出，首頁並顯示已通過或已駁回的審核結果；`changeRequested` 時不再顯示「提出修改申請」，改顯示修改申請處理中提示
+- 首頁完訓證明查詢成功且 `certStatus` 為 `notIssued`、`changeRequested` 或 `issued` 時，會顯示「選擇證明顯示方式」區塊；`notIssued` 時「提出修改申請」會切換到首頁同卡片內的修改申請流程，送出後會寫入 Cosmos DB `completionCertRequests` 並將對應完訓證明狀態改為 `changeRequested`；同一張完訓證明已有 `approved` 或 `rejected` 修改申請時，公開 API 會拒絕再次提出，首頁並顯示已通過或已駁回的審核結果；`changeRequested` 時不再顯示「提出修改申請」，改顯示修改申請處理中提示；`issued` 時再次按下產生按鈕會下載既有 PDF，不重新合成
 
 ### 表單輸入規則
 
@@ -115,12 +115,12 @@
 - 首頁可用 `localStorage` 快取「已被封鎖」狀態與伺服器回傳的封鎖訊息，以減少重整後的等待感並保留 12 小時或 24 小時封鎖文案；此快取只作為使用者體驗提示，不得作為後端安全判斷依據，期限不得超過 1 小時，且必須在到期、格式不合法或查詢成功時清除，避免永久性上鎖。
 - 目前只串接 `completionCert` 的查詢判斷；`taxReceipt` 後端持久化尚未完成前會視為查不到。
 - 完訓證明查詢成功時，回應會包含 `badgeName`、`name`、`organization`、`certStatus` 與 `canRequestChanges`，供首頁決定是否顯示「選擇證明顯示方式」及修改申請狀態提示。
-- `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁會顯示「選擇證明顯示方式」。`issued` 仍顯示一般查詢結果訊息，不進入顯示方式選擇。
+- `certStatus` 為 `notIssued`、`changeRequested` 或 `issued` 時，首頁會顯示「選擇證明顯示方式」。`issued` 進入下載模式，姓名與公司顯示選項會鎖定，說明文字會合併提示「一旦確認後，將無法更改」，不顯示證書預覽區塊，按鈕文案改為「下載證書」並下載既有 PDF；公開下載回應的檔名固定為 `certificate.pdf`，不包含報名序號、KKTIX ID 或其他個人資料。
 - 「選擇證明顯示方式」區塊會依實際 `name` 與 `badgeName` 產生姓名顯示選項：`姓名`、`Badge Name`、`姓名 (Badge Name)`；若其中一個值為空，或兩者相同，只顯示單一有效選項。
 - 若查詢結果有 `organization`，首頁會顯示是否顯示公司名的 checkbox。
 - 顯示「選擇證明顯示方式」時，首頁會隱藏「查詢文件」按鈕，並鎖定活動、文件類型、報名序號與 email，避免使用者在確認顯示方式時修改查詢條件。
 - 「返回查詢」會回到查詢表單並解除上述鎖定；`notIssued` 時「提出修改申請」會使用同一張首頁卡片切換到修改申請 view state，顯示本次查詢的活動、報名序號與 email，並要求使用者填寫需要修改的內容。送出時會呼叫 `POST /api/v1/completion-cert-change-requests`，後端重新以活動、報名序號與 email 查詢權威完訓證明資料；若同一張證明尚未有已完成審核的修改申請，會寫入 `completionCertRequests` 並將 `completionCerts.certStatus` 改為 `changeRequested`。送出成功後，修改申請 textarea 與送出按鈕會保持停用。
-- `changeRequested` 時「選擇證明顯示方式」不顯示「提出修改申請」，並顯示「修改申請正在處理中，管理者確認後會再處理發證。若現在產生證書，將視為放棄本次修改申請。」提示。
+- `changeRequested` 時「選擇證明顯示方式」不顯示「提出修改申請」，並顯示「修改申請正在處理中，管理者確認後會再處理發證。若現在確認產生證書，將視為放棄本次修改申請。」提示。
 - 若同一張完訓證明已有 `approved` 或 `rejected` 修改申請，首頁查詢回應會附上 `changeRequestReview.status`、`changeRequestReview.reviewedAt` 與 `changeRequestReview.reviewNote`，並在「選擇證明顯示方式」顯示「修改申請已通過」或「修改申請已駁回」提示；若 `reviewNote` 有值，會在提示第二行顯示 `審核備註：...`。
 
 Request JSON 範例：
@@ -290,9 +290,9 @@ Request JSON 範例：
 - `營業稅繳稅證明` 的產製時間使用共用日期時間選擇器的秒數模式，顯示年、月、日、時、分、秒
 - 查詢文件按鈕在目前可見申請資料欄位未完整填寫前維持停用
 - 查詢文件送出後使用滿版 loading 遮罩鎖住整個 window，避免等待期間切換語系或調整表單資料
-- 完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁顯示「選擇證明顯示方式」，讓使用者選擇姓名顯示方式與是否顯示公司名；一旦確認後將無法更改
-- 「選擇證明顯示方式」目前包含 `返回查詢`、`產生證書`，並依 `canRequestChanges` 顯示 `提出修改申請`；其中 `返回查詢` 已可回到查詢表單，`提出修改申請` 已可切換到首頁內修改申請 view state 並寫入後端修改申請資料，`產生證書` 目前僅完成 UI，尚未接後續行為
-- `changeRequested` 時，首頁會在「選擇證明顯示方式」顯示處理中提示，並說明若現在產生證書會視為放棄本次修改申請
+- 完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁顯示「選擇證明顯示方式」，讓使用者選擇姓名顯示方式與是否顯示公司名；準備生成模式會即時顯示對應語系與顯示選項的 PNG 預覽，並在確認按鈕旁提示確認後將無法更改
+- 「選擇證明顯示方式」目前包含 `返回查詢`、`確認產生證書`，並依 `canRequestChanges` 顯示 `提出修改申請`；其中 `返回查詢` 已可回到查詢表單，`提出修改申請` 已可切換到首頁內修改申請 view state 並寫入後端修改申請資料，`確認產生證書` 會呼叫發證 API 產生並下載 PDF；`issued` 下載模式不顯示 PNG 預覽，會鎖定顯示選項，並把按鈕文案改為 `下載證書`；下載檔名固定為 `certificate.pdf`
+- `changeRequested` 時，首頁會在「選擇證明顯示方式」顯示處理中提示，並說明若現在確認產生證書會視為放棄本次修改申請
 - 已完成審核的修改申請會在「選擇證明顯示方式」顯示通過或駁回結果；若 `reviewNote` 有值，提示會保留換行並在第二行顯示 `審核備註：...`
 - 顯示頁尾版權聲明
 

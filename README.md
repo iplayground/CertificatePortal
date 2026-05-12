@@ -135,11 +135,11 @@ PYTHONPATH=. pytest
 - `local.settings.json` 內已設定 `AzureWebJobsDisableHomepage=true`，避免根目錄顯示 Azure Functions 預設首頁。
 - 目前未接 Azurite 或實體 Storage Account，因此本機啟動時可能看到 `AzureWebJobsStorage` 的 unhealthy 訊息；在 `--skip-azure-storage-check` 下，這不影響目前首頁、靜態資產路由與公開驗證頁面。
 - `COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER`、`COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER` 與 `COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER` 是 Cosmos DB 連線設定；目前 IaC 建立 serverless account、database、活動管理用的 `events` container、完訓證明用的 `completionCerts` 與 `completionCertRequests` containers，以及公開查詢限制用的 `publicLookupAttempts` container。
-- `BLOB_SOURCE_CONTAINER`、`BLOB_CERT_TEMPLATE_CONTAINER` 與 `BLOB_ISSUED_CERT_CONTAINER` 是 Blob Storage container 設定；目前 Azure 環境使用 `source-uploads`、`cert-templates` 與 `issued-certs`。完訓證明 PDF 底圖模板跟隨 git 版控，固定印章圖已上傳至 `cert-templates/completion-certificate/organization-seal.png`，產生後 PDF 預期寫入 `issued-certs`。
+- `BLOB_SOURCE_CONTAINER`、`BLOB_DOCUMENT_ASSETS_CONTAINER` 與 `BLOB_ISSUED_CERT_CONTAINER` 是 Blob Storage container 設定；目前 Azure 環境使用 `source-uploads`、`document-assets` 與 `issued-certs`。完訓證明 PDF 底圖模板跟隨 git 版控，固定印章圖預設讀取 `document-assets/completion-cert/organization-seal.png`，可用 `COMPLETION_CERT_SEAL_BLOB_NAME` 覆寫；證明預覽 PNG 從 `document-assets/completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png` 讀取；預覽 PDF 備份存放於 `document-assets/completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並使用 Archive tier；產生後 PDF 會寫入 `issued-certs` 並指定為 Cool tier。若執行環境沒有 `AzureWebJobsStorage__accountName`，可用 `BLOB_STORAGE_ACCOUNT_NAME` 指定 Blob Storage account。
 - 管理平台入口現已統一使用 `/portal`，避免與 Azure Functions runtime 內建保留的 `/admin` 路徑衝突。
 - `/portal` 正式環境目前應明確設定 `PORTAL_GOOGLE_CLIENT_ID`、`PORTAL_GOOGLE_CLIENT_SECRET`、`PORTAL_GOOGLE_REDIRECT_URI` 與 `PORTAL_GOOGLE_ALLOWED_GROUP_KEYS`；建議以 Azure CLI 或 Key Vault reference 寫入 app settings，詳細流程請參考 [docs/portal-authentication.md](docs/portal-authentication.md)。
 - 會異動資料的管理 API 會檢查同源請求與 CSRF token；可選擇設定 `PORTAL_CSRF_SECRET` 作為 CSRF 簽章密鑰，未設定時會優先沿用 `PORTAL_GOOGLE_CLIENT_SECRET`。
-- 目前活動管理已串接 Cosmos DB 的新增、查詢與修改；完訓證明頁已串接活動篩選、CSV 匯入、清單查詢與單筆資料修改；修改審核頁已串接首頁完訓證明修改申請查詢與審核。完訓證明 PDF 合成邏輯已在 shared 層實作，但首頁發證 API、PDF 上傳 Storage、再次下載與營業稅繳稅證明持久化仍待後續串接。
+- 目前活動管理已串接 Cosmos DB 的新增、查詢與修改；完訓證明頁已串接活動篩選、CSV 匯入、清單查詢與單筆資料修改；修改審核頁已串接首頁完訓證明修改申請查詢與審核。首頁完訓證明申請會依使用者選定顯示方式合成 PDF、以 Cool tier 上傳至 `issued-certs`，並在已發證後從既有 blob 重新下載；營業稅繳稅證明持久化仍待後續串接。
 
 ## Azure 部署
 

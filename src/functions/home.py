@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -10,9 +12,22 @@ from math import ceil
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
+from uuid import uuid4
 
 import azure.functions as func
 
+from src.shared.blob_store import (
+    BlobStoreConfigurationError,
+    BlobStoreOperationError,
+    download_blob_bytes,
+    download_blob_to_path,
+    upload_pdf_blob,
+)
+from src.shared.completion_certificate_pdf import (
+    CompletionCertificatePdfData,
+    format_completion_certificate_number,
+    render_completion_certificate_pdf,
+)
 from src.shared.completion_store import (
     CompletionStoreConfigurationError,
     CompletionStoreOperationError,
@@ -78,6 +93,20 @@ HOME_CHANGE_REQUEST_INVALID_MESSAGE = "修改申請資料不完整，請確認�
 HOME_CHANGE_REQUEST_UNAVAILABLE_MESSAGE = "目前暫時無法送出修改申請，請稍後再試。"
 HOME_CHANGE_REQUEST_NOT_ALLOWED_MESSAGE = "此完訓證明目前無法提出修改申請。"
 HOME_CHANGE_REQUEST_FORBIDDEN_MESSAGE = "請從本網站頁面送出修改申請。"
+HOME_CERT_ISSUE_INVALID_MESSAGE = "發證資料不完整，請重新查詢後再試。"
+HOME_CERT_ISSUE_FORBIDDEN_MESSAGE = "請從本網站頁面產生證書。"
+HOME_CERT_ISSUE_NOT_ALLOWED_MESSAGE = "此完訓證明目前無法產生證書。"
+HOME_CERT_ISSUE_UNAVAILABLE_MESSAGE = "目前暫時無法產生證書，請稍後再試。"
+COMPLETION_CERT_SEAL_BLOB_NAME = "completion-cert/organization-seal.png"
+COMPLETION_CERT_PREVIEW_BLOB_PREFIX = "completion-cert/previews/png"
+COMPLETION_CERT_PREVIEW_IDS = frozenset(
+    {
+        f"{locale}-{name_display}-{organization_display}.png"
+        for locale in ("zh-TW", "en-US")
+        for name_display in ("name", "badgeName", "nameWithBadge")
+        for organization_display in ("org", "no-org")
+    }
+)
 
 
 @lru_cache(maxsize=1)
@@ -91,6 +120,8 @@ def build_home_page_url_context(req: func.HttpRequest) -> dict[str, str]:
     return {
         "canonical_url": page_url,
         "certificate_change_request_api_path": "/api/v1/completion-cert-change-requests",
+        "certificate_issue_api_path": "/api/v1/completion-certs/issue",
+        "certificate_preview_api_path": "/api/v1/completion-cert-previews",
         "document_lookup_api_path": "/api/v1/document-lookup",
         "events_api_path": "/api/v1/events",
         "page_url": page_url,
@@ -294,6 +325,37 @@ def parse_completion_cert_change_request_payload(
     }
 
 
+def parse_completion_cert_issue_payload(
+    req: func.HttpRequest,
+) -> dict[str, Any] | None:
+    lookup_payload = parse_document_lookup_payload(req)
+    if lookup_payload is None or lookup_payload["documentType"] != "completionCert":
+        return None
+
+    try:
+        raw_payload = req.get_json()
+    except ValueError:
+        return None
+
+    if not isinstance(raw_payload, dict):
+        return None
+
+    name_display = str(raw_payload.get("nameDisplay", "")).strip()
+    if name_display not in {"name", "badgeName", "nameWithBadge"}:
+        return None
+
+    locale = str(raw_payload.get("locale", "")).strip()
+    if locale not in {"zh-TW", "en-US"}:
+        locale = "zh-TW"
+
+    return {
+        **lookup_payload,
+        "locale": locale,
+        "nameDisplay": name_display,
+        "showOrganization": bool(raw_payload.get("showOrganization", False)),
+    }
+
+
 def lookup_public_document(payload: dict[str, Any]) -> dict[str, Any] | None:
     if payload["documentType"] != "completionCert":
         return None
@@ -409,6 +471,226 @@ def submit_completion_cert_change_request(payload: dict[str, Any]) -> dict[str, 
         )
 
     return saved_request
+
+
+def issue_completion_cert_pdf(payload: dict[str, Any], req: func.HttpRequest) -> tuple[bytes, str]:
+    records_container = get_completion_records_container()
+    public_document = find_completion_cert_document_for_public_lookup(
+        container=records_container,
+        email=payload["email"],
+        event_id=payload["eventId"],
+        number=payload["registrationNumber"],
+    )
+    if public_document is None:
+        raise LookupError("completion certificate was not found")
+
+    completion_cert_id = str(public_document.get("id", "")).strip()
+    if not completion_cert_id:
+        raise CompletionStoreOperationError("完訓證明資料缺少識別碼。")
+
+    cert_document = read_completion_cert_document(
+        cert_id=completion_cert_id,
+        container=records_container,
+        event_id=payload["eventId"],
+    )
+    cert_status = str(cert_document.get("certStatus", "")).strip() or "notIssued"
+    if cert_status not in {"notIssued", "changeRequested", "issued"}:
+        raise PermissionError("completion certificate cannot be issued")
+
+    issued_blob_name = str(cert_document.get("issuedPdfBlobName") or "").strip()
+    if cert_status == "issued" and issued_blob_name:
+        return (
+            download_blob_bytes(
+                container_name=_read_issued_certs_container_name(),
+                blob_name=issued_blob_name,
+            ),
+            build_completion_cert_download_filename(cert_document),
+        )
+
+    event_document = read_public_event_document(
+        container=get_events_container(),
+        event_id=payload["eventId"],
+    )
+    if event_document is None:
+        raise LookupError("completion certificate event was not found")
+
+    if not _can_issue_completion_cert_for_event(event_document):
+        raise PermissionError("completion certificate event is not available")
+
+    verification_token = resolve_completion_cert_verification_token(cert_document)
+    cert_pdf_data = build_completion_cert_pdf_data(
+        cert_document=cert_document,
+        event_document=event_document,
+        payload=payload,
+        req=req,
+        verification_token=verification_token,
+    )
+    blob_name = build_issued_completion_cert_blob_name(cert_document)
+    with tempfile.TemporaryDirectory(prefix="ipg-cert-") as temp_dir:
+        temp_path = Path(temp_dir)
+        seal_path = temp_path / "organization-seal.png"
+        download_blob_to_path(
+            container_name=_read_document_assets_container_name(),
+            blob_name=_read_completion_cert_seal_blob_name(),
+            output_path=seal_path,
+        )
+        output_path = temp_path / "completion-certificate.pdf"
+        render_completion_certificate_pdf(
+            CompletionCertificatePdfData(
+                **{
+                    **cert_pdf_data.__dict__,
+                    "seal_image_path": seal_path,
+                }
+            ),
+            output_path,
+        )
+        pdf_bytes = output_path.read_bytes()
+
+    upload_pdf_blob(
+        container_name=_read_issued_certs_container_name(),
+        blob_name=blob_name,
+        data=pdf_bytes,
+    )
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    cert_document["certStatus"] = "issued"
+    cert_document["issuedAt"] = now
+    cert_document["issuedPdfBlobName"] = blob_name
+    cert_document["verificationTokenHash"] = verification_token
+    cert_document["certificateDisplayName"] = cert_pdf_data.recipient_name
+    cert_document["certificateDisplayOrganization"] = cert_pdf_data.organization
+    cert_document["certificateLocale"] = cert_pdf_data.locale
+    cert_document["updatedAt"] = now
+    replace_completion_cert_document(
+        container=records_container,
+        document=cert_document,
+    )
+    return pdf_bytes, build_completion_cert_download_filename(cert_document)
+
+
+def build_completion_cert_pdf_data(
+    *,
+    cert_document: dict[str, Any],
+    event_document: dict[str, Any],
+    payload: dict[str, Any],
+    req: func.HttpRequest,
+    verification_token: str,
+) -> CompletionCertificatePdfData:
+    certificate_number = format_completion_certificate_number(
+        cert_document.get("number", payload["registrationNumber"]),
+        str(cert_document.get("kktixId", "")).strip(),
+    )
+    return CompletionCertificatePdfData(
+        certificate_number=certificate_number,
+        recipient_name=resolve_completion_cert_display_name(
+            cert_document=cert_document,
+            name_display=payload["nameDisplay"],
+        ),
+        organization=(
+            str(cert_document.get("organization", "")).strip()
+            if payload["showOrganization"]
+            else ""
+        ),
+        event_name=str(event_document.get("name", "")).strip(),
+        event_period_text=format_completion_cert_event_period(
+            event_document=event_document,
+            locale=payload["locale"],
+        ),
+        completion_hours=int(event_document.get("completionHours") or 0),
+        issued_date_text="",
+        verification_url=_build_absolute_url(req, f"/verify/{verification_token}"),
+        locale=payload["locale"],
+    )
+
+
+def resolve_completion_cert_verification_token(cert_document: dict[str, Any]) -> str:
+    existing_token = str(cert_document.get("verificationTokenHash") or "").strip()
+    if existing_token:
+        return existing_token
+
+    return generate_completion_cert_verification_token()
+
+
+def generate_completion_cert_verification_token() -> str:
+    return uuid4().hex
+
+
+def resolve_completion_cert_display_name(
+    *,
+    cert_document: dict[str, Any],
+    name_display: str,
+) -> str:
+    name = str(cert_document.get("name", "")).strip()
+    badge_name = str(cert_document.get("badgeName", "")).strip()
+    if name_display == "badgeName" and badge_name:
+        return badge_name
+    if name_display == "nameWithBadge" and name and badge_name and name != badge_name:
+        return f"{name} ({badge_name})"
+    return name or badge_name
+
+
+def format_completion_cert_event_period(
+    *,
+    event_document: dict[str, Any],
+    locale: str,
+) -> str:
+    start_date = str(event_document.get("eventStartDate", "")).strip()
+    end_date = str(event_document.get("eventEndDate", "")).strip()
+    if not start_date and not end_date:
+        return ""
+
+    formatted_start = format_completion_cert_event_date(start_date, locale=locale)
+    formatted_end = format_completion_cert_event_date(end_date, locale=locale)
+    if formatted_start and formatted_end and formatted_start != formatted_end:
+        return f"{formatted_start} - {formatted_end}"
+
+    return formatted_start or formatted_end
+
+
+def format_completion_cert_event_date(value: str, *, locale: str) -> str:
+    if not value:
+        return ""
+
+    normalized_value = value[:10]
+    try:
+        parsed_date = datetime.strptime(normalized_value, "%Y-%m-%d")
+    except ValueError:
+        return value
+
+    if locale == "en-US":
+        return parsed_date.strftime("%b %-d, %Y")
+
+    return parsed_date.strftime("%Y/%m/%d")
+
+
+def build_issued_completion_cert_blob_name(cert_document: dict[str, Any]) -> str:
+    event_id = str(cert_document.get("eventId", "")).strip()
+    cert_id = str(cert_document.get("id", "")).strip()
+    return f"{event_id}/{cert_id}.pdf"
+
+
+def build_completion_cert_download_filename(cert_document: dict[str, Any]) -> str:
+    return "certificate.pdf"
+
+
+def _can_issue_completion_cert_for_event(event_document: dict[str, Any]) -> bool:
+    if str(event_document.get("status", "")).strip() != "open":
+        return False
+
+    document_types = event_document.get("documentTypes")
+    if not isinstance(document_types, list) or "completionCert" not in document_types:
+        return False
+
+    download_starts_at = str(
+        event_document.get("completionCertDownloadStartsAt") or ""
+    ).strip()
+    if not download_starts_at:
+        return True
+
+    parsed_download_starts_at = parse_utc_iso_datetime(download_starts_at)
+    if parsed_download_starts_at is None:
+        return True
+
+    return parsed_download_starts_at <= datetime.now(timezone.utc)
 
 
 def is_completion_cert_lookup_available(payload: dict[str, Any]) -> bool | None:
@@ -529,6 +811,76 @@ def build_change_request_unavailable_response() -> func.HttpResponse:
         503,
         "change_request_unavailable",
         HOME_CHANGE_REQUEST_UNAVAILABLE_MESSAGE,
+    )
+
+
+def build_cert_issue_invalid_response() -> func.HttpResponse:
+    return build_home_api_error_response(
+        400,
+        "invalid_certificate_issue",
+        HOME_CERT_ISSUE_INVALID_MESSAGE,
+    )
+
+
+def build_cert_issue_forbidden_response() -> func.HttpResponse:
+    return build_home_api_error_response(
+        403,
+        "same_origin_required",
+        HOME_CERT_ISSUE_FORBIDDEN_MESSAGE,
+    )
+
+
+def build_cert_issue_not_allowed_response() -> func.HttpResponse:
+    return build_home_api_error_response(
+        409,
+        "certificate_issue_not_allowed",
+        HOME_CERT_ISSUE_NOT_ALLOWED_MESSAGE,
+    )
+
+
+def build_cert_issue_unavailable_response() -> func.HttpResponse:
+    return build_home_api_error_response(
+        503,
+        "certificate_issue_unavailable",
+        HOME_CERT_ISSUE_UNAVAILABLE_MESSAGE,
+    )
+
+
+def build_completion_cert_pdf_response(
+    pdf_bytes: bytes,
+    *,
+    filename: str,
+) -> func.HttpResponse:
+    return func.HttpResponse(
+        body=pdf_bytes,
+        status_code=200,
+        mimetype="application/pdf",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+def build_completion_cert_preview_image_response(image_bytes: bytes) -> func.HttpResponse:
+    return func.HttpResponse(
+        body=image_bytes,
+        status_code=200,
+        mimetype="image/png",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
+
+
+def read_completion_cert_preview_image(preview_id: str) -> bytes:
+    normalized_preview_id = preview_id.strip()
+    if normalized_preview_id not in COMPLETION_CERT_PREVIEW_IDS:
+        raise LookupError("completion certificate preview was not found")
+
+    return download_blob_bytes(
+        container_name=_read_document_assets_container_name(),
+        blob_name=f"{COMPLETION_CERT_PREVIEW_BLOB_PREFIX}/{normalized_preview_id}",
     )
 
 
@@ -880,6 +1232,32 @@ def _is_same_origin_request(req: func.HttpRequest) -> bool:
     )
 
 
+def _read_document_assets_container_name() -> str:
+    container_name = os.getenv("BLOB_DOCUMENT_ASSETS_CONTAINER", "").strip()
+    if not container_name:
+        raise BlobStoreConfigurationError(
+            "Blob Storage document assets container is not configured. "
+            "Set BLOB_DOCUMENT_ASSETS_CONTAINER."
+        )
+    return container_name
+
+
+def _read_issued_certs_container_name() -> str:
+    container_name = os.getenv("BLOB_ISSUED_CERT_CONTAINER", "").strip()
+    if not container_name:
+        raise BlobStoreConfigurationError(
+            "Blob Storage 發證容器尚未設定完成。請設定 BLOB_ISSUED_CERT_CONTAINER。"
+        )
+    return container_name
+
+
+def _read_completion_cert_seal_blob_name() -> str:
+    return os.getenv(
+        "COMPLETION_CERT_SEAL_BLOB_NAME",
+        COMPLETION_CERT_SEAL_BLOB_NAME,
+    ).strip() or COMPLETION_CERT_SEAL_BLOB_NAME
+
+
 def _resolve_forwarded_value(req: func.HttpRequest, header_name: str) -> str | None:
     header_value = req.headers.get(header_name)
     if not header_value:
@@ -1085,3 +1463,67 @@ def public_completion_cert_change_request_api(req: func.HttpRequest) -> func.Htt
         },
         status_code=201,
     )
+
+
+@blueprint.function_name(name="public_completion_cert_issue_api")
+@blueprint.route(
+    route="api/v1/completion-certs/issue",
+    methods=["POST"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def public_completion_cert_issue_api(req: func.HttpRequest) -> func.HttpResponse:
+    if not _is_same_origin_request(req):
+        return build_cert_issue_forbidden_response()
+
+    payload = parse_completion_cert_issue_payload(req)
+    if payload is None:
+        return build_cert_issue_invalid_response()
+
+    try:
+        pdf_bytes, filename = issue_completion_cert_pdf(payload, req)
+    except LookupError:
+        return build_document_lookup_not_found_response()
+    except PermissionError:
+        return build_cert_issue_not_allowed_response()
+    except (
+        BlobStoreConfigurationError,
+        BlobStoreOperationError,
+        CompletionStoreConfigurationError,
+        CompletionStoreOperationError,
+        EventStoreConfigurationError,
+        EventStoreOperationError,
+        ValueError,
+    ):
+        LOGGER.warning("Completion certificate issue failed.", exc_info=True)
+        return build_cert_issue_unavailable_response()
+
+    return build_completion_cert_pdf_response(pdf_bytes, filename=filename)
+
+
+@blueprint.function_name(name="public_completion_cert_preview_api")
+@blueprint.route(
+    route="api/v1/completion-cert-previews/{preview_id}",
+    methods=["GET"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def public_completion_cert_preview_api(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    preview_id = str(req.route_params.get("preview_id", "")).strip()
+    try:
+        image_bytes = read_completion_cert_preview_image(preview_id)
+    except LookupError:
+        return build_home_api_error_response(
+            404,
+            "certificate_preview_not_found",
+            HOME_LOOKUP_NOT_FOUND_MESSAGE,
+        )
+    except (BlobStoreConfigurationError, BlobStoreOperationError):
+        LOGGER.warning("Completion certificate preview failed.", exc_info=True)
+        return build_home_api_error_response(
+            503,
+            "certificate_preview_unavailable",
+            HOME_LOOKUP_UNAVAILABLE_MESSAGE,
+        )
+
+    return build_completion_cert_preview_image_response(image_bytes)

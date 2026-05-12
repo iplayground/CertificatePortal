@@ -166,11 +166,11 @@ container: publicLookupAttempts
 partition key: /id
 ```
 
-`completionCerts` 是完訓證明完整清單。名稱沿用活動管理的文件類型代碼 `completionCert`。CSV 匯入資料、簽到狀態、發證狀態、下載檔案 metadata、驗證 token hash 與驗證次數都記錄在同一筆資料中。CSV 上傳由 Python API 同步解析與寫入；目前預期單次約數百筆資料可在可接受時間內完成，因此不設計 DB 進度狀態或進度條。CSV 匯入當下尚未產生完訓證明檔案與驗證 token，因此 `issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 預設為 `null`，`verificationCount` 預設為 `0`；等會眾申請完訓證明且系統完成產生檔案後才回填發證檔案與 token 資料。
+`completionCerts` 是完訓證明完整清單。名稱沿用活動管理的文件類型代碼 `completionCert`。CSV 匯入資料、簽到狀態、發證狀態、下載檔案 metadata、驗證 token 與驗證次數都記錄在同一筆資料中。CSV 上傳由 Python API 同步解析與寫入；目前預期單次約數百筆資料可在可接受時間內完成，因此不設計 DB 進度狀態或進度條。CSV 匯入當下尚未產生完訓證明檔案與驗證 token，因此 `issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 預設為 `null`，`verificationCount` 預設為 `0`；等會眾申請完訓證明且系統完成產生檔案後才回填發證檔案，並記錄當次使用的顯示名稱、單位與語系。
 
 `completionCertRequests` 只記錄會眾是否申請資料調整、申請備註、審核狀態與通知狀態。這類資料不是完訓證明權威清單本身，因此獨立存放。
 
-目前不保留原始 CSV 檔案。完訓證明 PDF 底圖模板跟隨 git 版控，因欄位座標需要與模板版本同步；固定印章圖存放於 Blob Storage `cert-templates` container，目前 blob 名稱為 `completion-certificate/organization-seal.png`。產生後 PDF 應存放於 Blob Storage `issued-certs` container。Cosmos DB 只儲存完訓證明清單資料、狀態與產生後檔案的 blob 名稱，不儲存 CSV 原文、印章圖或 PDF 二進位。
+目前不保留原始 CSV 檔案。完訓證明 PDF 底圖模板跟隨 git 版控，因欄位座標需要與模板版本同步；固定印章圖存放於 Blob Storage `document-assets` container，預設 blob 名稱為 `completion-cert/organization-seal.png`；首頁證明預覽 PNG 也存放於 `document-assets`，blob 名稱格式為 `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`，預覽 PDF 備份則使用 `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並設定為 Archive tier。產生後 PDF 存放於 Blob Storage `issued-certs` container，並以 Cool tier 儲存。Cosmos DB 只儲存完訓證明清單資料、狀態、顯示選項與產生後檔案的 blob 名稱，不儲存 CSV 原文、印章圖、預覽圖或 PDF 二進位。
 
 ### 完訓證明清單文件
 
@@ -191,11 +191,16 @@ partition key: /id
 | `email` | string | Email |
 | `attendanceStatus` | string | 簽到狀態 |
 | `certStatus` | string | 證書狀態 |
-| `issuedPdfBlobName` | string \| null | `issued-certs` 中的 PDF blob 名稱；CSV 匯入時為 null |
-| `verificationTokenHash` | string \| null | 公開驗證 token 的雜湊值；CSV 匯入時為 null，且不得存明文 token |
+| `issuedPdfBlobName` | string \| null | `issued-certs` 中的 PDF blob 名稱，格式為 `{eventId}/{certId}.pdf`；對應 blob 應使用 Cool tier；CSV 匯入時為 null |
+| `certificateDisplayName` | string \| null | 發證時實際寫入 PDF 的姓名顯示文字；發證後回填 |
+| `certificateDisplayOrganization` | string \| null | 發證時實際寫入 PDF 的任職單位文字；未顯示單位時為空字串 |
+| `certificateLocale` | string \| null | 發證時使用的 PDF 語系，例如 `zh-TW` 或 `en-US` |
+| `verificationTokenHash` | string \| null | 公開驗證 token；發證時產生 UUID 去除 dash 的 32 字元小寫十六進位字串，並用於 PDF 左下角 QRCode URL；CSV 匯入時為 null |
 | `verificationCount` | int | 公開驗證端點成功驗證此完訓證明的累計次數；CSV 匯入時為 0 |
 | `issuedAt` | string \| null | 發證時間，UTC ISO 8601；CSV 匯入時為 null |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
+
+公開首頁下載完訓證明時，HTTP `Content-Disposition` 的檔名固定為 `certificate.pdf`。此檔名只影響使用者下載，不影響 `issuedPdfBlobName` 儲存的 Blob 名稱。
 
 `attendanceStatus` 目前允許值：
 
@@ -223,7 +228,7 @@ changeRequested
 
 公開首頁在 `notIssued` 狀態的「選擇證明顯示方式」區塊提供「提出修改申請」入口，並會切換到首頁同卡片內的修改申請 view state。送出後會建立或更新 `completionCertRequests` 文件，並把對應 `completionCerts.certStatus` 改為 `changeRequested`；若同一張完訓證明已有 `approved` 或 `rejected` 修改申請，公開 API 不允許再次提出修改申請，且首頁會在「選擇證明顯示方式」顯示已通過或已駁回的審核結果。若已完成審核的申請有 `reviewNote`，首頁會在審核結果第二行顯示 `審核備註：...`。
 
-公開首頁查詢到 `changeRequested` 狀態時仍會進入「選擇證明顯示方式」，但不再顯示「提出修改申請」。頁面會提示修改申請正在處理中，並告知使用者若現在產生證書，將視為放棄本次修改申請。
+公開首頁查詢到 `changeRequested` 狀態時仍會進入「選擇證明顯示方式」，但不再顯示「提出修改申請」。頁面會提示修改申請正在處理中，並告知使用者若現在確認產生證書，將視為放棄本次修改申請。
 
 目前 KKTIX CSV 白名單欄位：
 

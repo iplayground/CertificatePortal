@@ -91,6 +91,9 @@
   --theme-feedback-success-border: rgba(42, 108, 74, 0.26);
   --theme-feedback-success-bg: rgba(255, 255, 255, 0.72);
   --theme-feedback-success-color: #2a6c4a;
+  --theme-feedback-warning-border: rgba(180, 83, 9, 0.28);
+  --theme-feedback-warning-bg: rgba(255, 251, 235, 0.76);
+  --theme-feedback-warning-color: #92400e;
   --theme-feedback-error-border: rgba(180, 35, 24, 0.2);
   --theme-feedback-error-bg: rgba(180, 35, 24, 0.1);
   --theme-feedback-error-color: #b42318;
@@ -207,6 +210,9 @@
     --theme-feedback-success-border: rgba(15, 118, 110, 0.22);
     --theme-feedback-success-bg: rgba(15, 118, 110, 0.12);
     --theme-feedback-success-color: #0f766e;
+    --theme-feedback-warning-border: rgba(217, 119, 6, 0.24);
+    --theme-feedback-warning-bg: rgba(217, 119, 6, 0.12);
+    --theme-feedback-warning-color: #b45309;
     --theme-feedback-error-border: rgba(180, 35, 24, 0.2);
     --theme-feedback-error-bg: rgba(180, 35, 24, 0.1);
     --theme-feedback-error-color: #b42318;

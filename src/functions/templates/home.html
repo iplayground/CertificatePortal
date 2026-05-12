@@ -39,6 +39,8 @@
     data-events-api-path="{{events_api_path}}"
     data-document-lookup-api-path="{{document_lookup_api_path}}"
     data-certificate-change-request-api-path="{{certificate_change_request_api_path}}"
+    data-certificate-issue-api-path="{{certificate_issue_api_path}}"
+    data-certificate-preview-api-path="{{certificate_preview_api_path}}"
   >
     <div class="shell">
       <main class="hero">
@@ -207,9 +209,20 @@
                 </label>
               </div>
 
+              <section class="certificate-preview" id="certificate-preview" hidden aria-labelledby="certificate-preview-title">
+                <div class="certificate-preview-header">
+                  <h3 id="certificate-preview-title">{{certificate_preview_title}}</h3>
+                  <p id="certificate-preview-subtitle">{{certificate_preview_subtitle}}</p>
+                </div>
+                <div class="certificate-preview-frame">
+                  <img id="certificate-preview-image" alt="{{certificate_preview_title}}" loading="lazy">
+                  <div class="certificate-preview-loading" id="certificate-preview-loading" aria-live="polite" hidden>{{certificate_preview_loading_label}}</div>
+                </div>
+              </section>
+
               <div
                 id="certificate-change-request-processing-feedback"
-                class="feedback is-active is-success"
+                class="feedback is-active is-warning"
                 role="status"
                 aria-live="polite"
                 hidden
@@ -218,6 +231,7 @@
               <div class="form-actions certificate-actions">
                 <button class="secondary-action" type="button" id="certificate-options-back-action">{{certificate_options_back_action_label}}</button>
                 <button class="primary-action" type="button" id="certificate-generate-action">{{certificate_generate_action_label}}</button>
+                <span class="certificate-generate-warning" id="certificate-generate-warning">{{certificate_generate_warning}}</span>
                 <button class="brand-square-action certificate-change-request-action" type="button" id="certificate-change-request-action">{{certificate_change_request_action_label}}</button>
               </div>
             </section>
