@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="{{html_lang}}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="description" content="{{page_description}}">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="{{open_graph_locale}}">
+    <meta property="og:title" content="{{page_title}}">
+    <meta property="og:description" content="{{page_description}}">
+    <title>{{page_title}}</title>
+    <link rel="icon" href="/assets/favicon.png" type="image/png" sizes="32x32">
+    <link rel="apple-touch-icon" href="/assets/logo_sq_b.png">
+    <link rel="stylesheet" href="/assets/theme.css">
+    <link rel="stylesheet" href="/assets/verify.css">
+    <script src="/assets/locale-switcher.js" defer></script>
+    <script src="/assets/verify.js" defer></script>
+  </head>
+  <body
+    class="verify-page verify-page--{{result_kind}}"
+    data-current-locale="{{current_locale}}"
+    data-locale-cookie-name="{{locale_cookie_name}}"
+    data-locale-cookie-max-age="{{locale_cookie_max_age}}"
+  >
+    <main class="verify-shell" aria-labelledby="verify-title">
+      <section class="verify-panel">
+        <div class="page-toolbar">
+          <div class="locale-switcher" id="locale-switcher">
+            <button
+              class="locale-trigger"
+              id="locale-trigger"
+              type="button"
+              aria-label="{{locale_switcher_label}}"
+              aria-expanded="false"
+              aria-haspopup="listbox"
+              aria-controls="locale-options"
+            >
+              <span class="locale-trigger-icon" aria-hidden="true"></span>
+              <span class="locale-trigger-value">{{current_locale_label}}</span>
+            </button>
+            <div class="locale-menu" id="locale-options" role="listbox" hidden>{{{locale_options_html}}}</div>
+          </div>
+        </div>
+
+        <div class="brand-row">
+          <img class="brand-logo" src="/assets/logo_b_alpha.png" alt="{{brand_alt}}">
+        </div>
+        <div class="status-mark" aria-hidden="true"></div>
+        {{{top_status_label_html}}}
+        <h1 id="verify-title">{{result_title}}</h1>
+        <p class="summary">{{result_summary}}</p>
+
+        <dl class="verification-details">
+          {{{verification_details_html}}}
+        </dl>
+
+        <p class="privacy-note">{{privacy_note}}</p>
+        <a class="home-action" href="/">{{home_action_label}}</a>
+      </section>
+    </main>
+  </body>
+</html>

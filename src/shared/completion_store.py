@@ -224,6 +224,50 @@ def find_completion_cert_document_for_public_lookup(
     return document
 
 
+def find_issued_completion_cert_document_by_verification_token(
+    *,
+    container: CompletionContainer,
+    verification_token: str,
+) -> dict[str, Any] | None:
+    normalized_token = verification_token.strip()
+    if not normalized_token:
+        return None
+
+    try:
+        documents = list(
+            container.query_items(
+                query=(
+                    "SELECT TOP 1 c.id, c.eventId, c.number, c.kktixId, c.certStatus, "
+                    "c.verificationTokenHash, c.certificateDisplayName, "
+                    "c.certificateDisplayOrganization, c.certificateLocale, c.issuedAt "
+                    "FROM c WHERE c.verificationTokenHash = @verificationToken "
+                    "AND c.certStatus = @issuedStatus"
+                ),
+                parameters=[
+                    {"name": "@verificationToken", "value": normalized_token},
+                    {"name": "@issuedStatus", "value": "issued"},
+                ],
+                enable_cross_partition_query=True,
+                **build_public_lookup_cosmos_timeout_options(),
+            )
+        )
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise CompletionStoreOperationError(
+                "Cosmos DB 完訓證明容器不存在。請確認 COSMOS_COMPLETION_CERTS_CONTAINER "
+                "是否指向已建立的資源。"
+            ) from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise CompletionStoreOperationError(
+                "目前身分沒有 Cosmos DB 完訓證明容器讀取權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Reader 或 Data Contributor 權限。"
+            ) from exc
+        raise CompletionStoreOperationError("完訓證明驗證資料查詢暫時失敗。") from exc
+
+    document = documents[0] if documents else None
+    return document if isinstance(document, dict) else None
+
+
 def replace_completion_cert_document(
     *,
     container: CompletionContainer,

@@ -134,10 +134,29 @@ HOME_PAGE_COPY_KEYS = frozenset(
 )
 VERIFY_PAGE_COPY_KEYS = frozenset(
     {
-        "title",
-        "cert_id_label",
+        "page_title",
+        "page_description",
+        "brand_alt",
+        "locale_switcher_label",
+        "valid_title",
+        "valid_summary",
+        "invalid_title",
+        "invalid_summary",
+        "unavailable_title",
+        "unavailable_summary",
         "status_label",
-        "status_value",
+        "status_valid",
+        "status_invalid",
+        "status_unavailable",
+        "certificate_number_label",
+        "recipient_name_label",
+        "organization_label",
+        "event_name_label",
+        "issued_at_label",
+        "empty_value",
+        "cert_id_label",
+        "privacy_note",
+        "home_action_label",
     }
 )
 PAGE_ALERT_COPY_KEYS = frozenset(

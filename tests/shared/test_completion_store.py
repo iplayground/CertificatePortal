@@ -6,6 +6,7 @@ from src.shared.completion_store import (
     build_completion_cert_id,
     build_completion_cert_request_document,
     build_completion_cert_request_id,
+    find_issued_completion_cert_document_by_verification_token,
     get_completion_store_config,
 )
 
@@ -99,6 +100,81 @@ def test_build_completion_cert_request_document_stores_request_state() -> None:
         "createdAt": "2026-04-28T06:04:00Z",
         "updatedAt": "2026-04-28T06:04:00Z",
     }
+
+
+class FakeCompletionContainer:
+    def __init__(self, documents: list[dict[str, object]]) -> None:
+        self.documents = documents
+        self.last_query = ""
+        self.last_parameters: list[dict[str, object]] | None = None
+        self.last_enable_cross_partition_query = False
+
+    def query_items(
+        self,
+        query: str,
+        *,
+        parameters: list[dict[str, object]] | None = None,
+        enable_cross_partition_query: bool,
+        **kwargs: object,
+    ) -> list[dict[str, object]]:
+        self.last_query = query
+        self.last_parameters = parameters
+        self.last_enable_cross_partition_query = enable_cross_partition_query
+        token = next(
+            parameter["value"]
+            for parameter in parameters or []
+            if parameter["name"] == "@verificationToken"
+        )
+        return [
+            document
+            for document in self.documents
+            if document.get("verificationTokenHash") == token
+            and document.get("certStatus") == "issued"
+        ][:1]
+
+
+def test_find_issued_completion_cert_document_by_verification_token_queries_token() -> None:
+    container = FakeCompletionContainer(
+        [
+            {
+                "id": "ccert_1",
+                "eventId": "evt_1",
+                "certStatus": "issued",
+                "verificationTokenHash": "token-1",
+            }
+        ]
+    )
+
+    document = find_issued_completion_cert_document_by_verification_token(
+        container=container,
+        verification_token=" token-1 ",
+    )
+
+    assert document == {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "certStatus": "issued",
+        "verificationTokenHash": "token-1",
+    }
+    assert "verificationTokenHash = @verificationToken" in container.last_query
+    assert container.last_parameters == [
+        {"name": "@verificationToken", "value": "token-1"},
+        {"name": "@issuedStatus", "value": "issued"},
+    ]
+    assert container.last_enable_cross_partition_query is True
+
+
+def test_find_issued_completion_cert_document_by_verification_token_rejects_blank_token() -> None:
+    container = FakeCompletionContainer([])
+
+    assert (
+        find_issued_completion_cert_document_by_verification_token(
+            container=container,
+            verification_token=" ",
+        )
+        is None
+    )
+    assert container.last_query == ""
 
 
 def test_get_completion_store_config_reads_required_container_names(

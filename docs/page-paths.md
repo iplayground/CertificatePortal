@@ -25,7 +25,7 @@
 | `PUT` | `/api/v1/admin/completion-certs/{certid}` | 修改單筆完訓證明資料 | `application/json` |
 | `GET` | `/api/v1/admin/completion-cert-change-requests` | 查詢完訓證明修改申請 | `application/json` |
 | `PUT` | `/api/v1/admin/completion-cert-change-requests/{requestid}` | 審核完訓證明修改申請 | `application/json` |
-| `GET` | `/verify/{certId}` | 公開驗證頁面 | `text/plain` |
+| `GET` | `/verify/{certId}` | QRCode 入口的公開完訓證明驗證頁面 | `text/html` |
 
 ## 內部導向端點
 
@@ -41,10 +41,10 @@
 
 ### 呈現方式
 
-目前首頁與管理平台都先以 HTML 頁面呈現；公開驗證頁面仍維持靜態純文字顯示。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie；活動管理、首頁公開活動清單與完訓證明 CSV 匯入已串接 Cosmos DB，其餘文件資料流程仍逐步實作中。
+目前首頁、公開驗證頁與管理平台都先以 HTML 頁面呈現。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie；活動管理、首頁公開活動清單與完訓證明 CSV 匯入已串接 Cosmos DB，其餘文件資料流程仍逐步實作中。
 
 - 首頁 HTML 不同步查詢 Cosmos DB；頁面先載入後由前端呼叫 `GET /api/v1/events`，再依狀態為 `open` 的活動顯示活動清單。管理平台的活動管理與完訓證明清單已串接 Cosmos DB，營業稅繳稅證明頁仍為前端暫存互動
-- 公開驗證頁面目前為靜態純文字輸出
+- 公開驗證頁面為 QRCode 掃描後的公開入口，會以 QRCode 內的驗證 token 查詢已發證的完訓證明紀錄，並只顯示驗證所需的最低限度資料
 - 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓證明 CSV 由後端解析、驗證並寫入 Cosmos DB；營業稅繳稅證明的後端上傳處理與持久化流程尚未串接
 - 完訓證明頁目前已有後端 CSV 匯入、活動篩選、清單載入與單筆資料修改流程
 - 完訓證明 PDF 合成邏輯已建立於 `src/shared/completion_certificate_pdf.py`，模板檔跟隨 git 版控，單位印章圖預設位於 Azure Storage `document-assets/completion-cert/organization-seal.png`；首頁確認後會發證、以 Cool tier 上傳 PDF 至 `issued-certs`，已發證資料再次查詢時會下載既有 PDF
@@ -229,8 +229,9 @@ Request JSON 範例：
 - 首頁與公開驗證頁支援 `zh-TW` 與 `en-US`
 - 若存在使用者先前在首頁選擇的 `ipg_locale` cookie，公開頁面優先使用該語系
 - 若不存在語系 cookie，才依瀏覽器 `Accept-Language` 決定初始語系
-- 語系切換器只出現在首頁 `/`
+- 首頁 `/` 與公開驗證頁 `/verify/{certId}` 都提供語系切換器，並共用 `/assets/locale-switcher.js` 與 `/assets/theme.css` 內的 `.locale-*` 樣式
 - 首頁切換語系時，由前端直接更新頁面文案，不會整頁重新整理
+- 公開驗證頁切換語系時，會寫入 `ipg_locale` cookie 並重新載入目前 QRCode URL，以伺服器端重新輸出對應語系內容
 - 管理平台固定使用繁體中文，不納入 i18n 範圍
 - 共用 alert 元件支援 `zh-TW` 與 `en-US`
 - 若頁面本身未接入 i18n，alert 文案預設使用 `zh-TW`
@@ -254,7 +255,7 @@ Request JSON 範例：
 
 - 依使用者 `prefers-color-scheme` 自動切換日間與夜間模式
 - 日間模式沿用首頁既有淺色視覺，夜間模式沿用管理平台既有深色視覺
-- `/assets/theme.css` 提供首頁與管理平台共用主題 token
+- `/assets/theme.css` 提供首頁、公開驗證頁與管理平台共用主題 token；語系切換器樣式也集中於此檔
 - 個別頁面 CSS 只負責版面與元件樣式
 - 所有 HTML 頁面都載入 `/assets/favicon.png`
 - 首頁 title 依語系文案輸出
@@ -280,7 +281,7 @@ Request JSON 範例：
 - 置中單卡式首頁版型
 - 顯示 iPlayground logo 與品牌色
 - logo 置中顯示
-- 提供語系切換器，目前支援 `zh-TW` 與 `en-US`
+- 提供共用語系切換器，目前支援 `zh-TW` 與 `en-US`
 - 活動在載入中顯示 `活動載入中`；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單
 - 活動清單會顯示所有狀態為 `open` 的活動；若選取的活動沒有可申請文件，文件類型欄位顯示 `尚無可申請文件`，不顯示申請資料欄位，查詢按鈕維持停用
 - 文件類型在活動載入完成前隱藏；活動載入完成且有活動時，依所選活動的 `documentTypes` 顯示可申請文件
@@ -298,16 +299,17 @@ Request JSON 範例：
 
 ### `/verify/{certId}`
 
-- 顯示頁面名稱、`certId` 與目前尚未串接實際驗證資料的狀態
-- 不提供語系切換器，但會沿用首頁選擇的語系 cookie
-- 當 `certId` 為 `demo-cert` 時，會輸出：
-
-```text
-iPlayground 完訓證明驗證頁面
-
-certId: demo-cert
-status: 尚未串接實際驗證資料
-```
+- 作為完訓證明 PDF 內 QRCode 掃描後的公開驗證入口
+- 以 `{certId}` 作為驗證 token 查詢 `completionCerts.verificationTokenHash`，且只將 `certStatus = issued` 的紀錄視為有效
+- 有效時顯示醒目的成功狀態，詳細資料列順序為驗證狀態、證明編號、活動、證明姓名、任職單位與發證時間
+- 任職單位只在該證書發證時實際選擇顯示公司名，且 `certificateDisplayOrganization` 有值時才顯示
+- 無效時顯示醒目的失敗狀態，仍保留證明編號、活動、證明姓名與發證時間欄位，但值顯示為 `未顯示`，且不顯示任職單位
+- 服務暫時不可用時顯示醒目的不可用狀態，不顯示證明編號、活動、證明姓名、任職單位或發證時間等細節
+- 頁面只顯示驗證所需的最低限度資料，不顯示驗證 token，也不顯示 email、報名序號或其他申請查詢欄位
+- 發證時間後端以非 ISO 的 UTC fallback 顯示，例如 `2026 / 05 / 01 08:00 UTC`；前端 `/assets/verify.js` 會使用瀏覽器 `Intl.DateTimeFormat`、`navigator.languages` 與使用者裝置時區顯示本地化日期時間
+- 提供共用語系切換器，切換時寫入 `ipg_locale` cookie 並重新載入目前驗證頁
+- 提供返回首頁入口，按鈕樣式與首頁 `返回查詢` 一致並滿版顯示
+- 隱私提示會附上聯絡信箱 `support@iplayground.io`
 
 ### `/portal`
 
@@ -794,9 +796,12 @@ Response JSON example:
 | `GET` | `/assets/favicon.png` | 所有 HTML 頁面共用 favicon |
 | `GET` | `/assets/home.css` | 首頁樣式 |
 | `GET` | `/assets/home.js` | 首頁互動腳本 |
-| `GET` | `/assets/theme.css` | 首頁與管理平台共用的日夜主題 token 與 shared alert 樣式 |
+| `GET` | `/assets/locale-switcher.js` | 首頁與公開驗證頁共用的語系切換器互動腳本 |
+| `GET` | `/assets/theme.css` | 首頁、公開驗證頁與管理平台共用的日夜主題 token、語系切換器樣式與 shared alert 樣式 |
+| `GET` | `/assets/verify.css` | 公開驗證頁樣式 |
+| `GET` | `/assets/verify.js` | 公開驗證頁互動腳本，包含本地化發證時間顯示 |
 | `GET` | `/assets/google-g-icon.svg` | 管理平台 Google 登入按鈕使用的本地 SVG icon |
-| `GET` | `/assets/language_icon.svg` | 首頁語系切換器使用的本地 SVG icon |
+| `GET` | `/assets/language_icon.svg` | 共用語系切換器使用的本地 SVG icon |
 | `GET` | `/assets/logo_b_alpha.png` | iPlayground 品牌 logo |
 | `GET` | `/assets/logo_sq_b.png` | dashboard 左上角品牌方形 logo |
 

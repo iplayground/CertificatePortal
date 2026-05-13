@@ -91,10 +91,29 @@
     "preview_feedback_template": "查詢資料：活動：{eventName}；文件類型：{documentType}；email：{email}。"
   },
   "verify_page": {
-    "title": "iPlayground 完訓證明驗證頁面",
+    "page_title": "完訓證明驗證 - iPlayground",
+    "page_description": "iPlayground 完訓證明公開驗證頁，用於確認 QRCode 對應的證明文件狀態。",
+    "brand_alt": "iPlayground",
+    "locale_switcher_label": "語系",
+    "valid_title": "此完訓證明有效",
+    "valid_summary": "QRCode 對應的證明紀錄已由 iPlayground 發行。",
+    "invalid_title": "無法驗證此證明",
+    "invalid_summary": "找不到有效的完訓證明紀錄，或此證明尚未完成發行。",
+    "unavailable_title": "暫時無法完成驗證",
+    "unavailable_summary": "驗證服務目前暫時不可用，請稍後再試。",
+    "status_label": "驗證狀態",
+    "status_valid": "有效",
+    "status_invalid": "無效",
+    "status_unavailable": "暫時不可用",
+    "certificate_number_label": "證明編號",
+    "recipient_name_label": "證明姓名",
+    "organization_label": "任職單位",
+    "event_name_label": "活動",
+    "issued_at_label": "發證時間",
+    "empty_value": "未顯示",
     "cert_id_label": "certId",
-    "status_label": "status",
-    "status_value": "尚未串接實際驗證資料"
+    "privacy_note": "本頁僅顯示驗證所需的最低限度資料；若畫面資訊與手上的證明文件不一致，請洽 iPlayground 管理者確認：support@iplayground.io",
+    "home_action_label": "前往首頁"
   },
   "page_alert": {
     "dismiss_label": "知道了",

@@ -91,10 +91,29 @@
     "preview_feedback_template": "Lookup details: Event: {eventName}; document type: {documentType}; email: {email}."
   },
   "verify_page": {
-    "title": "iPlayground Certificate Verification",
+    "page_title": "Certificate Verification - iPlayground",
+    "page_description": "Public iPlayground completion certificate verification page for confirming the certificate linked from a QR code.",
+    "brand_alt": "iPlayground",
+    "locale_switcher_label": "Language",
+    "valid_title": "This completion certificate is valid",
+    "valid_summary": "The QR code matches a completion certificate issued by iPlayground.",
+    "invalid_title": "This certificate cannot be verified",
+    "invalid_summary": "No valid completion certificate record was found, or the certificate has not been issued yet.",
+    "unavailable_title": "Verification is temporarily unavailable",
+    "unavailable_summary": "The verification service is temporarily unavailable. Please try again later.",
+    "status_label": "Verification status",
+    "status_valid": "Valid",
+    "status_invalid": "Invalid",
+    "status_unavailable": "Temporarily unavailable",
+    "certificate_number_label": "Certificate number",
+    "recipient_name_label": "Certificate name",
+    "organization_label": "Organization",
+    "event_name_label": "Event",
+    "issued_at_label": "Issued at",
+    "empty_value": "Not shown",
     "cert_id_label": "certId",
-    "status_label": "status",
-    "status_value": "Verification data is not connected yet"
+    "privacy_note": "This page only shows the minimum information needed for verification. If it does not match the certificate you have, contact an iPlayground administrator: support@iplayground.io",
+    "home_action_label": "Go to Home"
   },
   "page_alert": {
     "dismiss_label": "Got it",

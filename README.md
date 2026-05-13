@@ -10,7 +10,7 @@ iPlayground 完訓證明系統。
 - 管理平台登入入口 `/portal`
 - 公開驗證頁面 `/verify/{certId}`
 
-首頁與管理平台目前為 HTML 頁面，公開驗證頁面仍為純文字；首頁活動清單、完訓證明查詢與公開查詢限制已串接 Cosmos DB。
+首頁、公開驗證頁與管理平台目前為 HTML 頁面；首頁活動清單、完訓證明查詢、公開查詢限制與完訓證明 QRCode 驗證已串接 Cosmos DB。
 
 管理平台目前已建立 Google Workspace SSO + Google Group 授權基線：
 
@@ -22,8 +22,9 @@ iPlayground 完訓證明系統。
 ## 目前頁面基線
 
 - 首頁與公開驗證頁支援 `zh-TW` 與 `en-US`，並以 `ipg_locale` cookie 搭配 `Accept-Language` 決定語系
-- 語系切換器只出現在首頁 `/`，切換時由前端直接更新文案，不會整頁重新整理
+- 語系切換器共用 `/assets/locale-switcher.js` 與 `/assets/theme.css` 內的共用樣式；首頁 `/` 切換時由前端直接更新文案，不會整頁重新整理，公開驗證頁 `/verify/{certId}` 切換時會寫入 `ipg_locale` cookie 並重新載入同一個 QRCode URL
 - 首頁文件查詢期間會顯示全 window 黑色半透明遮罩，中央使用純白 loading panel 顯示查詢中狀態，並阻擋語系切換與表單操作
+- 公開驗證頁會依 QRCode 內的驗證 token 查詢已發證完訓證明，只顯示驗證狀態、證明編號、活動、證明姓名、依證書顯示設定決定是否顯示任職單位，以及本地化發證時間；發證時間以可讀 UTC fallback 輸出，瀏覽器端再依使用者語系與時區本地化
 - 完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁會顯示「選擇證明顯示方式」UI；`notIssued` 可進入「修改申請」並寫入 Cosmos DB，`changeRequested` 會顯示處理中提示並隱藏「提出修改申請」；若已有已完成審核的修改申請，首頁會顯示通過或駁回結果，並在有審核備註時以第二行顯示 `審核備註`
 - 管理平台固定使用繁體中文，入口與子路徑統一收斂在 `/portal...`，不納入 i18n 範圍
 - 共用 alert 元件已支援 i18n；若頁面本身未接入 i18n，alert 文案預設使用 `zh-TW`
@@ -47,7 +48,7 @@ iPlayground 完訓證明系統。
 | `POST` | `/api/v1/document-lookup` | 公開首頁文件查詢 | `application/json` |
 | `GET` | `/portal` | 管理平台登入入口 | `text/html; charset=utf-8` |
 | `GET` | `/assets/{assetName}` | 目前頁面所需的靜態樣式、互動腳本與品牌素材 | 依資產而定 |
-| `GET` | `/verify/{certId}` | 公開驗證頁面 | `text/plain; charset=utf-8` |
+| `GET` | `/verify/{certId}` | QRCode 入口的公開完訓證明驗證頁面 | `text/html; charset=utf-8` |
 
 完整頁面路徑、共用規則與各頁面內容請參考 [docs/page-paths.md](docs/page-paths.md)。
 
