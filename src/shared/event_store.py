@@ -7,6 +7,12 @@ from functools import lru_cache
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
+from src.shared.completion_metrics import (
+    COMPLETION_METRIC_FIELDS,
+    empty_completion_metrics,
+    read_non_negative_counter,
+)
+
 
 EVENT_IDEMPOTENCY_NAMESPACE = "io.iplayground.ipg-certificate.admin.events"
 
@@ -74,6 +80,7 @@ def build_event_document(
         "eventEndDate": event_end_date,
         "completionHours": completion_hours,
         "completionCertDownloadStartsAt": completion_cert_download_starts_at,
+        "metrics": {"completionCert": empty_completion_metrics()},
         "createdAt": timestamp,
         "createdBy": actor,
         "updatedAt": timestamp,
@@ -145,6 +152,103 @@ def update_event_document(
         raise
 
 
+def read_event_completion_metrics(
+    *,
+    container: EventContainer,
+    event_id: str,
+) -> dict[str, int] | None:
+    event = container.read_item(item=event_id, partition_key=event_id)
+    return normalize_event_completion_metrics(event)
+
+
+def normalize_event_completion_metrics(event: dict[str, Any]) -> dict[str, int] | None:
+    metrics = event.get("metrics")
+    if not isinstance(metrics, dict):
+        return None
+
+    completion_metrics = metrics.get("completionCert")
+    if not isinstance(completion_metrics, dict):
+        return None
+
+    if any(field_name not in completion_metrics for field_name in COMPLETION_METRIC_FIELDS):
+        return None
+
+    return {
+        field_name: read_non_negative_counter(completion_metrics.get(field_name))
+        for field_name in COMPLETION_METRIC_FIELDS
+    }
+
+
+def replace_event_completion_metrics(
+    *,
+    container: EventContainer,
+    event_id: str,
+    metrics: dict[str, int],
+) -> dict[str, Any]:
+    try:
+        event = container.read_item(item=event_id, partition_key=event_id)
+        updated_event = {
+            **event,
+            "metrics": {
+                **(event.get("metrics") if isinstance(event.get("metrics"), dict) else {}),
+                "completionCert": normalize_completion_metrics(metrics),
+            },
+            "metricsUpdatedAt": utc_now_iso(),
+        }
+        return container.replace_item(item=event_id, body=updated_event)
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise EventStoreOperationError("找不到要更新的活動。") from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise EventStoreOperationError(
+                "目前身分沒有 Cosmos DB 活動容器更新權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Contributor 權限。"
+            ) from exc
+        raise
+
+
+def increment_event_completion_metrics(
+    *,
+    container: EventContainer,
+    deltas: dict[str, int],
+    event_id: str,
+) -> dict[str, Any]:
+    try:
+        event = container.read_item(item=event_id, partition_key=event_id)
+        current_metrics = normalize_event_completion_metrics(event)
+        metrics = current_metrics or empty_completion_metrics()
+        for field_name, delta in deltas.items():
+            if field_name not in COMPLETION_METRIC_FIELDS:
+                continue
+            metrics[field_name] = max(0, metrics[field_name] + delta)
+
+        updated_event = {
+            **event,
+            "metrics": {
+                **(event.get("metrics") if isinstance(event.get("metrics"), dict) else {}),
+                "completionCert": metrics,
+            },
+            "metricsUpdatedAt": utc_now_iso(),
+        }
+        return container.replace_item(item=event_id, body=updated_event)
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise EventStoreOperationError("找不到要更新的活動。") from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise EventStoreOperationError(
+                "目前身分沒有 Cosmos DB 活動容器更新權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Contributor 權限。"
+            ) from exc
+        raise
+
+
+def normalize_completion_metrics(metrics: dict[str, int]) -> dict[str, int]:
+    return {
+        field_name: max(0, int(metrics.get(field_name, 0)))
+        for field_name in COMPLETION_METRIC_FIELDS
+    }
+
+
 def list_event_documents(*, container: EventContainer) -> list[dict[str, Any]]:
     try:
         return list(
@@ -152,7 +256,8 @@ def list_event_documents(*, container: EventContainer) -> list[dict[str, Any]]:
                 query=(
                     "SELECT c.id, c.name, c.status, c.documentTypes, "
                     "c.eventStartDate, c.eventEndDate, c.completionHours, "
-                    "c.completionCertDownloadStartsAt FROM c ORDER BY c.createdAt DESC"
+                    "c.completionCertDownloadStartsAt, c.metrics "
+                    "FROM c ORDER BY c.createdAt DESC"
                 ),
                 enable_cross_partition_query=True,
             )

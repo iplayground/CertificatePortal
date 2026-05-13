@@ -350,8 +350,12 @@ Request JSON 範例：
 - 顯示與首頁頂部一致的品牌 logo、平台標題、登入帳號歡迎訊息與文件類型統計資訊
 - 統計區使用單一 `最近一期活動資料` 標題，避免在各文件類型區段重複顯示
 - 文件類型統計區段使用類似完訓證明頁工作區的大外框樣式包覆，內部為四格指標
-- `完訓證明` 區段顯示最近一期活動的 `系統可下載數`、`下載人數`、`驗證次數`、`待處理案件數量`
-- `驗證次數` 讀取 `completionCerts.verificationCount` 的加總；公開驗證流程尚未實作寫入前，此值會維持 `0`
+- `完訓證明` 區段顯示最近一期活動的 `系統可下載數`、`下載人次`、`驗證次數`、`待處理案件數量`
+- 最近一期活動以活動清單中 `status = open` 且 `eventStartDate` 最新的活動為準，不使用建立時間排序決定
+- 完訓證明統計優先讀取活動文件的 `metrics.completionCert` 預聚合資料；若活動文件缺少目前欄位，後端會以該活動的 `completionCerts` 文件重算並寫回活動文件
+- `下載人次` 讀取 `metrics.completionCert.downloadCount`；公開首頁第一次產生證書並下載時計 1 次，已產生證書再次下載時每次都加 1，同一位重複下載會重複計次
+- `驗證次數` 讀取 `metrics.completionCert.verificationCount`；公開驗證頁成功驗證一次就加 1
+- CSV 匯入、首次下載、再次下載與公開驗證流程都會更新活動文件的 `metrics.completionCert`，避免歡迎頁每次載入時掃描該活動全部完訓證明文件
 - `營業稅繳稅證明` 區段顯示 `收據張數`、`已查詢公司數`、`已下載次數`、`收據總金額`
 - `營業稅繳稅證明` 的 `收據總金額` 使用 `$` 與完整金額格式，例如 `$186,000`，不使用 `NT$` 或 `K` 縮寫
 
@@ -362,7 +366,8 @@ Request JSON 範例：
 - 主畫面提供完訓證明資料的清單檢視區
 - 完訓證明資料依活動 `eventId` 從 `GET /api/v1/admin/completion-certs?eventId=<eventId>` 載入
 - CSV 匯入會呼叫 `POST /api/v1/admin/completion-certs/import`，由後端解析 KKTIX CSV、過濾非白名單欄位，並寫入 Cosmos DB `completionCerts`
-- CSV 匯入後的清單列預設為 `未簽到` 且 `certStatus` 為 `notIssued`；`issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 在會眾申請並完成產生檔案前為 `null`，`verificationCount` 預設為 `0`
+- CSV 匯入後的清單列預設為 `未簽到` 且 `certStatus` 為 `notIssued`；`issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 在會眾申請並完成產生檔案前為 `null`，`downloadCount` 與 `verificationCount` 預設為 `0`，`firstDownloadAt` 與 `lastDownloadAt` 預設為 `null`
+- CSV 匯入完成後會以該活動目前所有 `completionCerts` 文件重算活動文件的 `metrics.completionCert`
 - 同一活動再次匯入 CSV 時，會以穩定的 `eventId + number + kktixId` 產生文件 ID 並 upsert 到同一批 Cosmos DB 資料
 - 清單欄位包含報名序號、ID、Badge Name、姓名、公司名、Email、票種、簽到狀態與操作
 - 每列在操作欄提供 `下載` 與 `修改` 按鈕；`下載` 按鈕是否可用依 `certStatus` 判斷，只有 `issued` 可下載，不能用 `attendanceStatus` 或簽到狀態判斷
@@ -562,6 +567,9 @@ Response example:
       "certStatus": "notIssued",
       "issuedPdfBlobName": null,
       "verificationTokenHash": null,
+      "downloadCount": 0,
+      "firstDownloadAt": null,
+      "lastDownloadAt": null,
       "verificationCount": 0,
       "issuedAt": null,
       "createdAt": "2026-04-28T06:02:00Z"
@@ -576,6 +584,7 @@ Response example:
 - 只接受已登入且通過授權的管理者 session
 - 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
 - 不保留原始 CSV 檔案；匯入後直接 upsert 到 Cosmos DB `completionCerts`
+- 匯入完成後會重算並寫回該活動文件的 `metrics.completionCert`
 
 Request JSON example:
 
@@ -605,6 +614,9 @@ Response JSON example:
       "certStatus": "notIssued",
       "issuedPdfBlobName": null,
       "verificationTokenHash": null,
+      "downloadCount": 0,
+      "firstDownloadAt": null,
+      "lastDownloadAt": null,
       "verificationCount": 0,
       "issuedAt": null,
       "createdAt": "2026-04-28T06:02:00Z"
@@ -612,6 +624,21 @@ Response JSON example:
   ],
   "summary": {
     "imported": 1
+  }
+}
+```
+
+新匯入資料的活動預聚合會被更新為：
+
+```json
+{
+  "metrics": {
+    "completionCert": {
+      "downloadableCount": 0,
+      "downloadCount": 0,
+      "verificationCount": 0,
+      "pendingCount": 1
+    }
   }
 }
 ```
@@ -655,6 +682,9 @@ Response JSON example:
     "certStatus": "notIssued",
     "issuedPdfBlobName": null,
     "verificationTokenHash": null,
+    "downloadCount": 0,
+    "firstDownloadAt": null,
+    "lastDownloadAt": null,
     "verificationCount": 0,
     "issuedAt": null,
     "createdAt": "2026-04-28T06:02:00Z"
@@ -706,6 +736,9 @@ Response JSON example:
         "certStatus": "changeRequested",
         "issuedPdfBlobName": null,
         "verificationTokenHash": null,
+        "downloadCount": 0,
+        "firstDownloadAt": null,
+        "lastDownloadAt": null,
         "verificationCount": 0,
         "issuedAt": null,
         "createdAt": "2026-04-28T06:02:00Z"
@@ -769,6 +802,9 @@ Response JSON example:
       "certStatus": "notIssued",
       "issuedPdfBlobName": null,
       "verificationTokenHash": null,
+      "downloadCount": 0,
+      "firstDownloadAt": null,
+      "lastDownloadAt": null,
       "verificationCount": 0,
       "issuedAt": null,
       "createdAt": "2026-04-28T06:02:00Z"

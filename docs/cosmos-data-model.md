@@ -45,6 +45,10 @@ partition key: /id
 | `eventEndDate` | string | 活動結束日期，純日期，格式 `yyyy-MM-dd` |
 | `completionHours` | int | 完訓總時數，單位小時，由管理者填入，不由系統計算 |
 | `completionCertDownloadStartsAt` | string \| null | 完訓證明開放下載時間，UTC ISO 8601；未開放完訓證明時為 null |
+| `metrics.completionCert.downloadableCount` | int | 此活動已可下載的完訓證明數量 |
+| `metrics.completionCert.downloadCount` | int | 此活動完訓證明累計下載人次；同一位重複下載會重複計次 |
+| `metrics.completionCert.verificationCount` | int | 此活動完訓證明公開驗證成功次數 |
+| `metrics.completionCert.pendingCount` | int | 此活動尚未發行的完訓證明數量 |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
 | `createdBy` | string | 建立者識別 |
 | `updatedAt` | string | 最後更新時間，UTC ISO 8601 |
@@ -106,6 +110,14 @@ def build_event_id(idempotency_key: str, *, actor: str) -> str:
   "eventEndDate": "2026-07-25",
   "completionHours": 16,
   "completionCertDownloadStartsAt": "2026-04-25T03:30:00Z",
+  "metrics": {
+    "completionCert": {
+      "downloadableCount": 0,
+      "downloadCount": 0,
+      "verificationCount": 0,
+      "pendingCount": 0
+    }
+  },
   "createdAt": "2026-04-25T03:30:00Z",
   "createdBy": "admin@example.com",
   "updatedAt": "2026-04-25T03:30:00Z",
@@ -120,12 +132,12 @@ def build_event_id(idempotency_key: str, *, actor: str) -> str:
 ```sql
 SELECT c.id, c.name, c.status, c.documentTypes,
        c.eventStartDate, c.eventEndDate, c.completionHours,
-       c.completionCertDownloadStartsAt
+       c.completionCertDownloadStartsAt, c.metrics
 FROM c
 ORDER BY c.createdAt DESC
 ```
 
-活動清單只投影管理端 UI 需要的欄位，並依建立時間由新到舊排序。
+活動清單只投影管理端 UI 需要的欄位，並依建立時間由新到舊排序。管理端歡迎頁的「最近一期活動資料」會讀取狀態為 `open`、且活動開始日期最新的活動，並優先使用活動文件上的 `metrics.completionCert` 預聚合資料，避免每次載入歡迎頁都掃描該活動全部完訓證明文件。
 
 公開首頁活動清單：
 
@@ -151,6 +163,24 @@ partition key = <event-id>
 
 管理端進入 `/portal/dashboard` 後，伺服器會在背景預先初始化活動管理使用的 Cosmos DB container client；同一個 Functions worker 生命週期內會重用該 client，避免第一次進入活動管理時才承擔 SDK 與 credential chain 初始化成本。
 
+### 完訓證明預聚合 metrics
+
+活動文件的 `metrics.completionCert` 是管理端歡迎頁的權威統計快取。欄位語意如下：
+
+- `downloadableCount`：該活動目前已發行且有 `issuedPdfBlobName` 的完訓證明數量。
+- `downloadCount`：該活動完訓證明累計下載人次。首次產生證書並下載時計 1 次；已發行證書再次下載時，每次下載都再加 1。同一位重複下載會重複計次。
+- `verificationCount`：公開驗證頁成功驗證該活動完訓證明的累計次數。
+- `pendingCount`：該活動 `certStatus` 不是 `issued` 的完訓證明數量。
+
+下列流程會更新 `metrics.completionCert`：
+
+- CSV 匯入完成後，以該活動全部 `completionCerts` 文件重算並覆寫。
+- 首次產生完訓證明 PDF 並下載後，增加 `downloadableCount` 與 `downloadCount`，並減少 `pendingCount`。
+- 已發行證書再次下載後，增加 `downloadCount`。
+- 公開驗證頁成功驗證後，增加 `verificationCount`。
+
+若活動文件缺少目前 metrics 欄位，後端會在下次相關流程中以 `completionCerts` 文件重算並覆寫目前欄位。既有 DB 的一次性回填方式見下方「資料回填」。
+
 ## 完訓證明 containers
 
 完訓證明目前採用兩個 Cosmos DB container：
@@ -166,7 +196,7 @@ container: publicLookupAttempts
 partition key: /id
 ```
 
-`completionCerts` 是完訓證明完整清單。名稱沿用活動管理的文件類型代碼 `completionCert`。CSV 匯入資料、簽到狀態、發證狀態、下載檔案 metadata、驗證 token 與驗證次數都記錄在同一筆資料中。CSV 上傳由 Python API 同步解析與寫入；目前預期單次約數百筆資料可在可接受時間內完成，因此不設計 DB 進度狀態或進度條。CSV 匯入當下尚未產生完訓證明檔案與驗證 token，因此 `issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 預設為 `null`，`verificationCount` 預設為 `0`；等會眾申請完訓證明且系統完成產生檔案後才回填發證檔案，並記錄當次使用的顯示名稱、單位與語系。
+`completionCerts` 是完訓證明完整清單。名稱沿用活動管理的文件類型代碼 `completionCert`。CSV 匯入資料、簽到狀態、發證狀態、下載檔案 metadata、驗證 token、下載次數與驗證次數都記錄在同一筆資料中。CSV 上傳由 Python API 同步解析與寫入；目前預期單次約數百筆資料可在可接受時間內完成，因此不設計 DB 進度狀態或進度條。CSV 匯入當下尚未產生完訓證明檔案與驗證 token，因此 `issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 預設為 `null`，`downloadCount` 與 `verificationCount` 預設為 `0`，`firstDownloadAt` 與 `lastDownloadAt` 預設為 `null`；等會眾申請完訓證明且系統完成產生檔案後才回填發證檔案，並記錄當次使用的顯示名稱、單位與語系。
 
 `completionCertRequests` 只記錄會眾是否申請資料調整、申請備註、審核狀態與通知狀態。這類資料不是完訓證明權威清單本身，因此獨立存放。
 
@@ -196,11 +226,25 @@ partition key: /id
 | `certificateDisplayOrganization` | string \| null | 發證時實際寫入 PDF 的任職單位文字；未顯示單位時為空字串 |
 | `certificateLocale` | string \| null | 發證時使用的 PDF 語系，例如 `zh-TW` 或 `en-US` |
 | `verificationTokenHash` | string \| null | 公開驗證 token；發證時產生 UUID 去除 dash 的 32 字元小寫十六進位字串，並用於 PDF 左下角 QRCode URL；CSV 匯入時為 null |
+| `downloadCount` | int | 此完訓證明累計下載次數；同一位重複下載會重複計次 |
+| `firstDownloadAt` | string \| null | 第一次下載時間，UTC ISO 8601；尚未下載時為 null |
+| `lastDownloadAt` | string \| null | 最近一次下載時間，UTC ISO 8601；尚未下載時為 null |
 | `verificationCount` | int | 公開驗證端點成功驗證此完訓證明的累計次數；CSV 匯入時為 0 |
 | `issuedAt` | string \| null | 發證時間，UTC ISO 8601；CSV 匯入時為 null |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
 
 公開首頁下載完訓證明時，HTTP `Content-Disposition` 的檔名固定為 `certificate.pdf`。此檔名只影響使用者下載，不影響 `issuedPdfBlobName` 儲存的 Blob 名稱。
+
+### 資料回填
+
+既有 DB 若仍有舊欄位 `downloadedAt` 或 `downloadedCount`，或活動文件缺少目前的 `metrics.completionCert.downloadCount`，應以一次性回填腳本轉成目前欄位並移除舊欄位，同時重算活動文件的 `metrics.completionCert`：
+
+```bash
+python3 scripts/backfill_completion_cert_metrics.py
+python3 scripts/backfill_completion_cert_metrics.py --apply
+```
+
+第一行為 dry-run，只輸出預計掃描與更新數量；第二行才寫入 Cosmos DB。可用 `--event-id <event-id>` 限定單一活動。此腳本可重複執行。
 
 `attendanceStatus` 目前允許值：
 

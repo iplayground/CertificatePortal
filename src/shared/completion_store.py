@@ -108,6 +108,9 @@ def build_completion_cert_document(
         "certStatus": "notIssued",
         "issuedPdfBlobName": None,
         "verificationTokenHash": None,
+        "downloadCount": 0,
+        "firstDownloadAt": None,
+        "lastDownloadAt": None,
         "verificationCount": 0,
         "issuedAt": None,
         "createdAt": timestamp,
@@ -126,6 +129,7 @@ def list_completion_cert_documents(
                     "SELECT c.id, c.eventId, c.number, c.kktixId, c.badgeName, "
                     "c.ticketName, c.name, c.organization, c.email, c.attendanceStatus, "
                     "c.certStatus, c.issuedPdfBlobName, c.verificationTokenHash, "
+                    "c.downloadCount, c.firstDownloadAt, c.lastDownloadAt, "
                     "c.verificationCount, c.issuedAt, c.createdAt FROM c "
                     "WHERE c.eventId = @eventId ORDER BY c.number ASC"
                 ),

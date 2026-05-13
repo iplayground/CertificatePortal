@@ -37,17 +37,25 @@ from src.shared.completion_store import (
     get_completion_cert_requests_container,
     get_completion_records_container,
     has_completed_completion_cert_request_document,
+    list_completion_cert_documents,
     read_completed_completion_cert_request_document,
     read_completion_cert_document,
     replace_completion_cert_document,
     upsert_completion_cert_request_document,
 )
+from src.shared.completion_metrics import (
+    read_non_negative_counter,
+    summarize_completion_cert_documents,
+)
 from src.shared.event_store import (
     EventStoreConfigurationError,
     EventStoreOperationError,
     get_events_container,
+    increment_event_completion_metrics,
     list_public_event_documents,
     read_public_event_document,
+    read_event_completion_metrics,
+    replace_event_completion_metrics,
 )
 from src.shared.datetime_values import parse_utc_iso_datetime
 from src.shared.i18n import get_home_page_context, localized_response_headers, resolve_locale
@@ -485,13 +493,15 @@ def issue_completion_cert_pdf(payload: dict[str, Any], req: func.HttpRequest) ->
 
     issued_blob_name = str(cert_document.get("issuedPdfBlobName") or "").strip()
     if cert_status == "issued" and issued_blob_name:
-        return (
-            download_blob_bytes(
-                container_name=_read_issued_certs_container_name(),
-                blob_name=issued_blob_name,
-            ),
-            build_completion_cert_download_filename(cert_document),
+        pdf_bytes = download_blob_bytes(
+            container_name=_read_issued_certs_container_name(),
+            blob_name=issued_blob_name,
         )
+        record_existing_completion_cert_download(
+            container=records_container,
+            cert_document=cert_document,
+        )
+        return pdf_bytes, build_completion_cert_download_filename(cert_document)
 
     event_document = read_public_event_document(
         container=get_events_container(),
@@ -545,12 +555,102 @@ def issue_completion_cert_pdf(payload: dict[str, Any], req: func.HttpRequest) ->
     cert_document["certificateDisplayName"] = cert_pdf_data.recipient_name
     cert_document["certificateDisplayOrganization"] = cert_pdf_data.organization
     cert_document["certificateLocale"] = cert_pdf_data.locale
+    apply_completion_cert_download_stats(cert_document, now=now)
     cert_document["updatedAt"] = now
     replace_completion_cert_document(
         container=records_container,
         document=cert_document,
     )
+    update_completion_metrics_after_document_change(
+        records_container=records_container,
+        event_id=payload["eventId"],
+        deltas={
+            "downloadableCount": 1,
+            "downloadCount": 1,
+            "pendingCount": -1,
+        },
+    )
     return pdf_bytes, build_completion_cert_download_filename(cert_document)
+
+
+def record_existing_completion_cert_download(
+    *,
+    container: Any,
+    cert_document: dict[str, Any],
+) -> None:
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    apply_completion_cert_download_stats(cert_document, now=now)
+    cert_document["updatedAt"] = now
+    try:
+        replace_completion_cert_document(
+            container=container,
+            document=cert_document,
+        )
+    except CompletionStoreOperationError:
+        LOGGER.warning("Completion certificate download count update failed.", exc_info=True)
+        return
+
+    event_id = str(cert_document.get("eventId") or "").strip()
+    if event_id:
+        update_completion_metrics_after_document_change(
+            records_container=container,
+            event_id=event_id,
+            deltas={"downloadCount": 1},
+        )
+
+
+def update_completion_metrics_after_document_change(
+    *,
+    records_container: Any,
+    event_id: str,
+    deltas: dict[str, int],
+) -> None:
+    try:
+        events_container = get_events_container()
+        if (
+            read_event_completion_metrics(
+                container=events_container,
+                event_id=event_id,
+            )
+            is None
+        ):
+            documents = list_completion_cert_documents(
+                container=records_container,
+                event_id=event_id,
+            )
+            replace_event_completion_metrics(
+                container=events_container,
+                event_id=event_id,
+                metrics=summarize_completion_cert_documents(documents),
+            )
+            return
+
+        increment_event_completion_metrics(
+            container=events_container,
+            event_id=event_id,
+            deltas=deltas,
+        )
+    except (
+        CompletionStoreConfigurationError,
+        CompletionStoreOperationError,
+        EventStoreConfigurationError,
+        EventStoreOperationError,
+        Exception,
+    ):
+        LOGGER.warning("Completion certificate aggregate metrics update failed.", exc_info=True)
+
+
+def apply_completion_cert_download_stats(
+    cert_document: dict[str, Any],
+    *,
+    now: str,
+) -> None:
+    cert_document["downloadCount"] = read_non_negative_counter(
+        cert_document.get("downloadCount")
+    ) + 1
+    if not str(cert_document.get("firstDownloadAt") or "").strip():
+        cert_document["firstDownloadAt"] = now
+    cert_document["lastDownloadAt"] = now
 
 
 def build_completion_cert_pdf_data(

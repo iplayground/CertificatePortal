@@ -2041,7 +2041,7 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert body.count("最近一期活動資料") == 1
     assert "下列是最近一期活動的資料" not in body
     assert "系統可下載數" in body
-    assert "下載人數" in body
+    assert "下載人次" in body
     assert "驗證次數" in body
     assert "待處理案件數量" in body
     assert "收據張數" in body
@@ -2101,7 +2101,7 @@ def test_portal_dashboard_welcome_page_renders_completion_metrics_from_cosmos(
         "issuedPdfBlobName": "issued/ccert_2.pdf",
         "verificationTokenHash": "hash-2",
         "issuedAt": "2026-04-28T06:03:00Z",
-        "lastDownloadedAt": "2026-04-29T06:03:00Z",
+        "lastDownloadAt": "2026-04-29T06:03:00Z",
         "verificationCount": 7,
         "createdAt": "2026-04-28T06:03:00Z",
     }
@@ -2132,6 +2132,8 @@ def test_portal_dashboard_welcome_page_renders_completion_metrics_from_cosmos(
                 "name": "iPlayground 2026",
                 "status": "open",
                 "documentTypes": ["completionCert"],
+                "eventStartDate": "2026-05-03",
+                "eventEndDate": "2026-05-04",
                 "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
             },
             {
@@ -2139,6 +2141,8 @@ def test_portal_dashboard_welcome_page_renders_completion_metrics_from_cosmos(
                 "name": "營業稅活動",
                 "status": "open",
                 "documentTypes": ["taxReceipt"],
+                "eventStartDate": "2026-04-01",
+                "eventEndDate": "2026-04-02",
                 "completionCertDownloadStartsAt": None,
             },
         ],
@@ -2156,11 +2160,169 @@ def test_portal_dashboard_welcome_page_renders_completion_metrics_from_cosmos(
     assert response.status_code == 200
     assert "資料來源：iPlayground 2026" not in body
     assert "<strong class=\"metric-value\">2</strong>" in body
+    assert "<strong class=\"metric-value\">3</strong>" in body
     assert "<strong class=\"metric-value\">15</strong>" in body
     assert "<strong class=\"metric-value\">1</strong>" in body
     assert "<strong class=\"metric-value\">128</strong>" not in body
     assert "<strong class=\"metric-value\">18</strong>" not in body
     assert "<strong class=\"metric-value\">46</strong>" not in body
+
+
+def test_portal_dashboard_welcome_page_uses_latest_open_event_start_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch, display_name="系統管理者")
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_old"] = {
+        "id": "ccert_old",
+        "eventId": "evt_old",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Old",
+        "ticketName": "一般票",
+        "name": "舊活動會員",
+        "organization": "好玩公司",
+        "email": "old@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "issued",
+        "issuedPdfBlobName": "issued/ccert_old.pdf",
+        "verificationTokenHash": "hash-old",
+        "issuedAt": "2026-04-28T06:02:00Z",
+        "downloadCount": 1,
+        "verificationCount": 99,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    fake_completion_container.items["ccert_latest"] = {
+        "id": "ccert_latest",
+        "eventId": "evt_latest_open",
+        "number": 1,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Latest",
+        "ticketName": "一般票",
+        "name": "最新活動會員",
+        "organization": "好玩公司",
+        "email": "latest@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "issued",
+        "issuedPdfBlobName": "issued/ccert_latest.pdf",
+        "verificationTokenHash": "hash-latest",
+        "issuedAt": "2026-05-28T06:02:00Z",
+        "downloadCount": 1,
+        "verificationCount": 7,
+        "createdAt": "2026-05-28T06:02:00Z",
+    }
+    fake_completion_container.items["ccert_unlisted"] = {
+        "id": "ccert_unlisted",
+        "eventId": "evt_newer_unlisted",
+        "number": 1,
+        "kktixId": "KKTIX-003",
+        "badgeName": "Hidden",
+        "ticketName": "一般票",
+        "name": "下架活動會員",
+        "organization": "好玩公司",
+        "email": "hidden@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "issued",
+        "issuedPdfBlobName": "issued/ccert_unlisted.pdf",
+        "verificationTokenHash": "hash-hidden",
+        "issuedAt": "2026-06-28T06:02:00Z",
+        "downloadCount": 1,
+        "verificationCount": 42,
+        "createdAt": "2026-06-28T06:02:00Z",
+    }
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr(
+        "src.functions.portal.list_event_documents",
+        lambda **_: [
+            {
+                "id": "evt_old",
+                "name": "較早上架活動",
+                "status": "open",
+                "documentTypes": ["completionCert"],
+                "eventStartDate": "2026-05-01",
+                "eventEndDate": "2026-05-02",
+            },
+            {
+                "id": "evt_newer_unlisted",
+                "name": "最新下架活動",
+                "status": "unlisted",
+                "documentTypes": ["completionCert"],
+                "eventStartDate": "2026-07-01",
+                "eventEndDate": "2026-07-02",
+            },
+            {
+                "id": "evt_latest_open",
+                "name": "最新上架活動",
+                "status": "open",
+                "documentTypes": ["completionCert"],
+                "eventStartDate": "2026-06-01",
+                "eventEndDate": "2026-06-02",
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+
+    response = portal_dashboard_welcome_page(
+        build_request("http://localhost:7075/portal/dashboard/welcome")
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert "<strong class=\"metric-value\">7</strong>" in body
+    assert "<strong class=\"metric-value\">99</strong>" not in body
+    assert "<strong class=\"metric-value\">42</strong>" not in body
+
+
+def test_portal_dashboard_welcome_page_prefers_preaggregated_completion_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch, display_name="系統管理者")
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr(
+        "src.functions.portal.list_event_documents",
+        lambda **_: [
+            {
+                "id": "evt_1",
+                "name": "iPlayground 2026",
+                "status": "open",
+                "documentTypes": ["completionCert"],
+                "eventStartDate": "2026-05-03",
+                "eventEndDate": "2026-05-04",
+                "metrics": {
+                    "completionCert": {
+                        "downloadableCount": 12,
+                        "downloadCount": 1,
+                        "verificationCount": 5,
+                        "pendingCount": 2,
+                    }
+                },
+            }
+        ],
+    )
+
+    def fail_if_completion_documents_are_queried(**_: Any) -> list[dict[str, Any]]:
+        raise AssertionError("welcome metrics should use preaggregated event metrics")
+
+    monkeypatch.setattr(
+        "src.functions.portal.list_completion_cert_documents",
+        fail_if_completion_documents_are_queried,
+    )
+
+    response = portal_dashboard_welcome_page(
+        build_request("http://localhost:7075/portal/dashboard/welcome")
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert "<strong class=\"metric-value\">12</strong>" in body
+    assert "<strong class=\"metric-value\">1</strong>" in body
+    assert "<strong class=\"metric-value\">5</strong>" in body
+    assert "<strong class=\"metric-value\">2</strong>" in body
 
 
 def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_authorized(

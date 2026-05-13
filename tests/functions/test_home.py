@@ -97,26 +97,36 @@ class FakeCompletionCertsContainer:
         enable_cross_partition_query: bool,
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
-        assert "SELECT TOP 1" in query
-        assert "c.badgeName" in query
-        assert "c.name" in query
-        assert "c.organization" in query
-        assert "LOWER(c.email)" not in query
-        assert "AND c.number = @number" in query
-        assert not enable_cross_partition_query
-        self.timeout_options.append(kwargs)
         parameter_values = {
             parameter["name"]: parameter["value"]
             for parameter in parameters or []
         }
+        if "SELECT TOP 1" in query:
+            assert "c.badgeName" in query
+            assert "c.name" in query
+            assert "c.organization" in query
+            assert "LOWER(c.email)" not in query
+            assert "AND c.number = @number" in query
+            assert not enable_cross_partition_query
+            self.timeout_options.append(kwargs)
+            assert partition_key == parameter_values["@eventId"]
+
+            return [
+                item
+                for item in self.items
+                if item["eventId"] == parameter_values["@eventId"]
+                and item["number"] == parameter_values["@number"]
+            ][:1]
+
+        assert "WHERE c.eventId = @eventId" in query
         assert partition_key == parameter_values["@eventId"]
+        assert not enable_cross_partition_query
 
         return [
             item
             for item in self.items
             if item["eventId"] == parameter_values["@eventId"]
-            and item["number"] == parameter_values["@number"]
-        ][:1]
+        ]
 
     def read_item(self, item: str, partition_key: str, **_: Any) -> dict[str, Any]:
         for document in self.items:
@@ -202,6 +212,11 @@ class FakeEventsContainer:
             setattr(error, "status_code", 404)
             raise error
 
+        return self.items[item]
+
+    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]:
+        assert item == body["id"]
+        self.items[item] = body.copy()
         return self.items[item]
 
     def query_items(
@@ -2029,6 +2044,7 @@ def test_locale_switcher_js_asset_returns_expected_content_type() -> None:
 def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    events_container = FakeEventsContainer()
     records_container = FakeCompletionCertsContainer(
         [
             {
@@ -2053,6 +2069,7 @@ def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
     )
     uploaded_blobs: list[dict[str, Any]] = []
     rendered_data: list[Any] = []
+    monkeypatch.setattr("src.functions.home.get_events_container", lambda: events_container)
     monkeypatch.setattr("src.functions.home.get_completion_records_container", lambda: records_container)
     monkeypatch.setattr(
         "src.functions.home.generate_completion_cert_verification_token",
@@ -2139,11 +2156,42 @@ def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
     assert records_container.items[0]["certificateDisplayOrganization"] == "iPlayground"
     assert records_container.items[0]["certificateLocale"] == "zh-TW"
     assert records_container.items[0]["issuedAt"].endswith("Z")
+    assert records_container.items[0]["downloadCount"] == 1
+    assert records_container.items[0]["firstDownloadAt"].endswith("Z")
+    assert records_container.items[0]["lastDownloadAt"].endswith("Z")
+    assert events_container.items["evt_1"]["metrics"]["completionCert"] == {
+        "downloadableCount": 1,
+        "downloadCount": 1,
+        "verificationCount": 0,
+        "pendingCount": 0,
+    }
 
 
 def test_public_completion_cert_issue_api_downloads_existing_issued_pdf(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    events_container = FakeEventsContainer(
+        {
+            "evt_1": {
+                "id": "evt_1",
+                "name": "iPlayground 2026",
+                "status": "open",
+                "documentTypes": ["completionCert"],
+                "eventStartDate": "2026-04-25",
+                "eventEndDate": "2026-04-26",
+                "completionHours": 12,
+                "completionCertDownloadStartsAt": None,
+                "metrics": {
+                    "completionCert": {
+                        "downloadableCount": 1,
+                        "downloadCount": 1,
+                        "verificationCount": 0,
+                        "pendingCount": 0,
+                    }
+                },
+            }
+        }
+    )
     records_container = FakeCompletionCertsContainer(
         [
             {
@@ -2158,9 +2206,13 @@ def test_public_completion_cert_issue_api_downloads_existing_issued_pdf(
                 "certStatus": "issued",
                 "issuedPdfBlobName": "evt_1/ccert_issued.pdf",
                 "issuedAt": "2026-05-01T00:00:00Z",
+                "downloadCount": 4,
+                "firstDownloadAt": "2026-05-01T00:01:00Z",
+                "lastDownloadAt": "2026-05-01T00:02:00Z",
             }
         ]
     )
+    monkeypatch.setattr("src.functions.home.get_events_container", lambda: events_container)
     monkeypatch.setattr("src.functions.home.get_completion_records_container", lambda: records_container)
     monkeypatch.setenv("BLOB_ISSUED_CERT_CONTAINER", "issued-certs")
     monkeypatch.setattr(
@@ -2189,6 +2241,16 @@ def test_public_completion_cert_issue_api_downloads_existing_issued_pdf(
         'attachment; filename="certificate.pdf"'
     )
     assert records_container.items[0]["certStatus"] == "issued"
+    assert records_container.items[0]["downloadCount"] == 5
+    assert records_container.items[0]["firstDownloadAt"] == "2026-05-01T00:01:00Z"
+    assert records_container.items[0]["lastDownloadAt"].endswith("Z")
+    assert records_container.items[0]["lastDownloadAt"] != "2026-05-01T00:02:00Z"
+    assert events_container.items["evt_1"]["metrics"]["completionCert"] == {
+        "downloadableCount": 1,
+        "downloadCount": 2,
+        "verificationCount": 0,
+        "pendingCount": 0,
+    }
 
 
 def test_public_completion_cert_preview_api_returns_png(

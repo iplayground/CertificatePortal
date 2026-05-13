@@ -28,11 +28,26 @@ class FakeCompletionContainer:
             if parameter["name"] == "@verificationToken"
         )
         return [
-            document
+            document.copy()
             for document in self.documents
             if document.get("verificationTokenHash") == token
             and document.get("certStatus") == "issued"
         ][:1]
+
+    def read_item(self, item: str, partition_key: str, **_: Any) -> dict[str, Any]:
+        for document in self.documents:
+            if document["id"] == item and document["eventId"] == partition_key:
+                return document.copy()
+
+        raise FakeCosmosNotFoundError()
+
+    def replace_item(self, item: str, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        for index, document in enumerate(self.documents):
+            if document["id"] == item:
+                self.documents[index] = body.copy()
+                return self.documents[index]
+
+        raise FakeCosmosNotFoundError()
 
 
 class FakeEventContainer:
@@ -44,6 +59,10 @@ class FakeEventContainer:
         if document is None:
             raise FakeCosmosNotFoundError()
         return document
+
+    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]:
+        self.documents[item] = body.copy()
+        return self.documents[item]
 
 
 class FakeCosmosNotFoundError(Exception):
@@ -160,30 +179,48 @@ def test_verify_page_prefers_cookie_locale_over_accept_language(
 def test_verify_page_renders_valid_completion_certificate(
     monkeypatch: Any,
 ) -> None:
+    events_container = FakeEventContainer(
+        {
+            "evt_1": {
+                "id": "evt_1",
+                "name": "iPlayground 2026",
+                "metrics": {
+                    "completionCert": {
+                        "downloadableCount": 1,
+                        "downloadCount": 1,
+                        "verificationCount": 2,
+                        "pendingCount": 0,
+                    }
+                },
+            }
+        }
+    )
+    records_container = FakeCompletionContainer(
+        [
+            {
+                "id": "ccert_1",
+                "eventId": "evt_1",
+                "number": 12,
+                "kktixId": "KKTIX-001",
+                "certStatus": "issued",
+                "verificationTokenHash": "valid-token",
+                "verificationCount": 2,
+                "certificateDisplayName": "王小明",
+                "certificateDisplayOrganization": "iPlayground",
+                "certificateLocale": "zh-TW",
+                "issuedAt": "2026-05-01T08:00:00Z",
+            }
+        ]
+    )
     monkeypatch.setattr(
         public_verification,
         "get_completion_records_container",
-        lambda: FakeCompletionContainer(
-            [
-                {
-                    "id": "ccert_1",
-                    "eventId": "evt_1",
-                    "number": 12,
-                    "kktixId": "KKTIX-001",
-                    "certStatus": "issued",
-                    "verificationTokenHash": "valid-token",
-                    "certificateDisplayName": "王小明",
-                    "certificateDisplayOrganization": "iPlayground",
-                    "certificateLocale": "zh-TW",
-                    "issuedAt": "2026-05-01T08:00:00Z",
-                }
-            ]
-        ),
+        lambda: records_container,
     )
     monkeypatch.setattr(
         public_verification,
         "get_events_container",
-        lambda: FakeEventContainer({"evt_1": {"id": "evt_1", "name": "iPlayground 2026"}}),
+        lambda: events_container,
     )
 
     response = verify_cert_page(build_request("valid-token"))
@@ -205,6 +242,14 @@ def test_verify_page_renders_valid_completion_certificate(
     assert '<time class="local-datetime" datetime="2026-05-01T08:00:00Z">' in body
     assert "2026 / 05 / 01 08:00 UTC" in body
     assert "valid-token" not in body
+    assert records_container.documents[0]["verificationCount"] == 3
+    assert records_container.documents[0]["updatedAt"].endswith("Z")
+    assert events_container.documents["evt_1"]["metrics"]["completionCert"] == {
+        "downloadableCount": 1,
+        "downloadCount": 1,
+        "verificationCount": 3,
+        "pendingCount": 0,
+    }
 
 
 def test_verify_js_updates_locale_without_reloading() -> None:

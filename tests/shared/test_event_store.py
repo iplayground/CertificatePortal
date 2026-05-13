@@ -7,6 +7,7 @@ from src.shared.event_store import (
     create_event_document,
     list_event_documents,
     list_public_event_documents,
+    normalize_event_completion_metrics,
     read_public_event_document,
     update_event_document,
 )
@@ -153,11 +154,53 @@ def test_build_event_document_uses_utc_timestamps_and_actor() -> None:
         "eventEndDate": "2026-07-25",
         "completionHours": 16,
         "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
+        "metrics": {
+            "completionCert": {
+                "downloadableCount": 0,
+                "downloadCount": 0,
+                "verificationCount": 0,
+                "pendingCount": 0,
+            }
+        },
         "createdAt": "2026-04-27T12:00:00Z",
         "createdBy": "admin@example.com",
         "updatedAt": "2026-04-27T12:00:00Z",
         "updatedBy": "admin@example.com",
     }
+
+
+def test_normalize_event_completion_metrics_requires_current_metric_shape() -> None:
+    event = {
+        "metrics": {
+            "completionCert": {
+                "downloadableCount": 1,
+                "downloadCount": 2,
+                "verificationCount": 3,
+                "pendingCount": 4,
+            }
+        }
+    }
+
+    assert normalize_event_completion_metrics(event) == {
+        "downloadableCount": 1,
+        "downloadCount": 2,
+        "verificationCount": 3,
+        "pendingCount": 4,
+    }
+
+
+def test_normalize_event_completion_metrics_rejects_missing_current_metric_field() -> None:
+    event = {
+        "metrics": {
+            "completionCert": {
+                "downloadableCount": 1,
+                "verificationCount": 3,
+                "pendingCount": 4,
+            }
+        }
+    }
+
+    assert normalize_event_completion_metrics(event) is None
 
 
 def test_create_event_document_returns_existing_item_on_idempotency_conflict() -> None:
@@ -244,7 +287,8 @@ def test_list_event_documents_queries_events_by_created_at_desc() -> None:
     assert container.query == (
         "SELECT c.id, c.name, c.status, c.documentTypes, "
         "c.eventStartDate, c.eventEndDate, c.completionHours, "
-        "c.completionCertDownloadStartsAt FROM c ORDER BY c.createdAt DESC"
+        "c.completionCertDownloadStartsAt, c.metrics "
+        "FROM c ORDER BY c.createdAt DESC"
     )
     assert container.enable_cross_partition_query is True
 

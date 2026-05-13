@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from html import escape
@@ -14,12 +15,22 @@ from src.shared.completion_store import (
     CompletionStoreOperationError,
     find_issued_completion_cert_document_by_verification_token,
     get_completion_records_container,
+    list_completion_cert_documents,
+    read_completion_cert_document,
+    replace_completion_cert_document,
+)
+from src.shared.completion_metrics import (
+    read_non_negative_counter,
+    summarize_completion_cert_documents,
 )
 from src.shared.event_store import (
     EventStoreConfigurationError,
     EventStoreOperationError,
     get_events_container,
+    increment_event_completion_metrics,
     read_public_event_document,
+    read_event_completion_metrics,
+    replace_event_completion_metrics,
 )
 from src.shared.i18n import (
     HTML_LANGUAGE_TAG_BY_LOCALE,
@@ -37,6 +48,7 @@ from src.shared.i18n import (
 from src.shared.templates import render_html_template
 
 blueprint = func.Blueprint()
+LOGGER = logging.getLogger(__name__)
 
 VERIFY_PAGE_TEMPLATE_PATH = (
     Path(__file__).resolve().parent / "templates" / "verify_completion_cert.html"
@@ -77,8 +89,9 @@ def build_verify_page_result(*, verification_token: str) -> dict[str, Any]:
         return {"kind": "invalid"}
 
     try:
+        records_container = get_completion_records_container()
         cert_document = find_issued_completion_cert_document_by_verification_token(
-            container=get_completion_records_container(),
+            container=records_container,
             verification_token=verification_token,
         )
     except (CompletionStoreConfigurationError, CompletionStoreOperationError):
@@ -86,6 +99,11 @@ def build_verify_page_result(*, verification_token: str) -> dict[str, Any]:
 
     if cert_document is None:
         return {"kind": "invalid"}
+
+    cert_document = record_completion_cert_verification(
+        container=records_container,
+        cert_document=cert_document,
+    )
 
     event_name = ""
     event_id = str(cert_document.get("eventId") or "").strip()
@@ -110,6 +128,84 @@ def build_verify_page_result(*, verification_token: str) -> dict[str, Any]:
         "eventName": event_name,
         "issuedAt": str(cert_document.get("issuedAt") or "").strip(),
     }
+
+
+def record_completion_cert_verification(
+    *,
+    container: Any,
+    cert_document: dict[str, Any],
+) -> dict[str, Any]:
+    event_id = str(cert_document.get("eventId") or "").strip()
+    cert_id = str(cert_document.get("id") or "").strip()
+    if not event_id or not cert_id:
+        return cert_document
+
+    try:
+        full_document = read_completion_cert_document(
+            cert_id=cert_id,
+            container=container,
+            event_id=event_id,
+        )
+        full_document["verificationCount"] = read_non_negative_counter(
+            full_document.get("verificationCount")
+        ) + 1
+        full_document["updatedAt"] = utc_now_iso()
+        replace_completion_cert_document(
+            container=container,
+            document=full_document,
+        )
+        update_completion_metrics_after_verification(
+            records_container=container,
+            event_id=event_id,
+        )
+        return full_document
+    except CompletionStoreOperationError:
+        LOGGER.warning("Completion certificate verification count update failed.", exc_info=True)
+        return cert_document
+
+
+def update_completion_metrics_after_verification(
+    *,
+    records_container: Any,
+    event_id: str,
+) -> None:
+    try:
+        events_container = get_events_container()
+        if (
+            read_event_completion_metrics(
+                container=events_container,
+                event_id=event_id,
+            )
+            is None
+        ):
+            documents = list_completion_cert_documents(
+                container=records_container,
+                event_id=event_id,
+            )
+            replace_event_completion_metrics(
+                container=events_container,
+                event_id=event_id,
+                metrics=summarize_completion_cert_documents(documents),
+            )
+            return
+
+        increment_event_completion_metrics(
+            container=events_container,
+            event_id=event_id,
+            deltas={"verificationCount": 1},
+        )
+    except (
+        CompletionStoreConfigurationError,
+        CompletionStoreOperationError,
+        EventStoreConfigurationError,
+        EventStoreOperationError,
+        Exception,
+    ):
+        LOGGER.warning("Completion certificate aggregate metrics update failed.", exc_info=True)
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def build_verify_page_context(

@@ -49,6 +49,10 @@ from src.shared.completion_store import (
     replace_completion_cert_request_document,
     upsert_completion_cert_documents,
 )
+from src.shared.completion_metrics import (
+    read_non_negative_int_field,
+    summarize_completion_cert_documents,
+)
 from src.shared.event_store import (
     EventStoreConfigurationError,
     EventStoreOperationError,
@@ -57,6 +61,8 @@ from src.shared.event_store import (
     create_event_document,
     get_events_container,
     list_event_documents,
+    normalize_event_completion_metrics,
+    replace_event_completion_metrics,
     update_event_document,
     utc_now_iso,
 )
@@ -443,7 +449,7 @@ def build_portal_welcome_completion_metrics_context() -> dict[str, str]:
 
     try:
         events = list_event_documents(container=get_events_container())
-        event = resolve_latest_completion_cert_event(events)
+        event = resolve_latest_welcome_metrics_event(events)
         if event is None:
             return metrics
 
@@ -451,10 +457,21 @@ def build_portal_welcome_completion_metrics_context() -> dict[str, str]:
         if not event_id:
             return metrics
 
-        documents = list_completion_cert_documents(
-            container=get_completion_records_container(),
-            event_id=event_id,
-        )
+        summary = normalize_event_completion_metrics(event)
+        if summary is None:
+            documents = list_completion_cert_documents(
+                container=get_completion_records_container(),
+                event_id=event_id,
+            )
+            summary = summarize_completion_cert_documents(documents)
+            try:
+                replace_event_completion_metrics(
+                    container=get_events_container(),
+                    event_id=event_id,
+                    metrics=summary,
+                )
+            except (EventStoreConfigurationError, EventStoreOperationError):
+                pass
     except (
         CompletionStoreConfigurationError,
         CompletionStoreOperationError,
@@ -463,7 +480,6 @@ def build_portal_welcome_completion_metrics_context() -> dict[str, str]:
     ):
         return metrics
 
-    summary = summarize_completion_cert_documents(documents)
     event_name = str(event.get("name", "")).strip()
     return {
         "completion_metrics_event_name": event_name or event_id,
@@ -471,7 +487,7 @@ def build_portal_welcome_completion_metrics_context() -> dict[str, str]:
             summary["downloadableCount"]
         ),
         "completion_downloaded_member_count": format_portal_metric_number(
-            summary["downloadedMemberCount"]
+            summary["downloadCount"]
         ),
         "completion_verification_count": format_portal_metric_number(
             summary["verificationCount"]
@@ -480,86 +496,36 @@ def build_portal_welcome_completion_metrics_context() -> dict[str, str]:
     }
 
 
-def resolve_latest_completion_cert_event(
+def resolve_latest_welcome_metrics_event(
     events: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    return next(
-        (
-            event
-            for event in events
-            if "completionCert"
-            in normalize_portal_event_document_types(event.get("documentTypes"))
-        ),
-        None,
-    )
+    open_events: list[tuple[dict[str, Any], date]] = []
+    for event in events:
+        if str(event.get("status", "")).strip() != "open":
+            continue
+
+        event_start_date = parse_event_start_date_for_metrics(event)
+        if event_start_date is None:
+            continue
+
+        open_events.append((event, event_start_date))
+
+    if not open_events:
+        return None
+
+    event, _event_start_date = max(open_events, key=lambda item: item[1])
+    return event
 
 
-def summarize_completion_cert_documents(
-    documents: list[dict[str, Any]],
-) -> dict[str, int]:
-    downloaded_member_emails = {
-        str(document.get("email", "")).strip().lower()
-        for document in documents
-        if has_completion_cert_download_record(document)
-        and str(document.get("email", "")).strip()
-    }
-    anonymous_downloads = sum(
-        1
-        for document in documents
-        if has_completion_cert_download_record(document)
-        and not str(document.get("email", "")).strip()
-    )
-    return {
-        "downloadableCount": sum(
-            1 for document in documents if is_completion_cert_downloadable(document)
-        ),
-        "downloadedMemberCount": len(downloaded_member_emails) + anonymous_downloads,
-        "verificationCount": sum(
-            read_non_negative_int_field(
-                document,
-                ("verificationCount",),
-            )
-            for document in documents
-        ),
-        "pendingCount": sum(
-            1 for document in documents if is_completion_cert_pending(document)
-        ),
-    }
+def parse_event_start_date_for_metrics(event: dict[str, Any]) -> date | None:
+    normalized_value = str(event.get("eventStartDate") or "").strip()
+    if not normalized_value:
+        return None
 
-
-def is_completion_cert_downloadable(document: dict[str, Any]) -> bool:
-    return (
-        str(document.get("certStatus", "")).strip() == "issued"
-        and str(document.get("issuedPdfBlobName") or "").strip() != ""
-    )
-
-
-def has_completion_cert_download_record(document: dict[str, Any]) -> bool:
-    if read_non_negative_int_field(document, ("downloadCount", "downloadedCount")) > 0:
-        return True
-
-    return any(
-        str(document.get(field_name) or "").strip()
-        for field_name in ("downloadedAt", "firstDownloadedAt", "lastDownloadedAt")
-    )
-
-
-def is_completion_cert_pending(document: dict[str, Any]) -> bool:
-    cert_status = str(document.get("certStatus", "")).strip() or "notIssued"
-    return cert_status != "issued"
-
-
-def read_non_negative_int_field(
-    document: dict[str, Any],
-    field_names: tuple[str, ...],
-) -> int:
-    for field_name in field_names:
-        value = document.get(field_name)
-        if isinstance(value, int) and not isinstance(value, bool):
-            return max(0, value)
-        if isinstance(value, str) and value.strip().isdigit():
-            return int(value.strip())
-    return 0
+    try:
+        return date.fromisoformat(normalized_value)
+    except ValueError:
+        return None
 
 
 def format_portal_metric_number(value: int) -> str:
@@ -1650,6 +1616,11 @@ def portal_admin_completion_certs_import_api(req: func.HttpRequest) -> func.Http
         current_documents = list_completion_cert_documents(
             container=get_completion_records_container(),
             event_id=event_id,
+        )
+        replace_event_completion_metrics(
+            container=get_events_container(),
+            event_id=event_id,
+            metrics=summarize_completion_cert_documents(current_documents),
         )
     except EventStoreConfigurationError as exc:
         return build_portal_api_error_response(

@@ -8,6 +8,7 @@ from src.shared.completion_store import (
     build_completion_cert_request_id,
     find_issued_completion_cert_document_by_verification_token,
     get_completion_store_config,
+    list_completion_cert_documents,
 )
 
 
@@ -70,6 +71,9 @@ def test_build_completion_cert_document_stores_complete_list_row() -> None:
         "certStatus": "notIssued",
         "issuedPdfBlobName": None,
         "verificationTokenHash": None,
+        "downloadCount": 0,
+        "firstDownloadAt": None,
+        "lastDownloadAt": None,
         "verificationCount": 0,
         "issuedAt": None,
         "createdAt": "2026-04-28T06:02:00Z",
@@ -131,6 +135,74 @@ class FakeCompletionContainer:
             if document.get("verificationTokenHash") == token
             and document.get("certStatus") == "issued"
         ][:1]
+
+
+class FakeCompletionListContainer:
+    def __init__(self, documents: list[dict[str, object]]) -> None:
+        self.documents = documents
+        self.last_query = ""
+        self.last_parameters: list[dict[str, object]] | None = None
+        self.last_partition_key = ""
+        self.last_enable_cross_partition_query = True
+
+    def query_items(
+        self,
+        query: str,
+        *,
+        parameters: list[dict[str, object]] | None = None,
+        partition_key: str | None = None,
+        enable_cross_partition_query: bool,
+        **kwargs: object,
+    ) -> list[dict[str, object]]:
+        self.last_query = query
+        self.last_parameters = parameters
+        self.last_partition_key = partition_key or ""
+        self.last_enable_cross_partition_query = enable_cross_partition_query
+        event_id = next(
+            parameter["value"]
+            for parameter in parameters or []
+            if parameter["name"] == "@eventId"
+        )
+        return [
+            document
+            for document in self.documents
+            if document.get("eventId") == event_id
+        ]
+
+
+def test_list_completion_cert_documents_queries_download_stat_fields() -> None:
+    container = FakeCompletionListContainer(
+        [
+            {
+                "id": "ccert_1",
+                "eventId": "evt_1",
+                "downloadCount": 1,
+                "firstDownloadAt": "2026-05-13T12:00:00Z",
+                "lastDownloadAt": "2026-05-13T12:00:00Z",
+            }
+        ]
+    )
+
+    documents = list_completion_cert_documents(
+        container=container,
+        event_id="evt_1",
+    )
+
+    assert documents == [
+        {
+            "id": "ccert_1",
+            "eventId": "evt_1",
+            "downloadCount": 1,
+            "firstDownloadAt": "2026-05-13T12:00:00Z",
+            "lastDownloadAt": "2026-05-13T12:00:00Z",
+        }
+    ]
+    assert "c.downloadCount" in container.last_query
+    assert "c.firstDownloadAt" in container.last_query
+    assert "c.lastDownloadAt" in container.last_query
+    assert container.last_parameters == [{"name": "@eventId", "value": "evt_1"}]
+    assert container.last_partition_key == "evt_1"
+    assert container.last_enable_cross_partition_query is False
 
 
 def test_find_issued_completion_cert_document_by_verification_token_queries_token() -> None:
