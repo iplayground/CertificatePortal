@@ -231,7 +231,7 @@ Request JSON 範例：
 - 若不存在語系 cookie，才依瀏覽器 `Accept-Language` 決定初始語系
 - 首頁 `/` 與公開驗證頁 `/verify/{certId}` 都提供語系切換器，並共用 `/assets/locale-switcher.js` 與 `/assets/theme.css` 內的 `.locale-*` 樣式
 - 首頁切換語系時，由前端直接更新頁面文案，不會整頁重新整理
-- 公開驗證頁切換語系時，會寫入 `ipg_locale` cookie 並重新載入目前 QRCode URL，以伺服器端重新輸出對應語系內容
+- 公開驗證頁切換語系時，會寫入 `ipg_locale` cookie，並由前端局部更新目前畫面的語系內容
 - 管理平台固定使用繁體中文，不納入 i18n 範圍
 - 共用 alert 元件支援 `zh-TW` 與 `en-US`
 - 若頁面本身未接入 i18n，alert 文案預設使用 `zh-TW`
@@ -306,8 +306,8 @@ Request JSON 範例：
 - 無效時顯示醒目的失敗狀態，仍保留證明編號、活動、證明姓名與發證時間欄位，但值顯示為 `未顯示`，且不顯示任職單位
 - 服務暫時不可用時顯示醒目的不可用狀態，不顯示證明編號、活動、證明姓名、任職單位或發證時間等細節
 - 頁面只顯示驗證所需的最低限度資料，不顯示驗證 token，也不顯示 email、報名序號或其他申請查詢欄位
-- 發證時間後端以非 ISO 的 UTC fallback 顯示，例如 `2026 / 05 / 01 08:00 UTC`；前端 `/assets/verify.js` 會使用瀏覽器 `Intl.DateTimeFormat`、`navigator.languages` 與使用者裝置時區顯示本地化日期時間
-- 提供共用語系切換器，切換時寫入 `ipg_locale` cookie 並重新載入目前驗證頁
+- 發證時間後端以非 ISO 的 UTC fallback 顯示，例如 `2026 / 05 / 01 08:00 UTC`；前端 `/assets/verify.js` 會使用瀏覽器 `Intl.DateTimeFormat`、目前頁面語系與使用者裝置時區顯示本地化日期時間
+- 提供共用語系切換器，切換時寫入 `ipg_locale` cookie 並局部更新目前驗證頁文案
 - 提供返回首頁入口，按鈕樣式與首頁 `返回查詢` 一致並滿版顯示
 - 隱私提示會附上聯絡信箱 `support@iplayground.io`
 

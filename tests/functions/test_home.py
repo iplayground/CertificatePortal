@@ -2019,6 +2019,7 @@ def test_locale_switcher_js_asset_returns_expected_content_type() -> None:
     assert response.mimetype == "application/javascript"
     assert "installLocaleSwitcher" in body
     assert "setLocalePreference" in body
+    assert "currentLocale = nextLocale" in body
     assert "localeOptions.forEach" in body
     assert 'root.classList.add("is-locale-menu-open")' in body
     assert 'root.classList.remove("is-locale-menu-open")' in body

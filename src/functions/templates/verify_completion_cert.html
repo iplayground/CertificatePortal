@@ -7,11 +7,11 @@
     <meta name="theme-color" content="#0f172a">
     <meta name="format-detection" content="telephone=no">
     <meta name="robots" content="noindex, nofollow">
-    <meta name="description" content="{{page_description}}">
+    <meta name="description" content="{{page_description}}" id="meta-description">
     <meta property="og:type" content="website">
-    <meta property="og:locale" content="{{open_graph_locale}}">
-    <meta property="og:title" content="{{page_title}}">
-    <meta property="og:description" content="{{page_description}}">
+    <meta property="og:locale" content="{{open_graph_locale}}" id="meta-og-locale">
+    <meta property="og:title" content="{{page_title}}" id="meta-og-title">
+    <meta property="og:description" content="{{page_description}}" id="meta-og-description">
     <title>{{page_title}}</title>
     <link rel="icon" href="/assets/favicon.png" type="image/png" sizes="32x32">
     <link rel="apple-touch-icon" href="/assets/logo_sq_b.png">
@@ -47,20 +47,21 @@
         </div>
 
         <div class="brand-row">
-          <img class="brand-logo" src="/assets/logo_b_alpha.png" alt="{{brand_alt}}">
+          <img class="brand-logo" id="brand-logo" src="/assets/logo_b_alpha.png" alt="{{brand_alt}}">
         </div>
         <div class="status-mark" aria-hidden="true"></div>
         {{{top_status_label_html}}}
         <h1 id="verify-title">{{result_title}}</h1>
-        <p class="summary">{{result_summary}}</p>
+        <p class="summary" id="verify-summary">{{result_summary}}</p>
 
         <dl class="verification-details">
           {{{verification_details_html}}}
         </dl>
 
-        <p class="privacy-note">{{privacy_note}}</p>
-        <a class="home-action" href="/">{{home_action_label}}</a>
+        <p class="privacy-note" id="privacy-note">{{privacy_note}}</p>
+        <a class="home-action" id="home-action" href="/">{{home_action_label}}</a>
       </section>
     </main>
+    <script id="verify-page-i18n" type="application/json">{{{verify_page_i18n_json}}}</script>
   </body>
 </html>

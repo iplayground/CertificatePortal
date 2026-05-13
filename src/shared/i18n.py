@@ -347,6 +347,21 @@ def get_home_page_i18n_json() -> str:
     return dumps(payload, ensure_ascii=False).replace("</", "<\\/")
 
 
+@lru_cache(maxsize=1)
+def get_verify_page_i18n_json() -> str:
+    payload = {
+        locale: {
+            "html_lang": HTML_LANGUAGE_TAG_BY_LOCALE[locale],
+            "open_graph_locale": OPEN_GRAPH_LOCALE_BY_LOCALE[locale],
+            "locale_option_labels": load_locale_catalog(locale).locale_option_labels,
+            "verify_page": load_locale_catalog(locale).verify_page,
+        }
+        for locale in SUPPORTED_LOCALES
+    }
+
+    return dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+
+
 @lru_cache(maxsize=len(SUPPORTED_LOCALES))
 def load_locale_catalog(locale: Locale) -> LocaleCatalog:
     raw_catalog = loads(LOCALE_FILE_BY_LOCALE[locale].read_text(encoding="utf-8"))

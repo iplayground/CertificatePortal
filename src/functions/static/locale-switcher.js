@@ -54,6 +54,7 @@
               cookieName,
             }),
         });
+        currentLocale = nextLocale;
         close({ blurTrigger: true });
         return;
       }
@@ -63,6 +64,7 @@
         cookieMaxAge,
         cookieName,
       });
+      currentLocale = nextLocale;
       window.location.reload();
     }
 

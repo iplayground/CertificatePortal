@@ -29,6 +29,7 @@ from src.shared.i18n import (
     Locale,
     build_locale_options_html,
     get_verify_page_copy,
+    get_verify_page_i18n_json,
     load_locale_catalog,
     localized_response_headers,
     resolve_locale,
@@ -138,6 +139,7 @@ def build_verify_page_context(
             load_locale_catalog(locale).locale_option_labels,
         ),
         "open_graph_locale": OPEN_GRAPH_LOCALE_BY_LOCALE[locale],
+        "verify_page_i18n_json": get_verify_page_i18n_json(),
         "result_kind": result_kind,
         "result_title": copy[f"{result_kind}_title"],
         "result_summary": copy[f"{result_kind}_summary"],
@@ -167,7 +169,7 @@ def build_top_status_label_html(
     if result_kind in {"invalid", "valid"}:
         return ""
 
-    return f'<p class="status-label">{escape(status_label, quote=True)}</p>'
+    return f'<p class="status-label" id="status-label">{escape(status_label, quote=True)}</p>'
 
 
 def build_verification_details_html(
@@ -177,14 +179,18 @@ def build_verification_details_html(
     result_kind: str,
     status_value: str,
 ) -> str:
-    rows = [(copy["status_label"], status_value)]
+    rows = [("status", copy["status_label"], status_value)]
     if result_kind == "invalid":
         rows.extend(
             [
-                (copy["certificate_number_label"], copy["empty_value"]),
-                (copy["event_name_label"], copy["empty_value"]),
-                (copy["recipient_name_label"], copy["empty_value"]),
-                (copy["issued_at_label"], copy["empty_value"]),
+                (
+                    "certificateNumber",
+                    copy["certificate_number_label"],
+                    copy["empty_value"],
+                ),
+                ("eventName", copy["event_name_label"], copy["empty_value"]),
+                ("recipientName", copy["recipient_name_label"], copy["empty_value"]),
+                ("issuedAt", copy["issued_at_label"], copy["empty_value"]),
             ]
         )
 
@@ -192,6 +198,7 @@ def build_verification_details_html(
         rows.extend(
             [
                 (
+                    "certificateNumber",
                     copy["certificate_number_label"],
                     _read_display_value(
                         result,
@@ -200,10 +207,12 @@ def build_verification_details_html(
                     ),
                 ),
                 (
+                    "eventName",
                     copy["event_name_label"],
                     _read_display_value(result, "eventName", copy["empty_value"]),
                 ),
                 (
+                    "recipientName",
                     copy["recipient_name_label"],
                     _read_display_value(result, "recipientName", copy["empty_value"]),
                 ),
@@ -211,22 +220,25 @@ def build_verification_details_html(
         )
         organization = str(result.get("organization") or "").strip()
         if organization:
-            rows.insert(4, (copy["organization_label"], organization))
+            rows.insert(4, ("organization", copy["organization_label"], organization))
         issued_at_html = build_local_datetime_html(
             iso_value=str(result.get("issuedAt") or "").strip(),
             empty_value=copy["empty_value"],
         )
         if issued_at_html:
-            rows.append((copy["issued_at_label"], issued_at_html))
+            rows.append(("issuedAt", copy["issued_at_label"], issued_at_html))
 
     return "".join(
-        "<div>"
-        f"<dt>{escape(label, quote=True)}</dt>"
-        f"<dd>{value if _is_safe_detail_html(value) else escape(value, quote=True)}</dd>"
-        "</div>"
-        for label, value in rows
+        (
+            f'<div data-detail-key="{escape(key, quote=True)}">'
+            f'<dt class="verification-detail-label">{escape(label, quote=True)}</dt>'
+            '<dd class="verification-detail-value">'
+            f"{value if _is_safe_detail_html(value) else escape(value, quote=True)}"
+            "</dd>"
+            "</div>"
+        )
+        for key, label, value in rows
     )
-
 
 def build_local_datetime_html(
     *,

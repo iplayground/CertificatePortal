@@ -4,6 +4,7 @@ from typing import Any
 
 import azure.functions as func
 
+from src.functions.assets import static_asset
 from src.functions import public_verification
 from src.functions.public_verification import verify_cert_page
 from src.shared.completion_store import CompletionStoreConfigurationError
@@ -85,21 +86,22 @@ def test_verify_page_defaults_to_traditional_chinese(
     assert 'class="verify-page verify-page--invalid"' in body
     assert 'data-current-locale="zh-TW"' in body
     assert 'class="brand-row"' in body
-    assert 'class="brand-logo" src="/assets/logo_b_alpha.png"' in body
+    assert 'class="brand-logo" id="brand-logo" src="/assets/logo_b_alpha.png"' in body
     assert 'class="locale-switcher" id="locale-switcher"' in body
     assert 'aria-label="語系"' in body
     assert 'data-locale="zh-TW"' in body
     assert 'data-locale="en-US"' in body
     assert '<script src="/assets/locale-switcher.js" defer></script>' in body
+    assert '<script id="verify-page-i18n" type="application/json">' in body
     assert '<p class="status-label">驗證狀態</p>' not in body
     assert "證明編號" in body
     assert "證明姓名" in body
     assert "活動" in body
     assert "發證時間" in body
-    assert "任職單位" not in body
-    assert body.count("未顯示") == 4
+    assert 'data-detail-key="organization"' not in body
+    assert body.count('<dd class="verification-detail-value">未顯示</dd>') == 4
     assert body.index("證明編號") < body.index("活動") < body.index("證明姓名")
-    assert 'class="home-action" href="/"' in body
+    assert 'class="home-action" id="home-action" href="/"' in body
     assert "support@iplayground.io" in body
     assert "尚未串接實際驗證資料" not in body
 
@@ -152,7 +154,7 @@ def test_verify_page_prefers_cookie_locale_over_accept_language(
     assert response.status_code == 200
     assert response.headers["Content-Language"] == "en-US"
     assert "This certificate cannot be verified" in body
-    assert "無法驗證此證明" not in body
+    assert '<h1 id="verify-title">無法驗證此證明</h1>' not in body
 
 
 def test_verify_page_renders_valid_completion_certificate(
@@ -198,9 +200,35 @@ def test_verify_page_renders_valid_completion_certificate(
     assert "發證時間" in body
     assert '<script src="/assets/locale-switcher.js" defer></script>' in body
     assert '<script src="/assets/verify.js" defer></script>' in body
+    assert 'data-detail-key="status"' in body
+    assert 'data-detail-key="issuedAt"' in body
     assert '<time class="local-datetime" datetime="2026-05-01T08:00:00Z">' in body
     assert "2026 / 05 / 01 08:00 UTC" in body
     assert "valid-token" not in body
+
+
+def test_verify_js_updates_locale_without_reloading() -> None:
+    response = static_asset(
+        func.HttpRequest(
+            method="GET",
+            url="http://localhost:7075/assets/verify.js",
+            headers={},
+            params={},
+            route_params={"asset_name": "verify.js"},
+            body=b"",
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert "parseVerifyPageI18n" in body
+    assert "applyLocaleSelection" in body
+    assert "applyVerifyPageLocale" in body
+    assert "onSelect: applyLocaleSelection" in body
+    assert "document.title = copy.page_title" in body
+    assert "htmlRoot.lang = bundle.html_lang" in body
+    assert "updateDetailLabels" in body
 
 
 def test_verify_page_hides_organization_when_certificate_did_not_show_it(
@@ -237,7 +265,7 @@ def test_verify_page_hides_organization_when_certificate_did_not_show_it(
 
     assert response.status_code == 200
     assert "此完訓證明有效" in body
-    assert "任職單位" not in body
+    assert 'data-detail-key="organization"' not in body
     assert "發證時間" in body
 
 
