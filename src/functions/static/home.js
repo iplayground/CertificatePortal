@@ -93,6 +93,13 @@ const homePageI18n = parseHomePageI18n();
 let currentLocale = homePage.dataset.currentLocale ?? "zh-TW";
 const localeCookieName = homePage.dataset.localeCookieName ?? "ipg_locale";
 const localeCookieMaxAge = Number.parseInt(homePage.dataset.localeCookieMaxAge ?? "31536000", 10);
+const localeSwitcherController = window.iPlaygroundLocaleSwitcher?.installLocaleSwitcher({
+  cookieMaxAge: localeCookieMaxAge,
+  cookieName: localeCookieName,
+  currentLocale,
+  onSelect: applyLocaleSelection,
+  root: homePage,
+});
 const eventsApiPath = homePage.dataset.eventsApiPath ?? "/api/v1/events";
 const documentLookupApiPath = homePage.dataset.documentLookupApiPath ?? "/api/v1/document-lookup";
 const certificateChangeRequestApiPath =
@@ -154,6 +161,15 @@ function getLocaleBundle(locale) {
 }
 
 function setLocalePreference(locale) {
+  if (window.iPlaygroundLocaleSwitcher?.setLocalePreference) {
+    window.iPlaygroundLocaleSwitcher.setLocalePreference({
+      locale,
+      cookieMaxAge: localeCookieMaxAge,
+      cookieName: localeCookieName,
+    });
+    return;
+  }
+
   const encodedLocale = encodeURIComponent(locale);
   document.cookie = `${localeCookieName}=${encodedLocale}; Max-Age=${localeCookieMaxAge}; Path=/; SameSite=Lax`;
 }
@@ -1613,12 +1629,11 @@ function applyHomePageLocale(nextLocale) {
     certificateDownloadPendingMessage = homePageCopy.certificate_download_pending_message;
   }
 
-  closeLocaleMenu({ blurTrigger: true });
+  localeSwitcherController?.close({ blurTrigger: true });
 }
 
 function applyLocaleSelection(nextLocale) {
   if (!nextLocale || nextLocale === currentLocale) {
-    closeLocaleMenu({ blurTrigger: true });
     return;
   }
 
@@ -1675,30 +1690,6 @@ function openDocumentTypeSelect() {
   documentTypeSelect.classList.add("is-open");
   documentTypeTrigger.setAttribute("aria-expanded", "true");
   document.getElementById("document-type-options").hidden = false;
-}
-
-function closeLocaleMenu({ blurTrigger = false } = {}) {
-  homePage.classList.remove("is-locale-menu-open");
-  localeSwitcher?.classList.remove("is-open");
-  localeTrigger?.setAttribute("aria-expanded", "false");
-
-  if (localeMenu) {
-    localeMenu.hidden = true;
-  }
-
-  if (blurTrigger) {
-    localeTrigger?.blur();
-  }
-}
-
-function openLocaleMenu() {
-  homePage.classList.add("is-locale-menu-open");
-  localeSwitcher?.classList.add("is-open");
-  localeTrigger?.setAttribute("aria-expanded", "true");
-
-  if (localeMenu) {
-    localeMenu.hidden = false;
-  }
 }
 
 eventNameTrigger?.addEventListener("click", () => {
@@ -1915,88 +1906,6 @@ document.addEventListener("click", (event) => {
 
   if (!documentTypeSelect.contains(event.target)) {
     closeDocumentTypeSelect();
-  }
-});
-
-localeTrigger?.addEventListener("click", () => {
-  if (localeSwitcher?.classList.contains("is-open")) {
-    closeLocaleMenu({ blurTrigger: true });
-    return;
-  }
-
-  openLocaleMenu();
-});
-
-localeTrigger?.addEventListener("keydown", (event) => {
-  if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
-    event.preventDefault();
-    openLocaleMenu();
-
-    const currentOption =
-      localeOptions.find((button) => button.classList.contains("is-current")) ?? localeOptions[0];
-    currentOption?.focus();
-    return;
-  }
-
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeLocaleMenu({ blurTrigger: true });
-  }
-});
-
-localeOptions.forEach((button, index) => {
-  button.addEventListener("click", () => {
-    applyLocaleSelection(button.dataset.locale);
-  });
-
-  button.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeLocaleMenu({ blurTrigger: true });
-      return;
-    }
-
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      localeOptions[(index + 1) % localeOptions.length]?.focus();
-      return;
-    }
-
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      localeOptions[(index - 1 + localeOptions.length) % localeOptions.length]?.focus();
-      return;
-    }
-
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      applyLocaleSelection(button.dataset.locale);
-      return;
-    }
-
-    if (event.key === "Tab") {
-      closeLocaleMenu();
-    }
-  });
-});
-
-localeMenu?.addEventListener("pointerdown", (event) => {
-  if (!(event.target instanceof Element)) {
-    return;
-  }
-
-  const option = event.target.closest(".locale-menu-option");
-  if (!(option instanceof HTMLButtonElement)) {
-    return;
-  }
-
-  event.preventDefault();
-  applyLocaleSelection(option.dataset.locale);
-});
-
-document.addEventListener("click", (event) => {
-  if (localeSwitcher?.classList.contains("is-open") && !localeSwitcher.contains(event.target)) {
-    closeLocaleMenu();
   }
 });
 

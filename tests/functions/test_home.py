@@ -488,8 +488,10 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'href="/assets/logo_sq_b.png"' in body
     assert 'href="/assets/theme.css"' in body
     assert 'href="/assets/home.css"' in body
+    assert 'src="/assets/locale-switcher.js"' in body
     assert 'src="/assets/portal-datetime-picker.js"' in body
     assert 'src="/assets/home.js"' in body
+    assert body.index('src="/assets/locale-switcher.js"') < body.index('src="/assets/home.js"')
     assert body.index('src="/assets/portal-datetime-picker.js"') < body.index('src="/assets/home.js"')
 
 
@@ -1744,13 +1746,8 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert response.mimetype == "text/css"
     assert "@media (max-width: 640px)" in body
     assert ".page-toolbar" in body
-    assert "z-index: 4;" in body
     assert "body.is-locale-menu-open .hero-card > :not(.page-toolbar)" in body
-    assert "width: max-content;" in body
-    assert "white-space: nowrap;" in body
     assert ".locale-trigger" in body
-    assert ".locale-menu-option" in body
-    assert 'url("/assets/language_icon.svg")' in body
     assert "margin-inline: auto;" in body
     assert ".feedback.is-error" in body
     assert ".feedback.is-warning" in body
@@ -1808,6 +1805,11 @@ def test_theme_css_asset_returns_expected_content_type() -> None:
     assert "@media (prefers-color-scheme: dark)" in body
     assert "repeating-linear-gradient" in body
     assert "--theme-primary-gradient" in body
+    assert ".locale-trigger" in body
+    assert ".locale-menu-option" in body
+    assert 'url("/assets/language_icon.svg")' in body
+    assert "width: max-content;" in body
+    assert "white-space: nowrap;" in body
     assert "linear-gradient(135deg, #5179fe 0%, #7f9aff 100%)" in body
     assert ".page-alert" in body
     assert ".page-alert-frame" in body
@@ -1994,17 +1996,33 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "resolveDocumentTypeLabel" in body
     assert "setLocalePreference" in body
     assert "applyLocaleSelection" in body
-    assert "localeOptions.forEach" in body
-    assert "closeLocaleMenu" in body
+    assert "installLocaleSwitcher" in body
+    assert "localeSwitcherController?.close" in body
     assert "document.title = homePageCopy.page_title" in body
     assert "htmlRoot.lang = bundle.html_lang" in body
     assert "updateMetaContent" in body
     assert "metaDescription" in body
     assert "metaOgLocale" in body
     assert "metaTwitterDescription" not in body
-    assert 'homePage.classList.add("is-locale-menu-open")' in body
-    assert 'homePage.classList.remove("is-locale-menu-open")' in body
-    assert 'localeMenu?.addEventListener("pointerdown"' in body
+
+
+def test_locale_switcher_js_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/locale-switcher.js",
+            route_params={"asset_name": "locale-switcher.js"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert "installLocaleSwitcher" in body
+    assert "setLocalePreference" in body
+    assert "localeOptions.forEach" in body
+    assert 'root.classList.add("is-locale-menu-open")' in body
+    assert 'root.classList.remove("is-locale-menu-open")' in body
+    assert 'localeMenu.addEventListener("pointerdown"' in body
 
 
 def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
