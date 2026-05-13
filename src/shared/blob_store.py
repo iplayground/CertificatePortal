@@ -92,12 +92,16 @@ def upload_pdf_blob(
     standard_blob_tier: str = "Cool",
 ) -> str:
     try:
-        from azure.storage.blob import ContentSettings
+        from azure.storage.blob import ContentSettings, StandardBlobTier
     except ImportError as exc:
         raise BlobStoreConfigurationError(
             "缺少 Azure Blob Storage 套件。請安裝 azure-storage-blob。"
         ) from exc
 
+    resolved_blob_tier = resolve_standard_blob_tier(
+        standard_blob_tier,
+        standard_blob_tier_type=StandardBlobTier,
+    )
     try:
         blob_client = (
             get_blob_service_client()
@@ -108,11 +112,27 @@ def upload_pdf_blob(
             data,
             overwrite=True,
             content_settings=ContentSettings(content_type="application/pdf"),
-            standard_blob_tier=standard_blob_tier,
+            standard_blob_tier=resolved_blob_tier,
         )
         return blob_name
     except Exception as exc:
         raise BlobStoreOperationError("Blob 上傳失敗。") from exc
+
+
+def resolve_standard_blob_tier(
+    value: str,
+    *,
+    standard_blob_tier_type: Any,
+) -> Any:
+    normalized_value = value.strip().upper()
+    if not normalized_value:
+        return standard_blob_tier_type.COOL
+
+    tier = getattr(standard_blob_tier_type, normalized_value, None)
+    if tier is None:
+        raise BlobStoreConfigurationError("不支援的 Blob 存取層設定。")
+
+    return tier
 
 
 def _read_env(env_name: str) -> str:
