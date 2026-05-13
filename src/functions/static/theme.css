@@ -750,6 +750,10 @@
   position: relative;
 }
 
+.form-datetime-picker:has(.form-datetime-picker-time-input:nth-of-type(3)) {
+  grid-template-columns: 140px 98px;
+}
+
 .form-date-picker-inline {
   grid-template-columns: 140px;
 }
@@ -779,6 +783,8 @@
 
 .form-datetime-picker-time:has(.form-datetime-picker-time-input:nth-of-type(3)) {
   grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px) max-content minmax(26px, 30px);
+  width: max-content;
+  transform: translateX(-18px);
 }
 
 .form-datetime-picker-date {

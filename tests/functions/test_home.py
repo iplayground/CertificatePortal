@@ -1854,7 +1854,10 @@ def test_theme_css_asset_returns_expected_content_type() -> None:
     assert ".form-datetime-picker-date-native:focus" in body
     assert ".form-datetime-picker-date" in body
     assert ".form-datetime-picker-time" in body
+    assert ".form-datetime-picker:has(.form-datetime-picker-time-input:nth-of-type(3))" in body
+    assert "grid-template-columns: 140px 98px;" in body
     assert "grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px) max-content minmax(26px, 30px);" in body
+    assert "transform: translateX(-18px);" in body
 
 
 def test_home_js_asset_returns_expected_content_type() -> None:

@@ -2952,9 +2952,12 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".form-datetime-picker-time-input" in theme_body
     assert ".form-datetime-picker-time-input:focus" in theme_body
     assert "grid-template-columns: calc(4ch + 2px) max-content calc(2ch + 2px) max-content calc(2ch + 2px) 22px;" in theme_body
+    assert ".form-datetime-picker:has(.form-datetime-picker-time-input:nth-of-type(3))" in theme_body
+    assert "grid-template-columns: 140px 98px;" in theme_body
     assert "grid-template-columns: minmax(26px, 30px) max-content minmax(26px, 30px);" in theme_body
     assert "grid-template-columns: calc(4.3ch + 2px) max-content calc(2.3ch + 2px) max-content calc(2.3ch + 2px) 22px;" in theme_body
     assert "grid-template-columns: minmax(24px, 26px) max-content minmax(24px, 26px);" in theme_body
+    assert "transform: translateX(-18px);" in theme_body
     assert "gap: 0.2ch;" in theme_body
     assert ".form-datetime-input[hidden]" in theme_body
     assert "width: max-content;" in theme_body
