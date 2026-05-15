@@ -190,6 +190,37 @@ class FakeCompletionCertRequestsContainer:
         ][:1]
 
 
+class FakeTaxReceiptsContainer:
+    def __init__(self, items: list[dict[str, Any]] | None = None) -> None:
+        self.items = items or []
+
+    def query_items(
+        self,
+        query: str,
+        *,
+        parameters: list[dict[str, Any]] | None = None,
+        partition_key: str | None = None,
+        enable_cross_partition_query: bool,
+        **_: Any,
+    ) -> list[dict[str, Any]]:
+        assert "WHERE c.eventId = @eventId AND c.taxId = @taxId" in query
+        assert not enable_cross_partition_query
+        parameter_values = {
+            parameter["name"]: parameter["value"]
+            for parameter in parameters or []
+        }
+        assert partition_key == parameter_values["@eventId"]
+        return [
+            item
+            for item in sorted(
+                self.items,
+                key=lambda candidate: str(candidate.get("generatedAt", "")),
+            )
+            if item["eventId"] == parameter_values["@eventId"]
+            and item["taxId"] == parameter_values["@taxId"]
+        ]
+
+
 class FakeEventsContainer:
     def __init__(self, items: dict[str, dict[str, Any]] | None = None) -> None:
         self.items = items or {
@@ -346,11 +377,16 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "報名序號" in body
     assert "統編" in body
     assert "產製時間" in body
+    assert 'id="tax-receipt-results-toggle-selection-action"' in body
+    assert "全選" in body
+    assert "下載收據" in body
     assert "會眾姓名" not in body
     assert 'id="registration-number"' in body
     assert 'id="attendee-name"' not in body
     assert 'id="email"' in body
     assert 'id="business-tax-id"' in body
+    assert 'maxlength="8"' in body
+    assert 'pattern="[0-9]{8}"' in body
     assert 'id="generated-at"' in body
     assert 'class="form-datetime-input"' in body
     assert 'pattern="[0-9]{4} / [0-9]{2} / [0-9]{2} ([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]"' in body
@@ -1082,6 +1118,147 @@ def test_public_document_lookup_api_does_not_block_success_on_attempt_store_fail
     )
 
 
+def test_public_document_lookup_api_returns_all_tax_receipts_for_matched_tax_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: FailingLookupAttemptsContainer(),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_tax_receipts_container",
+        lambda: FakeTaxReceiptsContainer(
+            [
+                {
+                    "id": "trec_1",
+                    "eventId": "evt_1",
+                    "taxId": "12345678",
+                    "amount": 1200,
+                    "generatedAt": "2026-05-01T02:00:00Z",
+                    "fileName": "receipt-12345678-1.pdf",
+                    "fileSequence": 1,
+                    "contentType": "application/pdf",
+                    "fileSize": 4096,
+                    "sourceBlobName": "evt_1/trec_1.pdf",
+                },
+                {
+                    "id": "trec_2",
+                    "eventId": "evt_1",
+                    "taxId": "12345678",
+                    "amount": 800,
+                    "generatedAt": "2026-05-03T02:00:00Z",
+                    "fileName": "receipt-12345678-2.png",
+                    "fileSequence": 2,
+                    "contentType": "image/png",
+                    "fileSize": 8192,
+                    "sourceBlobName": "evt_1/trec_2.png",
+                },
+                {
+                    "id": "trec_other",
+                    "eventId": "evt_1",
+                    "taxId": "87654321",
+                    "amount": 999,
+                    "generatedAt": "2026-05-01T02:00:00Z",
+                    "fileName": "receipt-87654321-1.pdf",
+                    "fileSequence": 1,
+                    "contentType": "application/pdf",
+                    "fileSize": 1024,
+                    "sourceBlobName": "evt_1/trec_other.pdf",
+                },
+            ]
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "taxReceipt",
+                "eventId": "evt_1",
+                "businessTaxId": "12345678",
+                "generatedAt": "2026-05-01T02:00:00Z",
+            },
+        )
+    )
+    payload = json.loads(response.get_body().decode("utf-8"))
+
+    assert response.status_code == 200
+    assert isinstance(payload["document"].pop("downloadTicket"), str)
+    assert payload == {
+        "document": {
+            "status": "found",
+            "documentType": "taxReceipt",
+            "eventId": "evt_1",
+            "taxId": "12345678",
+            "generatedAt": "2026-05-01T02:00:00Z",
+            "taxReceipts": [
+                {
+                    "id": "trec_1",
+                    "amount": 1200,
+                    "contentType": "application/pdf",
+                    "fileName": "receipt-12345678-1.pdf",
+                    "fileSequence": 1,
+                    "fileSize": 4096,
+                    "generatedAt": "2026-05-01T02:00:00Z",
+                },
+                {
+                    "id": "trec_2",
+                    "amount": 800,
+                    "contentType": "image/png",
+                    "fileName": "receipt-12345678-2.png",
+                    "fileSequence": 2,
+                    "fileSize": 8192,
+                    "generatedAt": "2026-05-03T02:00:00Z",
+                },
+            ],
+        }
+    }
+    assert "sourceBlobName" not in response.get_body().decode("utf-8")
+
+
+def test_public_document_lookup_api_requires_matching_tax_receipt_generated_at(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts_container = FakeLookupAttemptsContainer()
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        lambda: attempts_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_tax_receipts_container",
+        lambda: FakeTaxReceiptsContainer(
+            [
+                {
+                    "id": "trec_1",
+                    "eventId": "evt_1",
+                    "taxId": "12345678",
+                    "amount": 1200,
+                    "generatedAt": "2026-05-01T02:00:00Z",
+                    "fileName": "receipt-12345678-1.pdf",
+                    "fileSequence": 1,
+                    "contentType": "application/pdf",
+                    "fileSize": 4096,
+                },
+            ]
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "taxReceipt",
+                "eventId": "evt_1",
+                "businessTaxId": "12345678",
+                "generatedAt": "2026-05-02T02:00:00Z",
+            },
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 404
+    assert '"code":"document_not_found"' in body
+    assert next(iter(attempts_container.items.values()))["failureCount"] == 1
+
+
 def test_public_document_lookup_api_marks_not_generated_completion_cert(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1782,6 +1959,8 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert ".certificate-options-view" in body
     assert ".certificate-change-request-view" in body
     assert ".certificate-summary-list" in body
+    assert ".tax-receipt-results-view .certificate-summary-list" in body
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in body
     assert ".certificate-change-request-form textarea" not in body
     assert ".form-textarea" in body
     assert ".certificate-choice-option" in body
@@ -1891,6 +2070,7 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "getVisibleUserDataInputs" in body
     assert "updateUserDataFieldsForDocumentType" in body
     assert "isUserDataComplete" in body
+    assert '!/^[0-9]{8}$/.test(businessTaxId.value.trim())' in body
     assert "updatePreviewActionState" in body
     assert "previewAction.disabled = isLookupInProgress || !isUserDataComplete()" in body
     assert "setLookupBusy(true)" in body
@@ -1980,9 +2160,23 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "clearLookupFeedback()" in body
     assert 'showLookupFeedback(lookupUnavailableMessage, "error")' in body
     assert "submitDocumentLookupFromCompletionCertInput" in body
+    assert "submitDocumentLookupFromDateTimePickerReturn" in body
     assert 'event.key !== "Enter" || event.isComposing' in body
-    assert "[registrationNumber, email].filter(Boolean).forEach" in body
+    assert "[registrationNumber, email, businessTaxId, generatedAt].filter(Boolean).forEach" in body
+    assert "showTaxReceiptResults(successfulDocument)" in body
+    assert "resolveTaxReceiptGeneratedAtLookupValue" in body
+    assert "getTaxReceiptSelectionCheckboxes" in body
+    assert "toggleTaxReceiptSelection" in body
+    assert "checkbox.checked = receipt.generatedAt === documentData?.generatedAt" in body
+    assert "tax_receipt_select_all_action_label" in body
+    assert "tax_receipt_deselect_all_action_label" in body
+    assert "tax_receipt_download_pending_message" in body
+    assert "setTaxReceiptDownloadBusy(true)" in body
+    assert "setTaxReceiptDownloadBusy(false)" in body
+    assert "isTaxReceiptDownloadInProgress" in body
+    assert "taxReceiptResultsToggleSelectionAction?.addEventListener" in body
     assert 'input.addEventListener("keydown", submitDocumentLookupFromCompletionCertInput)' in body
+    assert 'generatedAt?.addEventListener("datetime-picker-return", submitDocumentLookupFromDateTimePickerReturn)' in body
     assert "lookupBlockedStorageKey" in body
     assert "lookupBlockedClientCacheMs = 60 * 60 * 1000" in body
     assert "readClientLookupBlockedUntil" in body

@@ -94,6 +94,10 @@ from src.shared.tax_receipt_store import (
     replace_tax_receipt_document,
     upsert_tax_receipt_document,
 )
+from src.shared.tax_receipt_download_ticket import (
+    build_tax_receipt_download_ticket,
+    is_valid_tax_receipt_download_ticket,
+)
 from src.shared.templates import render_html_template
 
 blueprint = func.Blueprint()
@@ -113,8 +117,6 @@ PORTAL_LOGIN_ALERT_DISMISS_DELAY_MS_BY_ERROR_CODE = {
 }
 PORTAL_API_CSRF_MAX_AGE_SECONDS = 28800
 PORTAL_API_CSRF_HEADER_NAME = "X-Portal-CSRF-Token"
-TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS = 600
-TAX_RECEIPT_DOWNLOAD_TICKET_SCOPE = "taxReceiptDownload"
 PORTAL_API_IDEMPOTENCY_HEADER_NAME = "Idempotency-Key"
 PORTAL_ALLOWED_EVENT_STATUSES = frozenset({"open", "unlisted"})
 PORTAL_ALLOWED_EVENT_DOCUMENT_TYPES = frozenset({"completionCert", "taxReceipt"})
@@ -1289,78 +1291,6 @@ def is_valid_portal_csrf_token(
         payload.get("actor") == expected_actor
         and payload.get("session") == expected_session
     )
-
-
-def build_tax_receipt_download_ticket(
-    *,
-    event_id: str,
-    receipt_ids: list[str],
-) -> str:
-    payload = {
-        "eventId": event_id,
-        "exp": int(time.time()) + TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS,
-        "receiptIds": receipt_ids,
-        "scope": TAX_RECEIPT_DOWNLOAD_TICKET_SCOPE,
-    }
-    encoded_payload = _base64url_encode(
-        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    )
-    signature = hmac.new(
-        _get_tax_receipt_download_ticket_secret().encode("utf-8"),
-        encoded_payload.encode("utf-8"),
-        hashlib.sha256,
-    ).digest()
-    return f"{encoded_payload}.{_base64url_encode(signature)}"
-
-
-def is_valid_tax_receipt_download_ticket(
-    *,
-    ticket: str,
-    event_id: str,
-    receipt_ids: list[str],
-) -> bool:
-    try:
-        encoded_payload, encoded_signature = ticket.split(".", maxsplit=1)
-    except ValueError:
-        return False
-
-    expected_signature = hmac.new(
-        _get_tax_receipt_download_ticket_secret().encode("utf-8"),
-        encoded_payload.encode("utf-8"),
-        hashlib.sha256,
-    ).digest()
-    actual_signature = _base64url_decode(encoded_signature)
-    if actual_signature is None or not hmac.compare_digest(actual_signature, expected_signature):
-        return False
-
-    payload_bytes = _base64url_decode(encoded_payload)
-    if payload_bytes is None:
-        return False
-
-    try:
-        payload = json.loads(payload_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return False
-
-    if not isinstance(payload, dict):
-        return False
-
-    expires_at = payload.get("exp")
-    if not isinstance(expires_at, int) or expires_at < int(time.time()):
-        return False
-
-    return (
-        payload.get("scope") == TAX_RECEIPT_DOWNLOAD_TICKET_SCOPE
-        and payload.get("eventId") == event_id
-        and payload.get("receiptIds") == receipt_ids
-    )
-
-
-def _get_tax_receipt_download_ticket_secret() -> str:
-    configured_secret = os.getenv("TAX_RECEIPT_DOWNLOAD_TICKET_SECRET", "").strip()
-    if configured_secret:
-        return configured_secret
-    return _get_portal_csrf_secret()
 
 
 def require_portal_api_access(req: func.HttpRequest) -> PortalAccess | func.HttpResponse:
@@ -2749,9 +2679,7 @@ def build_tax_receipts_zip_response(
         mimetype="application/zip",
         headers={
             "Cache-Control": "no-store",
-            "Content-Disposition": (
-                f'attachment; filename="tax-receipts-{sanitize_tax_receipt_download_file_name(event_id)}.zip"'
-            ),
+            "Content-Disposition": 'attachment; filename="tax-receipts.zip"',
         },
     )
 

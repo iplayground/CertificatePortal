@@ -582,6 +582,21 @@
     if (includeSeconds) {
       pickerPartInputs.push(secondInput);
     }
+    const pickerControlInputs = [...pickerPartInputs, dateInput];
+
+    function syncPickerDisabledState() {
+      const isDisabled = textInput.disabled;
+      picker.classList.toggle("is-disabled", isDisabled);
+      pickerControlInputs.forEach((input) => {
+        input.disabled = isDisabled;
+      });
+    }
+
+    syncPickerDisabledState();
+    new MutationObserver(syncPickerDisabledState).observe(textInput, {
+      attributeFilter: ["disabled"],
+      attributes: true,
+    });
 
     function handlePickerPartNavigation(event) {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
@@ -602,9 +617,24 @@
       }
     }
 
+    function handlePickerReturn(event) {
+      const isFinalTimeInput = includeSeconds
+        ? event.currentTarget === secondInput
+        : event.currentTarget === minuteInput;
+      if (event.key !== "Enter" || event.isComposing || !isFinalTimeInput) {
+        return;
+      }
+
+      event.preventDefault();
+      normalizeAndApplyTimeInput(event.currentTarget);
+      event.currentTarget.blur();
+      textInput.dispatchEvent(new CustomEvent("datetime-picker-return", { bubbles: true }));
+    }
+
     pickerPartInputs.forEach((input) => {
       installSelectAllOnFocus(input);
       input.addEventListener("keydown", handlePickerPartNavigation);
+      input.addEventListener("keydown", handlePickerReturn);
     });
     yearInput.addEventListener("input", () => handleDateInput(yearInput, monthInput, 4));
     monthInput.addEventListener("input", () => handleDateInput(monthInput, dayInput, 2));

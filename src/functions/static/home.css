@@ -237,7 +237,8 @@ form.is-certificate-options-active .field-static-value {
 }
 
 .certificate-change-request-view,
-.certificate-change-request-form {
+.certificate-change-request-form,
+.tax-receipt-results-view {
   display: grid;
   gap: 22px;
 }
@@ -247,12 +248,14 @@ form.is-certificate-options-active .field-static-value {
 }
 
 .certificate-options-view[hidden],
-.certificate-change-request-view[hidden] {
+.certificate-change-request-view[hidden],
+.tax-receipt-results-view[hidden] {
   display: none;
 }
 
 .certificate-options-view:focus,
-.certificate-change-request-view:focus {
+.certificate-change-request-view:focus,
+.tax-receipt-results-view:focus {
   outline: none;
 }
 
@@ -280,6 +283,14 @@ form.is-certificate-options-active .field-static-value {
   margin: 0;
 }
 
+.tax-receipt-results-view .certificate-summary-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tax-receipt-results-view .certificate-summary-list div {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
 .certificate-summary-list div {
   display: grid;
   grid-template-columns: minmax(96px, 0.34fr) minmax(0, 1fr);
@@ -301,6 +312,50 @@ form.is-certificate-options-active .field-static-value {
   margin: 0;
   color: var(--theme-content-text);
   font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.tax-receipt-list {
+  display: grid;
+  gap: 10px;
+}
+
+.tax-receipt-results-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tax-receipt-select-toggle {
+  min-height: 0;
+  padding: 10px 16px;
+}
+
+.tax-receipt-result-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 16px;
+  background: var(--theme-input-bg);
+  user-select: none;
+}
+
+.tax-receipt-result-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tax-receipt-result-time,
+.tax-receipt-result-amount {
+  color: var(--theme-content-text);
+  font-weight: 800;
+}
+
+.tax-receipt-result-time {
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
@@ -665,6 +720,10 @@ form.is-certificate-options-active .field-static-value {
   .certificate-summary-list div {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+
+  .tax-receipt-results-view .certificate-summary-list {
+    grid-template-columns: 1fr;
   }
 
   .select-caret {

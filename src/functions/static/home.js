@@ -48,6 +48,17 @@ const certificateChangeRequestNoteHint = document.getElementById("certificate-ch
 const certificateChangeRequestBackAction = document.getElementById("certificate-change-request-back-action");
 const certificateChangeRequestSubmitAction = document.getElementById("certificate-change-request-submit-action");
 const certificateChangeRequestFeedback = document.getElementById("certificate-change-request-feedback");
+const taxReceiptResultsView = document.getElementById("tax-receipt-results-view");
+const taxReceiptResultsTitle = document.getElementById("tax-receipt-results-title");
+const taxReceiptResultsSubtitle = document.getElementById("tax-receipt-results-subtitle");
+const taxReceiptResultsEventLabel = document.getElementById("tax-receipt-results-event-label");
+const taxReceiptResultsEventValue = document.getElementById("tax-receipt-results-event-value");
+const taxReceiptResultsTaxIdLabel = document.getElementById("tax-receipt-results-tax-id-label");
+const taxReceiptResultsTaxIdValue = document.getElementById("tax-receipt-results-tax-id-value");
+const taxReceiptResultsList = document.getElementById("tax-receipt-results-list");
+const taxReceiptResultsBackAction = document.getElementById("tax-receipt-results-back-action");
+const taxReceiptResultsToggleSelectionAction = document.getElementById("tax-receipt-results-toggle-selection-action");
+const taxReceiptResultsDownloadAction = document.getElementById("tax-receipt-results-download-action");
 const registrationNumber = document.getElementById("registration-number");
 const attendeeName = document.getElementById("attendee-name");
 const email = document.getElementById("email");
@@ -107,6 +118,8 @@ const certificateChangeRequestApiPath =
 const certificateIssueApiPath = homePage.dataset.certificateIssueApiPath ?? "/api/v1/completion-certs/issue";
 const certificatePreviewApiPath =
   homePage.dataset.certificatePreviewApiPath ?? "/api/v1/completion-cert-previews";
+const taxReceiptDownloadApiPath =
+  homePage.dataset.taxReceiptDownloadApiPath ?? "/api/v1/tax-receipts/download";
 const lookupBlockedStorageKey = "ipg_document_lookup_blocked_until";
 const lookupBlockedClientCacheMs = 60 * 60 * 1000;
 let emptyNameText = homePage.dataset.emptyNameText ?? "";
@@ -121,18 +134,27 @@ let certificateIssuePendingMessage =
   getLocaleBundle(currentLocale)?.certificate_issue_pending_message ?? "證書產生中，請稍候。";
 let certificateDownloadPendingMessage =
   getLocaleBundle(currentLocale)?.certificate_download_pending_message ?? "證書下載準備中，請稍候。";
+let taxReceiptDownloadPendingMessage =
+  getLocaleBundle(currentLocale)?.home_page?.tax_receipt_download_pending_message ?? "收據下載準備中，請稍候。";
 let isLookupInProgress = false;
 let isChangeRequestInProgress = false;
 let isChangeRequestSubmitted = false;
 let isCertificateIssueInProgress = false;
+let isTaxReceiptDownloadInProgress = false;
 let certificateOptionsChangeRequestStatus = null;
 let currentCertificateDocument = null;
+let currentTaxReceiptDocument = null;
 let certificatePreviewImageRequestId = 0;
 let eventNameLoadingAnimationTimer = null;
 let eventNameLoadingAnimationBaseText = "";
 let eventNameLoadingAnimationDotCount = 0;
 let isHomeEventsLoading = true;
-const { installDateTimePicker } = window.iPlaygroundPortalDateTime ?? {};
+const {
+  formatDateTimeInputValueFromUtcIso,
+  formatUtcIsoDateTimeInputValue,
+  installDateTimePicker,
+  normalizeDateTimeInputValue,
+} = window.iPlaygroundPortalDateTime ?? {};
 
 function parseHomePageI18n() {
   if (!(homePageI18nScript instanceof HTMLScriptElement)) {
@@ -1088,6 +1110,8 @@ function setDocumentLookupFieldsLocked(isLocked) {
     documentTypeTrigger,
     registrationNumber,
     email,
+    businessTaxId,
+    generatedAt,
   ].filter(Boolean).forEach((control) => {
     control.disabled = isLocked;
   });
@@ -1097,6 +1121,7 @@ function setDocumentLookupFieldsLocked(isLocked) {
 
 function showCertificateOptions(documentData) {
   currentCertificateDocument = documentData;
+  currentTaxReceiptDocument = null;
   clearCertificateOptionsChangeRequestStatus();
   resetCertificateIssuePreview();
   renderCertificateNameOptions(documentData);
@@ -1106,15 +1131,196 @@ function showCertificateOptions(documentData) {
     showCertificateIssuePreview();
   }
   setDocumentLookupFieldsLocked(true);
+  if (taxReceiptResultsView) {
+    taxReceiptResultsView.hidden = true;
+  }
   certificateChangeRequestView.hidden = true;
   certificateOptionsView.hidden = false;
   certificateOptionsView.focus?.();
 }
 
+function formatTaxReceiptAmount(amount) {
+  const normalizedAmount = Number(amount);
+  if (!Number.isFinite(normalizedAmount) || normalizedAmount < 0) {
+    return "NT$0";
+  }
+
+  return `NT$${Math.trunc(normalizedAmount).toLocaleString("zh-TW")}`;
+}
+
+function formatTaxReceiptGeneratedAt(value) {
+  if (typeof formatDateTimeInputValueFromUtcIso !== "function") {
+    return value || "";
+  }
+
+  return formatDateTimeInputValueFromUtcIso(value || "", { includeSeconds: true }) || value || "";
+}
+
+function getSelectedTaxReceiptIds() {
+  return Array.from(taxReceiptResultsList?.querySelectorAll("input[type='checkbox']:checked") ?? [])
+    .map((input) => input.dataset.receiptId ?? input.value ?? "")
+    .filter(Boolean);
+}
+
+function getTaxReceiptSelectionCheckboxes() {
+  return Array.from(taxReceiptResultsList?.querySelectorAll("input[type='checkbox']") ?? []);
+}
+
+function updateTaxReceiptDownloadActionState() {
+  if (!taxReceiptResultsDownloadAction) {
+    return;
+  }
+
+  const checkboxes = getTaxReceiptSelectionCheckboxes();
+  const selectedReceiptIds = getSelectedTaxReceiptIds();
+  const bundle = getLocaleBundle(currentLocale)?.home_page ?? {};
+  checkboxes.forEach((checkbox) => {
+    checkbox.disabled = isTaxReceiptDownloadInProgress;
+  });
+  if (taxReceiptResultsToggleSelectionAction) {
+    const areAllSelected = checkboxes.length > 0 && selectedReceiptIds.length === checkboxes.length;
+    taxReceiptResultsToggleSelectionAction.disabled = isTaxReceiptDownloadInProgress || checkboxes.length === 0;
+    taxReceiptResultsToggleSelectionAction.textContent = areAllSelected
+      ? (bundle.tax_receipt_deselect_all_action_label ?? "全不選")
+      : (bundle.tax_receipt_select_all_action_label ?? "全選");
+  }
+
+  taxReceiptResultsDownloadAction.textContent = isTaxReceiptDownloadInProgress
+    ? taxReceiptDownloadPendingMessage
+    : (bundle.tax_receipt_download_action_label ?? "下載收據");
+  taxReceiptResultsDownloadAction.disabled = (
+    isTaxReceiptDownloadInProgress ||
+    !currentTaxReceiptDocument ||
+    !currentTaxReceiptDocument.downloadTicket ||
+    selectedReceiptIds.length === 0
+  );
+}
+
+function setTaxReceiptDownloadBusy(isBusy) {
+  isTaxReceiptDownloadInProgress = isBusy;
+  taxReceiptResultsView?.setAttribute("aria-busy", String(isBusy));
+  updateTaxReceiptDownloadActionState();
+}
+
+function toggleTaxReceiptSelection() {
+  const checkboxes = getTaxReceiptSelectionCheckboxes();
+  const selectedReceiptIds = getSelectedTaxReceiptIds();
+  const shouldSelectAll = selectedReceiptIds.length !== checkboxes.length;
+  checkboxes.forEach((checkbox) => {
+    checkbox.checked = shouldSelectAll;
+  });
+  updateTaxReceiptDownloadActionState();
+}
+
+function resolveTaxReceiptDownloadFilename(response) {
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/i);
+  return match?.[1] || "tax-receipts.zip";
+}
+
+function downloadTaxReceiptBlob(fileBlob, filename) {
+  const objectUrl = URL.createObjectURL(fileBlob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+async function downloadSelectedTaxReceipts() {
+  const receiptIds = getSelectedTaxReceiptIds();
+  if (isTaxReceiptDownloadInProgress || !currentTaxReceiptDocument || receiptIds.length === 0) {
+    updateTaxReceiptDownloadActionState();
+    return;
+  }
+
+  setTaxReceiptDownloadBusy(true);
+  try {
+    const response = await fetch(taxReceiptDownloadApiPath, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/octet-stream",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        downloadTicket: currentTaxReceiptDocument.downloadTicket,
+        eventId: currentTaxReceiptDocument.eventId,
+        receiptIds,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error("tax receipt download failed");
+    }
+
+    const fileBlob = await response.blob();
+    downloadTaxReceiptBlob(fileBlob, resolveTaxReceiptDownloadFilename(response));
+  } catch {
+    showLookupFeedback(lookupUnavailableMessage, "error");
+  } finally {
+    setTaxReceiptDownloadBusy(false);
+  }
+}
+
+function renderTaxReceiptResults(documentData) {
+  if (!taxReceiptResultsList) {
+    return;
+  }
+
+  taxReceiptResultsList.replaceChildren();
+  const receipts = Array.isArray(documentData?.taxReceipts) ? documentData.taxReceipts : [];
+  receipts.forEach((receipt, index) => {
+    const row = document.createElement("label");
+    const checkbox = document.createElement("input");
+    const main = document.createElement("div");
+    const meta = document.createElement("div");
+    const amount = document.createElement("div");
+    row.className = "form-checkbox-option tax-receipt-result-row";
+    checkbox.type = "checkbox";
+    checkbox.checked = receipt.generatedAt === documentData?.generatedAt;
+    checkbox.value = receipt.id ?? "";
+    checkbox.dataset.receiptId = receipt.id ?? "";
+    checkbox.addEventListener("change", updateTaxReceiptDownloadActionState);
+    main.className = "tax-receipt-result-main";
+    meta.className = "tax-receipt-result-time";
+    amount.className = "tax-receipt-result-amount";
+
+    meta.textContent = formatTaxReceiptGeneratedAt(receipt.generatedAt) || `Receipt ${index + 1}`;
+    amount.textContent = formatTaxReceiptAmount(receipt.amount);
+
+    main.append(meta);
+    row.append(checkbox, main, amount);
+    taxReceiptResultsList.append(row);
+  });
+  updateTaxReceiptDownloadActionState();
+}
+
+function showTaxReceiptResults(documentData) {
+  currentTaxReceiptDocument = documentData;
+  updateTextContent(taxReceiptResultsEventValue, eventNameInput.value);
+  updateTextContent(taxReceiptResultsTaxIdValue, documentData?.taxId ?? businessTaxId.value.trim());
+  renderTaxReceiptResults(documentData);
+  setDocumentLookupFieldsLocked(true);
+  certificateOptionsView.hidden = true;
+  certificateChangeRequestView.hidden = true;
+  if (taxReceiptResultsView) {
+    taxReceiptResultsView.hidden = false;
+    taxReceiptResultsView.focus?.();
+  }
+}
+
 function showDocumentLookupForm() {
   certificateOptionsView.hidden = true;
   certificateChangeRequestView.hidden = true;
+  if (taxReceiptResultsView) {
+    taxReceiptResultsView.hidden = true;
+  }
+  taxReceiptResultsList?.replaceChildren();
   currentCertificateDocument = null;
+  currentTaxReceiptDocument = null;
+  updateTaxReceiptDownloadActionState();
   clearCertificateOptionsChangeRequestStatus();
   resetCertificateIssuePreview();
   setChangeRequestSubmitted(false);
@@ -1173,6 +1379,13 @@ function updateUserDataFieldsForDocumentType(documentType) {
 }
 
 function isUserDataComplete() {
+  if (
+    documentTypeInput.value.trim() === "taxReceipt" &&
+    !/^[0-9]{8}$/.test(businessTaxId.value.trim())
+  ) {
+    return false;
+  }
+
   const inputs = getVisibleUserDataInputs();
   if (inputs.length === 0) {
     return false;
@@ -1241,10 +1454,31 @@ function buildDocumentLookupPayload() {
 
   if (documentType === "taxReceipt") {
     payload.businessTaxId = businessTaxId.value.trim();
-    payload.generatedAt = generatedAt.value.trim();
+    payload.generatedAt = resolveTaxReceiptGeneratedAtLookupValue();
   }
 
   return payload;
+}
+
+function resolveTaxReceiptGeneratedAtLookupValue() {
+  const value = generatedAt.value.trim();
+  if (!value) {
+    return "";
+  }
+
+  if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(value)) {
+    return value;
+  }
+
+  if (
+    typeof normalizeDateTimeInputValue !== "function" ||
+    typeof formatUtcIsoDateTimeInputValue !== "function"
+  ) {
+    return value;
+  }
+
+  const normalizedValue = normalizeDateTimeInputValue(value, { includeSeconds: true });
+  return normalizedValue ? formatUtcIsoDateTimeInputValue(normalizedValue) : value;
 }
 
 function resolveLookupFailureMessage(payload) {
@@ -1408,6 +1642,11 @@ async function submitDocumentLookup() {
   }
 
   clearLookupFeedback();
+  if (successfulDocument.documentType === "taxReceipt") {
+    showTaxReceiptResults(successfulDocument);
+    return;
+  }
+
   if (!shouldShowCertificateOptions(successfulDocument)) {
     showLookupFeedback(formatPreviewMessage(previewFeedbackTemplate, {
       eventName: eventNameInput.value,
@@ -1427,6 +1666,19 @@ function submitDocumentLookupFromCompletionCertInput(event) {
   }
 
   event.preventDefault();
+  updatePreviewActionState();
+  if (previewAction.disabled) {
+    return;
+  }
+
+  void submitDocumentLookup();
+}
+
+function submitDocumentLookupFromDateTimePickerReturn() {
+  if (documentTypeInput.value.trim() !== "taxReceipt") {
+    return;
+  }
+
   updatePreviewActionState();
   if (previewAction.disabled) {
     return;
@@ -1540,6 +1792,14 @@ function applyHomePageLocale(nextLocale) {
   updateTextContent(certificateChangeRequestNoteHint, homePageCopy.certificate_change_request_note_hint);
   updateTextContent(certificateChangeRequestBackAction, homePageCopy.certificate_change_request_back_action_label);
   updateTextContent(certificateChangeRequestSubmitAction, homePageCopy.certificate_change_request_submit_action_label);
+  updateTextContent(taxReceiptResultsTitle, homePageCopy.tax_receipt_results_title);
+  updateTextContent(taxReceiptResultsSubtitle, homePageCopy.tax_receipt_results_subtitle);
+  updateTextContent(taxReceiptResultsEventLabel, homePageCopy.event_name_label);
+  updateTextContent(taxReceiptResultsTaxIdLabel, homePageCopy.business_tax_id_label);
+  updateTextContent(taxReceiptResultsBackAction, homePageCopy.certificate_options_back_action_label);
+  updateTextContent(taxReceiptResultsToggleSelectionAction, homePageCopy.tax_receipt_select_all_action_label);
+  updateTextContent(taxReceiptResultsDownloadAction, homePageCopy.tax_receipt_download_action_label);
+  updateTaxReceiptDownloadActionState();
   updateTextContent(copyrightNotice, homePageCopy.copyright_notice);
 
   if (typeof homePageCopy.registration_number_placeholder === "string") {
@@ -1627,6 +1887,10 @@ function applyHomePageLocale(nextLocale) {
 
   if (typeof homePageCopy.certificate_download_pending_message === "string") {
     certificateDownloadPendingMessage = homePageCopy.certificate_download_pending_message;
+  }
+
+  if (typeof homePageCopy.tax_receipt_download_pending_message === "string") {
+    taxReceiptDownloadPendingMessage = homePageCopy.tax_receipt_download_pending_message;
   }
 
   localeSwitcherController?.close({ blurTrigger: true });
@@ -1918,12 +2182,23 @@ previewAction.addEventListener("click", () => {
   void submitDocumentLookup();
 });
 
-[registrationNumber, email].filter(Boolean).forEach((input) => {
+[registrationNumber, email, businessTaxId, generatedAt].filter(Boolean).forEach((input) => {
   input.addEventListener("keydown", submitDocumentLookupFromCompletionCertInput);
 });
+generatedAt?.addEventListener("datetime-picker-return", submitDocumentLookupFromDateTimePickerReturn);
 
 certificateOptionsBackAction?.addEventListener("click", () => {
   showDocumentLookupForm();
+});
+
+taxReceiptResultsBackAction?.addEventListener("click", () => {
+  showDocumentLookupForm();
+});
+
+taxReceiptResultsToggleSelectionAction?.addEventListener("click", toggleTaxReceiptSelection);
+
+taxReceiptResultsDownloadAction?.addEventListener("click", () => {
+  void downloadSelectedTaxReceipts();
 });
 
 certificateChangeRequestAction?.addEventListener("click", () => {

@@ -41,6 +41,7 @@
     data-certificate-change-request-api-path="{{certificate_change_request_api_path}}"
     data-certificate-issue-api-path="{{certificate_issue_api_path}}"
     data-certificate-preview-api-path="{{certificate_preview_api_path}}"
+    data-tax-receipt-download-api-path="{{tax_receipt_download_api_path}}"
   >
     <div class="shell">
       <main class="hero">
@@ -158,6 +159,8 @@
                   data-form-type="other"
                   inputmode="numeric"
                   aria-labelledby="business-tax-id-label"
+                  maxlength="8"
+                  pattern="[0-9]{8}"
                   placeholder="{{business_tax_id_placeholder}}"
                 >
               </div>
@@ -280,6 +283,35 @@
               <div class="form-actions certificate-actions">
                 <button class="secondary-action" type="button" id="certificate-change-request-back-action">{{certificate_change_request_back_action_label}}</button>
                 <button class="primary-action" type="submit" id="certificate-change-request-submit-action" form="certificate-change-request-form" disabled>{{certificate_change_request_submit_action_label}}</button>
+              </div>
+            </section>
+
+            <section class="tax-receipt-results-view" id="tax-receipt-results-view" hidden tabindex="-1" aria-labelledby="tax-receipt-results-title">
+              <div class="certificate-options-header">
+                <h2 class="options-title" id="tax-receipt-results-title">{{tax_receipt_results_title}}</h2>
+                <p class="options-subtitle" id="tax-receipt-results-subtitle">{{tax_receipt_results_subtitle}}</p>
+              </div>
+
+              <dl class="certificate-summary-list" aria-label="{{tax_receipt_results_summary_label}}">
+                <div>
+                  <dt id="tax-receipt-results-event-label">{{event_name_label}}</dt>
+                  <dd id="tax-receipt-results-event-value"></dd>
+                </div>
+                <div>
+                  <dt id="tax-receipt-results-tax-id-label">{{business_tax_id_label}}</dt>
+                  <dd id="tax-receipt-results-tax-id-value"></dd>
+                </div>
+              </dl>
+
+              <div class="tax-receipt-results-tools">
+                <button class="secondary-action tax-receipt-select-toggle" type="button" id="tax-receipt-results-toggle-selection-action">{{tax_receipt_select_all_action_label}}</button>
+              </div>
+
+              <div class="tax-receipt-list" id="tax-receipt-results-list"></div>
+
+              <div class="form-actions certificate-actions">
+                <button class="secondary-action" type="button" id="tax-receipt-results-back-action">{{certificate_options_back_action_label}}</button>
+                <button class="primary-action" type="button" id="tax-receipt-results-download-action" disabled>{{tax_receipt_download_action_label}}</button>
               </div>
             </section>
           </div>

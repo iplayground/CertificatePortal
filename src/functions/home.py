@@ -75,6 +75,13 @@ from src.shared.public_lookup_store import (
     remember_public_lookup_attempt_document,
     remember_public_lookup_block,
 )
+from src.shared.tax_receipt_store import (
+    TaxReceiptStoreConfigurationError,
+    TaxReceiptStoreOperationError,
+    get_tax_receipts_container,
+    list_tax_receipt_documents_by_tax_id,
+)
+from src.shared.tax_receipt_download_ticket import build_tax_receipt_download_ticket
 from src.shared.templates import render_html_template
 
 blueprint = func.Blueprint()
@@ -116,6 +123,7 @@ def build_home_page_url_context(req: func.HttpRequest) -> dict[str, str]:
         "events_api_path": "/api/v1/events",
         "page_url": page_url,
         "social_image_url": _build_absolute_url(req, "/assets/logo_sq_b.png"),
+        "tax_receipt_download_api_path": "/api/v1/tax-receipts/download",
     }
 
 
@@ -286,11 +294,20 @@ def parse_document_lookup_payload(req: func.HttpRequest) -> dict[str, Any] | Non
             "registrationNumber": int(registration_number),
         }
 
+    business_tax_id = str(payload.get("businessTaxId", "")).strip()
+    generated_at = str(payload.get("generatedAt", "")).strip()
+    if (
+        not business_tax_id.isdecimal()
+        or len(business_tax_id) != 8
+        or parse_utc_iso_datetime(generated_at) is None
+    ):
+        return None
+
     return {
         "documentType": document_type,
         "eventId": event_id,
-        "businessTaxId": str(payload.get("businessTaxId", "")).strip(),
-        "generatedAt": str(payload.get("generatedAt", "")).strip(),
+        "businessTaxId": business_tax_id,
+        "generatedAt": generated_at,
     }
 
 
@@ -351,8 +368,8 @@ def parse_completion_cert_issue_payload(
 
 
 def lookup_public_document(payload: dict[str, Any]) -> dict[str, Any] | None:
-    if payload["documentType"] != "completionCert":
-        return None
+    if payload["documentType"] == "taxReceipt":
+        return lookup_public_tax_receipts(payload)
 
     return find_completion_cert_document_for_public_lookup(
         container=get_completion_records_container(),
@@ -360,6 +377,52 @@ def lookup_public_document(payload: dict[str, Any]) -> dict[str, Any] | None:
         event_id=payload["eventId"],
         number=payload["registrationNumber"],
     )
+
+
+def lookup_public_tax_receipts(payload: dict[str, Any]) -> dict[str, Any] | None:
+    documents = list_tax_receipt_documents_by_tax_id(
+        container=get_tax_receipts_container(),
+        event_id=payload["eventId"],
+        tax_id=payload["businessTaxId"],
+    )
+    if not any(document.get("generatedAt") == payload["generatedAt"] for document in documents):
+        return None
+
+    return {
+        "documentType": "taxReceipt",
+        "eventId": payload["eventId"],
+        "taxId": payload["businessTaxId"],
+        "generatedAt": payload["generatedAt"],
+        "taxReceipts": [normalize_public_tax_receipt(document) for document in documents],
+        "downloadTicket": build_tax_receipt_download_ticket(
+            event_id=payload["eventId"],
+            receipt_ids=[
+                str(document.get("id", "")).strip()
+                for document in documents
+                if str(document.get("id", "")).strip()
+            ],
+        ),
+    }
+
+
+def normalize_public_tax_receipt(document: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(document.get("id", "")).strip(),
+        "amount": read_public_non_negative_int(document.get("amount")),
+        "contentType": str(document.get("contentType", "")).strip(),
+        "fileName": str(document.get("fileName", "")).strip(),
+        "fileSequence": read_public_non_negative_int(document.get("fileSequence")),
+        "fileSize": read_public_non_negative_int(document.get("fileSize")),
+        "generatedAt": str(document.get("generatedAt", "")).strip(),
+    }
+
+
+def read_public_non_negative_int(value: Any) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(0, value)
+    if isinstance(value, str) and value.strip().isdecimal():
+        return max(0, int(value.strip()))
+    return 0
 
 
 def can_public_document_request_changes(document: dict[str, Any]) -> bool:
@@ -1501,8 +1564,25 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
         CompletionStoreOperationError,
         EventStoreConfigurationError,
         EventStoreOperationError,
+        TaxReceiptStoreConfigurationError,
+        TaxReceiptStoreOperationError,
     ):
         return build_document_lookup_unavailable_response(req)
+
+    if payload["documentType"] == "taxReceipt":
+        return build_home_api_json_response(
+            {
+                "document": {
+                    "status": "found",
+                    "documentType": "taxReceipt",
+                    "eventId": document["eventId"],
+                    "taxId": document["taxId"],
+                    "generatedAt": document["generatedAt"],
+                    "taxReceipts": document["taxReceipts"],
+                    "downloadTicket": document["downloadTicket"],
+                },
+            }
+        )
 
     completed_change_request = read_public_document_completed_change_request(document)
     document_payload = {

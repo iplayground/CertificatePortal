@@ -15,6 +15,7 @@ from src.functions.portal import (
     PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR,
     build_portal_csrf_token,
     build_tax_receipt_download_ticket,
+    is_valid_tax_receipt_download_ticket,
     portal_admin_dashboard_welcome_metrics_api,
     portal_admin_completion_certs_import_api,
     portal_admin_completion_certs_list_api,
@@ -1616,6 +1617,27 @@ def test_public_tax_receipts_download_api_downloads_blob_with_download_ticket(
     assert fake_tax_container.items["trec_1"].get("portalDownloadCount", 0) == 0
 
 
+def test_tax_receipt_download_ticket_allows_subset_of_receipts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TAX_RECEIPT_DOWNLOAD_TICKET_SECRET", "test-download-ticket-secret")
+    ticket = build_tax_receipt_download_ticket(
+        event_id="evt_tax",
+        receipt_ids=["trec_1", "trec_2"],
+    )
+
+    assert is_valid_tax_receipt_download_ticket(
+        ticket=ticket,
+        event_id="evt_tax",
+        receipt_ids=["trec_1"],
+    )
+    assert not is_valid_tax_receipt_download_ticket(
+        ticket=ticket,
+        event_id="evt_tax",
+        receipt_ids=["trec_3"],
+    )
+
+
 def test_public_tax_receipts_download_api_downloads_multiple_blobs_as_zip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1663,7 +1685,7 @@ def test_public_tax_receipts_download_api_downloads_multiple_blobs_as_zip(
     assert response.status_code == 200
     assert response.mimetype == "application/zip"
     assert response.headers["Content-Disposition"] == (
-        'attachment; filename="tax-receipts-evt_tax.zip"'
+        'attachment; filename="tax-receipts.zip"'
     )
     with zipfile.ZipFile(io.BytesIO(response.get_body())) as zip_file:
         assert sorted(zip_file.namelist()) == [
@@ -3899,11 +3921,21 @@ def test_portal_datetime_picker_js_asset_returns_expected_content_type() -> None
     assert "selectDateTimeInputValue" in body
     assert "installSelectAllOnFocus" in body
     assert "const pickerPartInputs = [yearInput, monthInput, dayInput, hourInput, minuteInput]" in body
+    assert "const pickerControlInputs = [...pickerPartInputs, dateInput]" in body
+    assert "function syncPickerDisabledState" in body
+    assert "picker.classList.toggle(\"is-disabled\", isDisabled)" in body
+    assert "input.disabled = isDisabled" in body
+    assert "new MutationObserver(syncPickerDisabledState).observe(textInput" in body
     assert "function handlePickerPartNavigation" in body
     assert "event.key !== \"ArrowLeft\" && event.key !== \"ArrowRight\"" in body
     assert "const direction = event.key === \"ArrowLeft\" ? -1 : 1" in body
     assert "pickerPartInputs[currentIndex + direction]" in body
     assert "input.addEventListener(\"keydown\", handlePickerPartNavigation)" in body
+    assert "function handlePickerReturn" in body
+    assert "event.key !== \"Enter\" || event.isComposing || !isFinalTimeInput" in body
+    assert "event.currentTarget.blur()" in body
+    assert "datetime-picker-return" in body
+    assert "input.addEventListener(\"keydown\", handlePickerReturn)" in body
     assert "hourInput.inputMode = \"numeric\"" in body
     assert "minuteInput.inputMode = \"numeric\"" in body
     assert "secondInput.inputMode = \"numeric\"" in body

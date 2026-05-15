@@ -211,7 +211,7 @@ partition key: /id
 
 ### 營業稅繳稅證明文件
 
-`taxReceipts` 以活動作為 partition key，支援管理端依活動列出、逐筆新增、修改、下載與刪除營業稅繳稅證明。這個 container 是營業稅繳稅證明的權威 metadata；管理端歡迎頁會依最近一期開放 `taxReceipt` 活動讀取同一個 container，計算收據張數、用戶 `downloadCount` 合計與 `amount` 合計。歡迎頁的 `已查詢公司數` 需要公開查詢流程的權威事件來源，目前不得以收據張數或建檔統編數替代。未來首頁公開查詢與公開下載也應讀取同一份 metadata，並使用共用 `POST /api/v1/tax-receipts/download` 下載端點直接串流單檔或 ZIP bytes，不回傳可分享的下載 URL。未登入首頁下載時，公開查詢成功後應回傳 `downloadTicket`，並在下載 POST body 中送回；ticket 不作為持久化 metadata 存入 Cosmos DB。
+`taxReceipts` 以活動作為 partition key，支援管理端依活動列出、逐筆新增、修改、下載與刪除營業稅繳稅證明。這個 container 是營業稅繳稅證明的權威 metadata；管理端歡迎頁會依最近一期開放 `taxReceipt` 活動讀取同一個 container，計算收據張數、用戶 `downloadCount` 合計與 `amount` 合計。歡迎頁的 `已查詢公司數` 需要公開查詢流程的權威事件來源，目前不得以收據張數或建檔統編數替代。首頁公開查詢會以活動、8 碼統編與產製時間核對是否存在同統編收據，命中後依 `generatedAt` 由早到晚回傳同活動同統編的所有收據公開 metadata，但不暴露 `sourceBlobName` 或下載 URL。首頁公開下載讀取同一份 metadata，並使用共用 `POST /api/v1/tax-receipts/download` 下載端點直接串流單檔或 ZIP bytes，不回傳可分享的下載 URL。未登入首頁下載時，公開查詢成功後會回傳 `downloadTicket`，並在下載 POST body 中送回；ticket 不作為持久化 metadata 存入 Cosmos DB，且只授權該次查詢可下載收據集合的非空子集合。多筆收據下載時，HTTP `Content-Disposition` 的 ZIP 檔名固定為 `tax-receipts.zip`，避免將 `eventId` 等內部識別碼放進使用者下載檔名。
 
 必要欄位：
 

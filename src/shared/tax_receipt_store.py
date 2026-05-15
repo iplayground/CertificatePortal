@@ -162,6 +162,42 @@ def list_tax_receipt_documents(
         raise TaxReceiptStoreOperationError("繳稅證明資料查詢暫時失敗。") from exc
 
 
+def list_tax_receipt_documents_by_tax_id(
+    *,
+    container: TaxReceiptContainer,
+    event_id: str,
+    tax_id: str,
+) -> list[dict[str, Any]]:
+    try:
+        return list(
+            container.query_items(
+                query=(
+                    "SELECT c.id, c.eventId, c.taxId, c.amount, c.generatedAt, "
+                    "c.fileName, c.contentType, c.fileSize, c.fileSequence FROM c "
+                    "WHERE c.eventId = @eventId AND c.taxId = @taxId "
+                    "ORDER BY c.generatedAt ASC"
+                ),
+                parameters=[
+                    {"name": "@eventId", "value": event_id},
+                    {"name": "@taxId", "value": tax_id},
+                ],
+                partition_key=event_id,
+                enable_cross_partition_query=False,
+            )
+        )
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise TaxReceiptStoreOperationError(
+                "Cosmos DB 繳稅證明容器不存在。請確認 COSMOS_TAX_RECEIPTS_CONTAINER "
+                "是否指向已建立的資源。"
+            ) from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise TaxReceiptStoreOperationError(
+                "目前身分沒有 Cosmos DB 繳稅證明容器讀取權限。"
+            ) from exc
+        raise TaxReceiptStoreOperationError("繳稅證明資料查詢暫時失敗。") from exc
+
+
 def read_tax_receipt_document(
     *,
     container: TaxReceiptContainer,

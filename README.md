@@ -142,7 +142,7 @@ PYTHONPATH=. pytest
 - 管理平台入口現已統一使用 `/portal`，避免與 Azure Functions runtime 內建保留的 `/admin` 路徑衝突。
 - `/portal` 正式環境目前應明確設定 `PORTAL_GOOGLE_CLIENT_ID`、`PORTAL_GOOGLE_CLIENT_SECRET`、`PORTAL_GOOGLE_REDIRECT_URI` 與 `PORTAL_GOOGLE_ALLOWED_GROUP_KEYS`；建議以 Azure CLI 或 Key Vault reference 寫入 app settings，詳細流程請參考 [docs/portal-authentication.md](docs/portal-authentication.md)。
 - 會異動資料的管理 API 會檢查同源請求與 CSRF token；可選擇設定 `PORTAL_CSRF_SECRET` 作為 CSRF 簽章密鑰，未設定時會優先沿用 `PORTAL_GOOGLE_CLIENT_SECRET`。
-- 目前活動管理已串接 Cosmos DB 的新增、查詢與修改；完訓證明頁已串接活動篩選、CSV 匯入、清單查詢與單筆資料修改；修改審核頁已串接首頁完訓證明修改申請查詢與審核。首頁完訓證明申請會依使用者選定顯示方式合成 PDF、以 Cool tier 上傳至 `issued-certs`，並在已發證後從既有 blob 重新下載；營業稅繳稅證明已串接管理端新增、拖曳上傳、清單、修改、下載與刪除流程，metadata 寫入 `taxReceipts`，原始檔寫入 `tax-receipts`；新增送出等待後端回應期間，表格會以瀏覽器端新增中資料列顯示進度，成功後替換為正式資料列，失敗則移除。編輯既有營業稅繳稅證明時活動與統編會鎖定，若未變更金額、產製時間或檔案就取消，不會提示尚未存檔。營業稅繳稅證明下載不是管理端專屬能力，目前檔案下載已使用共用 `POST /api/v1/tax-receipts/download` 端點直接串流回單檔或 ZIP bytes，不暴露可分享的下載 URL；管理端以 session 與 CSRF 授權，未來首頁公開查詢串接後則以 POST body 內的 `downloadTicket` 授權。
+- 目前活動管理已串接 Cosmos DB 的新增、查詢與修改；完訓證明頁已串接活動篩選、CSV 匯入、清單查詢與單筆資料修改；修改審核頁已串接首頁完訓證明修改申請查詢與審核。首頁完訓證明申請會依使用者選定顯示方式合成 PDF、以 Cool tier 上傳至 `issued-certs`，並在已發證後從既有 blob 重新下載；營業稅繳稅證明已串接管理端新增、拖曳上傳、清單、修改、下載與刪除流程，metadata 寫入 `taxReceipts`，原始檔寫入 `tax-receipts`；新增送出等待後端回應期間，表格會以瀏覽器端新增中資料列顯示進度，成功後替換為正式資料列，失敗則移除。編輯既有營業稅繳稅證明時活動與統編會鎖定，若未變更金額、產製時間或檔案就取消，不會提示尚未存檔。營業稅繳稅證明下載不是管理端專屬能力，目前檔案下載已使用共用 `POST /api/v1/tax-receipts/download` 端點直接串流回單檔或 ZIP bytes，不暴露可分享的下載 URL；管理端以 session 與 CSRF 授權，首頁公開查詢成功後則以 POST body 內的 `downloadTicket` 授權。
 
 ## Azure 部署
 

@@ -118,7 +118,8 @@
 - 查詢 IP 是否被封鎖與寫入失敗計次時，Cosmos DB 最多等待 5 秒；若提前回應就立即使用結果，若逾時則不得讓首頁無限卡住。
 - 後端可用 Functions worker 本機記憶體快取已封鎖 IP 的 attempt id，用於封鎖期間快速短路 Cosmos DB；此快取只能作為額外封鎖捷徑，不能取代 Cosmos DB 的權威紀錄，且本機快取期限不得超過 1 小時。
 - 首頁可用 `localStorage` 快取「已被封鎖」狀態與伺服器回傳的封鎖訊息，以減少重整後的等待感並保留 12 小時或 24 小時封鎖文案；此快取只作為使用者體驗提示，不得作為後端安全判斷依據，期限不得超過 1 小時，且必須在到期、格式不合法或查詢成功時清除，避免永久性上鎖。
-- 目前公開查詢只串接 `completionCert` 的查詢判斷；`taxReceipt` 的管理端持久化與共用下載端點已完成，公開查詢流程仍待後續串接。營業稅繳稅證明的下載能力不是管理端專屬，管理端與首頁查詢成功後都應以 `POST /api/v1/tax-receipts/download` 取得單檔或 ZIP bytes，再由前端以 browser object URL 觸發下載，不回傳可分享的下載 URL。管理端下載以 session 與 CSRF 授權；未來首頁下載則必須由公開查詢成功後取得 `downloadTicket`，並在 POST body 中送回，不放在 URL。
+- `taxReceipt` 公開查詢使用活動、統編與產製時間核對。若該活動中同一統編至少有一筆收據的 `generatedAt` 與查詢值完全相同，API 會回傳該活動與該統編相同的所有收據 metadata，依 `generatedAt` 由早到晚排序，供首頁列出；回應不包含 `sourceBlobName` 或下載 URL。
+- 營業稅繳稅證明的下載能力不是管理端專屬，管理端與首頁查詢成功後都應以 `POST /api/v1/tax-receipts/download` 取得單檔或 ZIP bytes，再由前端以 browser object URL 觸發下載，不回傳可分享的下載 URL。管理端下載以 session 與 CSRF 授權；首頁下載由公開查詢成功後取得的 `downloadTicket` 授權，並在 POST body 中送回，不放在 URL。首頁會將收據列為可勾選清單，預設只勾選查詢時命中的產製時間那一筆，至少勾選一筆才可下載；勾選多筆時下載 ZIP，勾選單筆時下載原始 PDF 或圖檔。
 - 完訓證明查詢成功時，回應會包含 `badgeName`、`name`、`organization`、`certStatus` 與 `canRequestChanges`，供首頁決定是否顯示「選擇證明顯示方式」及修改申請狀態提示。
 - `certStatus` 為 `notIssued`、`changeRequested` 或 `issued` 時，首頁會顯示「選擇證明顯示方式」。`issued` 進入下載模式，姓名與公司顯示選項會鎖定，說明文字會合併提示「一旦確認後，將無法更改」，不顯示證書預覽區塊，按鈕文案改為「下載證書」並下載既有 PDF；公開下載回應的檔名固定為 `certificate.pdf`，不包含報名序號、KKTIX ID 或其他個人資料。
 - 「選擇證明顯示方式」區塊會依實際 `name` 與 `badgeName` 產生姓名顯示選項：`姓名`、`Badge Name`、`姓名 (Badge Name)`；若其中一個值為空，或兩者相同，只顯示單一有效選項。
@@ -136,6 +137,43 @@ Request JSON 範例：
   "eventId": "evt_550e8400-e29b-41d4-a716-446655440000",
   "registrationNumber": "100",
   "email": "attendee@example.com"
+}
+```
+
+營業稅繳稅證明查詢 Request JSON 範例：
+
+```json
+{
+  "documentType": "taxReceipt",
+  "eventId": "evt_550e8400-e29b-41d4-a716-446655440000",
+  "businessTaxId": "12345678",
+  "generatedAt": "2026-05-01T02:00:00Z"
+}
+```
+
+營業稅繳稅證明查詢成功 Response JSON 範例：
+
+```json
+{
+  "document": {
+    "status": "found",
+    "documentType": "taxReceipt",
+    "eventId": "evt_550e8400-e29b-41d4-a716-446655440000",
+    "taxId": "12345678",
+    "generatedAt": "2026-05-01T02:00:00Z",
+    "downloadTicket": "eyJldmVudElkIjoiZXZ0Xy4uLiJ9.signature",
+    "taxReceipts": [
+      {
+        "id": "trec_550e8400-e29b-41d4-a716-446655440000",
+        "amount": 1200,
+        "contentType": "application/pdf",
+        "fileName": "receipt-12345678-1.pdf",
+        "fileSequence": 1,
+        "fileSize": 4096,
+        "generatedAt": "2026-05-01T02:00:00Z"
+      }
+    ]
+  }
 }
 ```
 
@@ -294,8 +332,12 @@ Request JSON 範例：
 - 首頁文件類型顯示文字納入 i18n，表單值使用穩定文件類型代碼：`completionCert`、`taxReceipt`
 - 首頁依文件類型顯示申請資料欄位：`完訓證明` 需要報名序號與 `email`；`營業稅繳稅證明` 需要統編與產製時間
 - `營業稅繳稅證明` 的產製時間使用共用日期時間選擇器的秒數模式，顯示年、月、日、時、分、秒
-- 查詢文件按鈕在目前可見申請資料欄位未完整填寫前維持停用
+- `營業稅繳稅證明` 的統編必須為完整 8 碼數字；查詢文件按鈕在目前可見申請資料欄位未完整填寫前維持停用
+- `營業稅繳稅證明` 的產製時間秒數欄位按下 return 時，日期時間輸入會退出焦點；若統編與產製時間皆已完整，會直接送出查詢
 - 查詢文件送出後使用滿版 loading 遮罩鎖住整個 window，避免等待期間切換語系或調整表單資料
+- 營業稅繳稅證明查詢成功後，首頁會改顯示可下載收據 view state，並鎖住活動、文件類型、統編與產製時間；活動與統編摘要同列顯示。收據清單依產製時間由早到晚排序，列上只突出使用者需要比對的產製時間與金額，不以檔名作為主要辨識資訊
+- 可下載收據清單提供每筆 checkbox，預設只勾選查詢命中的那筆；清單上方提供 `全選` 按鈕，當全部收據已勾選時改為 `全不選`。`全選` 不放在底部返回與下載操作旁，避免與提交下載行為混淆
+- 可下載收據 view state 底部提供 `返回查詢` 與 `下載收據`；按下下載後按鈕文案改為 `收據下載準備中，請稍候。`，並暫時停用下載、全選與各筆勾選，直到下載完成或失敗後還原
 - 完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁顯示「選擇證明顯示方式」，讓使用者選擇姓名顯示方式與是否顯示公司名；準備生成模式會即時顯示對應語系與顯示選項的 PNG 預覽，並在確認按鈕旁提示確認後將無法更改
 - 「選擇證明顯示方式」目前包含 `返回查詢`、`確認產生證書`，並依 `canRequestChanges` 顯示 `提出修改申請`；其中 `返回查詢` 已可回到查詢表單，`提出修改申請` 已可切換到首頁內修改申請 view state 並寫入後端修改申請資料，`確認產生證書` 會呼叫發證 API 產生並下載 PDF；`issued` 下載模式不顯示 PNG 預覽，會鎖定顯示選項，並把按鈕文案改為 `下載證書`；下載檔名固定為 `certificate.pdf`
 - `changeRequested` 時，首頁會在「選擇證明顯示方式」顯示處理中提示，並說明若現在確認產生證書會視為放棄本次修改申請
@@ -443,7 +485,7 @@ Request JSON 範例：
 - 頁面標題不顯示額外的左上角小字
 - 主畫面提供營業稅繳稅證明的清單檢視區
 - 清單欄位包含統編、產製時間、金額與操作；不顯示收據聯檔案名稱，若有檔案則以下載按鈕內的檔案 icon 表示
-- 營業稅繳稅證明沒有停用狀態，只要完成上傳即具備下載資格；管理端清單可立即下載，未來首頁公開查詢成功後也應可下載
+- 營業稅繳稅證明沒有停用狀態，只要完成上傳即具備下載資格；管理端清單可立即下載，首頁公開查詢成功後可透過 `downloadTicket` 下載
 - 管理端每列在操作欄提供 `下載`、`修改` 與 `刪除` 按鈕
 - 清單上方提供活動篩選欄位；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單並直接套用篩選
 - 活動篩選與上傳視窗活動選擇會先使用 portal 分頁內的活動清單快取渲染，再直接呼叫 `GET /api/v1/admin/events` 更新畫面與快取；快取只作為先顯示用途，不作為權威資料來源
@@ -852,12 +894,12 @@ Response JSON example:
 - 不回傳、不要求下載 URL token；前端應使用 `fetch()` 讀取 response blob，並以 browser object URL 觸發下載
 - 所有呼叫都必須通過同源 `Origin` 或 `Referer` 檢查
 - 管理端呼叫時必須通過管理者 session，並帶 `X-Portal-CSRF-Token` header
-- 未登入首頁呼叫時必須在 POST body 帶公開查詢成功後取得的 `downloadTicket`；ticket 由後端簽發，綁定 `receiptIds`、`eventId` 與過期時間，且不放在 URL
+- 未登入首頁呼叫時必須在 POST body 帶公開查詢成功後取得的 `downloadTicket`；ticket 由後端簽發，綁定可下載的 `receiptIds` 集合、`eventId` 與過期時間，且不放在 URL。下載時的 `receiptIds` 可為 ticket 內可下載集合的非空子集合
 - 後端讀取 Cosmos DB `taxReceipts` metadata 後，依 `sourceBlobName` 從 Blob Storage `tax-receipts` 下載檔案
 - Blob 讀取成功後，後端會依下載來源分開計數：用戶端下載將每筆收據的 `downloadCount` 加 1 並更新 `lastDownloadAt`；管理端 portal 下載將每筆收據的 `portalDownloadCount` 加 1 並更新 `lastPortalDownloadAt`
 - 歡迎頁的 `已下載次數` 只讀取用戶端 `downloadCount` 累計值，不包含 portal 下載
-- 單筆下載會使用資料中保存的 `contentType` 與 `fileName` 作為下載格式與檔名；多筆下載會回傳 ZIP，檔名為 `tax-receipts-{eventId}.zip`
-- 未來首頁下載營業稅繳稅證明時，應先在公開查詢流程中以最小揭露方式核對活動、統編與產製時間，再回傳 `downloadTicket` 供前端直接下載回應
+- 單筆下載會使用資料中保存的 `contentType` 與 `fileName` 作為下載格式與檔名；多筆下載會回傳 ZIP，公開檔名固定為 `tax-receipts.zip`，不得帶入 `eventId` 或其他內部識別碼
+- 首頁下載營業稅繳稅證明時，會先在公開查詢流程中以最小揭露方式核對活動、統編與產製時間，再回傳 `downloadTicket` 供前端依使用者勾選的收據直接下載回應
 
 ### `GET /api/v1/admin/completion-cert-change-requests`
 
