@@ -80,6 +80,10 @@ const dashboardTaxUploadContinueInput = document.getElementById(
 );
 const dashboardTaxUploadFileInput = document.getElementById("portal-tax-upload-file");
 const dashboardTaxUploadFileName = document.getElementById("portal-tax-upload-file-name");
+const dashboardTaxUploadErrors = document.getElementById("portal-tax-upload-errors");
+const dashboardTaxUploadDropzone = document.querySelector(
+  'label[for="portal-tax-upload-file"]'
+);
 const dashboardTaxUploadTaxIdInput = document.getElementById("portal-tax-upload-tax-id");
 const dashboardTaxUploadAmountInput = document.getElementById("portal-tax-upload-amount");
 const dashboardTaxUploadGeneratedAtInput = document.getElementById(
@@ -126,6 +130,10 @@ const invalidDashboardTaxUploadFileName = "請選擇 PDF、PNG 或 JPG 檔案";
 const failedDashboardTaxUploadFileName = "檔案讀取失敗";
 const defaultDashboardTaxUploadEventName = "";
 const emptyDashboardTaxUploadEventName = "尚無活動資料";
+const invalidDashboardTaxUploadTaxIdMessage = "請輸入 8 碼統編。";
+const invalidDashboardTaxUploadAmountMessage = "請輸入大於 0 的整數金額。";
+const invalidDashboardTaxUploadGeneratedAtMessage = "請輸入完整產製時間，格式為 YYYY / MM / DD HH:mm:ss。";
+const invalidDashboardTaxUploadEventMessage = "請先選擇活動。";
 const dashboardTaxReceiptUploadExtensions = [".pdf", ".png", ".jpg", ".jpeg"];
 const dashboardTaxReceiptUploadMimeTypes = [
   "application/pdf",
@@ -143,6 +151,7 @@ let dashboardTaxUploadPreviousFocus = null;
 let dashboardTaxUploadDialogMode = "create";
 let dashboardTaxUploadEditingRowId = "";
 let dashboardTaxUploadCurrentFileName = "";
+let dashboardTaxUploadInitialDraftState = null;
 let dashboardCompletionUploadEventsSignature = "";
 let dashboardTaxUploadEventsSignature = "";
 
@@ -1462,6 +1471,7 @@ function renderDashboardTaxUploadEventSelect(events) {
   });
 
   applyDashboardTaxUploadEventValue(getTaxEventNameFromFrame() || firstEventValue);
+  setDashboardTaxUploadEventLocked(dashboardTaxUploadDialogMode === "edit");
 }
 
 function applyDashboardTaxUploadEventValue(nextValue) {
@@ -1482,6 +1492,13 @@ function applyDashboardTaxUploadEventValue(nextValue) {
     item.classList.toggle("is-selected", isSelected);
     item.setAttribute("aria-selected", String(isSelected));
   });
+
+  clearDashboardTaxUploadErrors();
+}
+
+function getFirstDashboardTaxUploadEventValue() {
+  const firstOption = dashboardTaxUploadEventOptions[0];
+  return firstOption?.dataset.value ?? firstOption?.textContent?.trim() ?? "";
 }
 
 function setDashboardTaxUploadTextValue(input, value) {
@@ -1491,11 +1508,61 @@ function setDashboardTaxUploadTextValue(input, value) {
   }
 }
 
+function getDashboardTaxUploadDraftState() {
+  return {
+    amount: getDashboardTaxUploadTextValue(dashboardTaxUploadAmountInput),
+    eventName: getDashboardTaxUploadEventName(),
+    generatedAt: getDashboardTaxUploadTextValue(dashboardTaxUploadGeneratedAtInput),
+    taxId: getDashboardTaxUploadTextValue(dashboardTaxUploadTaxIdInput),
+  };
+}
+
+function clearDashboardTaxUploadErrors() {
+  if (!(dashboardTaxUploadErrors instanceof HTMLElement)) {
+    return;
+  }
+
+  dashboardTaxUploadErrors.replaceChildren();
+  dashboardTaxUploadErrors.hidden = true;
+}
+
+function showDashboardTaxUploadErrors(errors) {
+  if (!(dashboardTaxUploadErrors instanceof HTMLElement)) {
+    return;
+  }
+
+  const title = document.createElement("strong");
+  title.textContent = "請修正以下欄位後再新增。";
+  const list = document.createElement("ul");
+  errors.forEach((error) => {
+    const item = document.createElement("li");
+    item.textContent = error.message;
+    list.append(item);
+  });
+  dashboardTaxUploadErrors.replaceChildren(title, list);
+  dashboardTaxUploadErrors.hidden = false;
+}
+
+function setDashboardTaxUploadEventLocked(isLocked) {
+  if (dashboardTaxUploadEventTrigger instanceof HTMLButtonElement) {
+    dashboardTaxUploadEventTrigger.disabled = isLocked;
+    dashboardTaxUploadEventTrigger.setAttribute("aria-disabled", String(isLocked));
+    dashboardTaxUploadEventTrigger.title = isLocked ? "活動不可在編輯時修改。" : "";
+  }
+
+  dashboardTaxUploadEventSelect?.classList.toggle("is-disabled", isLocked);
+
+  if (isLocked) {
+    closeDashboardTaxUploadEventSelect();
+  }
+}
+
 function setDashboardTaxUploadDialogMode(mode = "create", receiptData = {}) {
   const isEditMode = mode === "edit";
   dashboardTaxUploadDialogMode = isEditMode ? "edit" : "create";
   dashboardTaxUploadEditingRowId = isEditMode ? receiptData.id ?? "" : "";
   dashboardTaxUploadCurrentFileName = isEditMode ? receiptData.fileName ?? "" : "";
+  dashboardTaxUploadInitialDraftState = null;
 
   if (dashboardTaxUploadTitle) {
     dashboardTaxUploadTitle.textContent = isEditMode ? "修改繳稅證明" : "新增繳稅證明";
@@ -1517,14 +1584,28 @@ function setDashboardTaxUploadDialogMode(mode = "create", receiptData = {}) {
     dashboardTaxUploadFileInput.value = "";
   }
 
+  clearDashboardTaxUploadErrors();
+  if (dashboardTaxUploadTaxIdInput instanceof HTMLInputElement) {
+    dashboardTaxUploadTaxIdInput.readOnly = isEditMode;
+    dashboardTaxUploadTaxIdInput.setAttribute("aria-readonly", String(isEditMode));
+    dashboardTaxUploadTaxIdInput.title = isEditMode ? "統編不可修改；如需更正請刪除後重新新增。" : "";
+  }
   setDashboardTaxUploadTextValue(dashboardTaxUploadTaxIdInput, receiptData.taxId ?? "");
   setDashboardTaxUploadTextValue(dashboardTaxUploadAmountInput, receiptData.amount ?? "");
   setDashboardTaxUploadTextValue(
     dashboardTaxUploadGeneratedAtInput,
-    normalizeDateTimeInputValue(receiptData.generatedAt ?? "") || formatCurrentDateTimeInputValue()
+    normalizeDateTimeInputValue(receiptData.generatedAt ?? "", { includeSeconds: true }) ||
+      formatCurrentDateTimeInputValue({ includeSeconds: true })
   );
-  applyDashboardTaxUploadEventValue(receiptData.eventName ?? getTaxEventNameFromFrame());
+  applyDashboardTaxUploadEventValue(
+    receiptData.eventName ||
+      getTaxEventNameFromFrame() ||
+      getDashboardTaxUploadEventName() ||
+      getFirstDashboardTaxUploadEventValue()
+  );
+  setDashboardTaxUploadEventLocked(isEditMode);
   updateDashboardTaxUploadFileName();
+  dashboardTaxUploadInitialDraftState = isEditMode ? getDashboardTaxUploadDraftState() : null;
 }
 
 function resetDashboardTaxUploadDialog() {
@@ -1540,6 +1621,17 @@ function hasSelectedDashboardTaxUploadFile() {
 }
 
 function hasDashboardTaxUploadDraft() {
+  if (dashboardTaxUploadDialogMode === "edit") {
+    if (hasSelectedDashboardTaxUploadFile()) {
+      return true;
+    }
+
+    const currentState = getDashboardTaxUploadDraftState();
+    return Object.keys(currentState).some(
+      (key) => currentState[key] !== dashboardTaxUploadInitialDraftState?.[key]
+    );
+  }
+
   const hasTextValue = [
     dashboardTaxUploadTaxIdInput,
     dashboardTaxUploadAmountInput,
@@ -1579,9 +1671,13 @@ function updateDashboardTaxUploadFileName() {
   if (!isDashboardTaxReceiptUploadFile(selectedFile)) {
     dashboardTaxUploadFileInput.value = "";
     dashboardTaxUploadFileName.textContent = invalidDashboardTaxUploadFileName;
+    showDashboardTaxUploadErrors([
+      { message: invalidDashboardTaxUploadFileName, field: dashboardTaxUploadFileInput },
+    ]);
     return;
   }
 
+  clearDashboardTaxUploadErrors();
   dashboardTaxUploadFileName.textContent = selectedFile.name;
 }
 
@@ -1597,8 +1693,142 @@ function getSelectedDashboardTaxUploadFile() {
   return dashboardTaxUploadFileInput.files[0];
 }
 
+function hasDraggedDashboardTaxFiles(event) {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
+}
+
+function setDashboardTaxUploadDragActive(isActive) {
+  dashboardTaxUploadDropzone?.classList.toggle("is-drag-active", isActive);
+}
+
+function assignDashboardTaxUploadFile(file) {
+  if (!(dashboardTaxUploadFileInput instanceof HTMLInputElement)) {
+    return;
+  }
+
+  if (!isDashboardTaxReceiptUploadFile(file)) {
+    dashboardTaxUploadFileInput.value = "";
+    dashboardTaxUploadFileName.textContent = invalidDashboardTaxUploadFileName;
+    showDashboardTaxUploadErrors([
+      { message: invalidDashboardTaxUploadFileName, field: dashboardTaxUploadFileInput },
+    ]);
+    return;
+  }
+
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  dashboardTaxUploadFileInput.files = transfer.files;
+  updateDashboardTaxUploadFileName();
+}
+
+function handleDashboardTaxUploadDrag(event) {
+  if (dashboardTaxUploadDialog?.hidden || !hasDraggedDashboardTaxFiles(event)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  setDashboardTaxUploadDragActive(true);
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "copy";
+  }
+}
+
+function handleDashboardTaxUploadDragEnd(event) {
+  if (dashboardTaxUploadDialog?.hidden || !hasDraggedDashboardTaxFiles(event)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  setDashboardTaxUploadDragActive(false);
+}
+
+function handleDashboardTaxUploadDrop(event) {
+  if (dashboardTaxUploadDialog?.hidden || !hasDraggedDashboardTaxFiles(event)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  setDashboardTaxUploadDragActive(false);
+
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    assignDashboardTaxUploadFile(file);
+  }
+}
+
 function getDashboardTaxUploadTextValue(input) {
   return input instanceof HTMLInputElement ? input.value.trim() : "";
+}
+
+function isDashboardTaxUploadTaxId(value) {
+  return /^[0-9]{8}$/.test(value);
+}
+
+function isDashboardTaxUploadAmount(value) {
+  const normalizedValue = value.replace(/,/g, "");
+  return (
+    /^(?:0|[1-9][0-9]*)$/.test(normalizedValue) &&
+    Number(normalizedValue) > 0
+  );
+}
+
+function getDashboardTaxUploadGeneratedAtIso() {
+  const normalizedDisplayValue = normalizeDateTimeInputValue(
+    getDashboardTaxUploadTextValue(dashboardTaxUploadGeneratedAtInput),
+    { includeSeconds: true }
+  );
+  return normalizedDisplayValue
+    ? formatUtcIsoDateTimeInputValue(normalizedDisplayValue)
+    : "";
+}
+
+function validateDashboardTaxUploadForm(selectedFile) {
+  const errors = [];
+  const taxId = getDashboardTaxUploadTextValue(dashboardTaxUploadTaxIdInput);
+  const amount = getDashboardTaxUploadTextValue(dashboardTaxUploadAmountInput);
+  const generatedAt = getDashboardTaxUploadGeneratedAtIso();
+
+  if (!getDashboardTaxUploadEventName()) {
+    errors.push({ message: invalidDashboardTaxUploadEventMessage, field: dashboardTaxUploadEventTrigger });
+  }
+
+  if (!isDashboardTaxUploadTaxId(taxId)) {
+    errors.push({ message: invalidDashboardTaxUploadTaxIdMessage, field: dashboardTaxUploadTaxIdInput });
+  }
+
+  if (!isDashboardTaxUploadAmount(amount)) {
+    errors.push({ message: invalidDashboardTaxUploadAmountMessage, field: dashboardTaxUploadAmountInput });
+  }
+
+  if (!generatedAt) {
+    errors.push({
+      message: invalidDashboardTaxUploadGeneratedAtMessage,
+      field: dashboardTaxUploadGeneratedAtInput,
+    });
+  }
+
+  if (selectedFile && !isDashboardTaxReceiptUploadFile(selectedFile)) {
+    errors.push({ message: invalidDashboardTaxUploadFileName, field: dashboardTaxUploadFileInput });
+  }
+
+  if (dashboardTaxUploadDialogMode === "create" && !selectedFile) {
+    errors.push({ message: invalidDashboardTaxUploadFileName, field: dashboardTaxUploadFileInput });
+  }
+
+  if (errors.length > 0) {
+    showDashboardTaxUploadErrors(errors);
+    const firstField = errors[0]?.field;
+    if (firstField instanceof HTMLElement) {
+      firstField.focus();
+    }
+    return null;
+  }
+
+  clearDashboardTaxUploadErrors();
+  return { amount, generatedAt, taxId };
 }
 
 function shouldContinueDashboardTaxUpload() {
@@ -1615,20 +1845,14 @@ function resetDashboardTaxUploadFieldsForNextFile() {
   if (dashboardTaxUploadContinueInput instanceof HTMLInputElement) {
     dashboardTaxUploadContinueInput.checked = true;
   }
+  clearDashboardTaxUploadErrors();
   dashboardTaxUploadTaxIdInput?.focus();
 }
 
 function sendDashboardTaxUploadFileToFrame() {
   const selectedFile = getSelectedDashboardTaxUploadFile();
-  if (selectedFile && !isDashboardTaxReceiptUploadFile(selectedFile)) {
-    updateDashboardTaxUploadFileName();
-    dashboardTaxUploadFileInput?.focus();
-    return;
-  }
-
-  if (dashboardTaxUploadDialogMode === "create" && !selectedFile) {
-    updateDashboardTaxUploadFileName();
-    dashboardTaxUploadFileInput?.focus();
+  const validatedData = validateDashboardTaxUploadForm(selectedFile);
+  if (!validatedData) {
     return;
   }
 
@@ -1636,15 +1860,13 @@ function sendDashboardTaxUploadFileToFrame() {
     const shouldKeepDialogOpen = shouldContinueDashboardTaxUpload();
     contentFrame.contentWindow?.postMessage(
       {
-        amount: getDashboardTaxUploadTextValue(dashboardTaxUploadAmountInput),
+        amount: validatedData.amount,
         eventName: getDashboardTaxUploadEventName(),
         file: selectedFile ?? null,
         fileName: selectedFile?.name ?? dashboardTaxUploadCurrentFileName,
-        generatedAt: formatUtcIsoDateTimeInputValue(
-          getDashboardTaxUploadTextValue(dashboardTaxUploadGeneratedAtInput)
-        ),
+        generatedAt: validatedData.generatedAt,
         rowId: dashboardTaxUploadEditingRowId,
-        taxId: getDashboardTaxUploadTextValue(dashboardTaxUploadTaxIdInput),
+        taxId: validatedData.taxId,
         type: taxReceiptUploadImportMessageType,
       },
       window.location.origin
@@ -1678,7 +1900,7 @@ function openDashboardTaxUploadDialog({ mode = "create", receiptData = {} } = {}
   if (mode === "edit") {
     setDashboardTaxUploadDialogMode("edit", receiptData);
   } else {
-    resetDashboardTaxUploadDialog();
+    setDashboardTaxUploadDialogMode("create", receiptData);
   }
 
   dashboardTaxUploadPreviousFocus = document.activeElement;
@@ -1824,6 +2046,16 @@ dashboardTaxUploadEventTrigger?.addEventListener("keydown", (event) => {
 });
 
 dashboardTaxUploadFileInput?.addEventListener("change", updateDashboardTaxUploadFileName);
+["dragenter", "dragover"].forEach((eventName) => {
+  document.addEventListener(eventName, handleDashboardTaxUploadDrag);
+});
+["dragleave", "dragend"].forEach((eventName) => {
+  document.addEventListener(eventName, handleDashboardTaxUploadDragEnd);
+});
+document.addEventListener("drop", handleDashboardTaxUploadDrop);
+dashboardTaxUploadTaxIdInput?.addEventListener("input", clearDashboardTaxUploadErrors);
+dashboardTaxUploadAmountInput?.addEventListener("input", clearDashboardTaxUploadErrors);
+dashboardTaxUploadGeneratedAtInput?.addEventListener("input", clearDashboardTaxUploadErrors);
 
 dashboardCompletionUploadEventOptions.forEach((option, index) => {
   option.addEventListener("click", () => {
@@ -1911,7 +2143,7 @@ dashboardEventCompletionHoursInput?.addEventListener("input", updateDashboardEve
 installDatePicker(dashboardEventStartDateInput);
 installDatePicker(dashboardEventEndDateInput);
 installDateTimePicker(dashboardEventCompletionDownloadStartsAtInput);
-installDateTimePicker(dashboardTaxUploadGeneratedAtInput);
+installDateTimePicker(dashboardTaxUploadGeneratedAtInput, { includeSeconds: true });
 
 dashboardEventDocumentTypeInputs.forEach((input) => {
   input.addEventListener("change", updateDashboardCompletionDownloadStartsAtVisibility);

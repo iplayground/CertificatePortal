@@ -907,6 +907,10 @@ form {
   margin: 0;
 }
 
+.tax-receipt-filter-form {
+  grid-template-columns: minmax(260px, 420px) minmax(180px, 240px);
+}
+
 .document-bulk-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -991,6 +995,15 @@ form {
   width: 120px;
 }
 
+.tax-receipt-col-actions,
+.tax-receipt-table td:last-child {
+  width: 1%;
+}
+
+.tax-receipt-table .document-row-actions {
+  flex-wrap: nowrap;
+}
+
 .completion-cert-col-badge {
   width: 140px;
 }
@@ -1044,6 +1057,15 @@ form {
 
 .document-list-table tr:last-child td {
   border-bottom: 0;
+}
+
+.tax-receipt-row.is-disabled {
+  cursor: wait;
+  opacity: 0.52;
+}
+
+.tax-receipt-row.is-disabled td {
+  color: var(--theme-content-muted);
 }
 
 .completion-cert-row [data-field="badgeName"],
@@ -1277,6 +1299,30 @@ form {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: middle;
+}
+
+.document-file-icon {
+  position: relative;
+  display: inline-block;
+  width: 14px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: -3px;
+}
+
+.document-file-icon::after {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  border-bottom: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+  background: var(--theme-surface);
+  content: "";
 }
 
 .event-management-card {

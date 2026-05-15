@@ -119,6 +119,61 @@ def upload_pdf_blob(
         raise BlobStoreOperationError("Blob 上傳失敗。") from exc
 
 
+def upload_blob_bytes(
+    *,
+    blob_name: str,
+    container_name: str,
+    content_type: str,
+    data: bytes,
+    standard_blob_tier: str = "Cool",
+) -> str:
+    try:
+        from azure.storage.blob import ContentSettings, StandardBlobTier
+    except ImportError as exc:
+        raise BlobStoreConfigurationError(
+            "缺少 Azure Blob Storage 套件。請安裝 azure-storage-blob。"
+        ) from exc
+
+    resolved_blob_tier = resolve_standard_blob_tier(
+        standard_blob_tier,
+        standard_blob_tier_type=StandardBlobTier,
+    )
+    try:
+        blob_client = (
+            get_blob_service_client()
+            .get_container_client(container_name)
+            .get_blob_client(blob_name)
+        )
+        blob_client.upload_blob(
+            data,
+            overwrite=True,
+            content_settings=ContentSettings(content_type=content_type),
+            standard_blob_tier=resolved_blob_tier,
+        )
+        return blob_name
+    except Exception as exc:
+        raise BlobStoreOperationError("Blob 上傳失敗。") from exc
+
+
+def delete_blob(
+    *,
+    blob_name: str,
+    container_name: str,
+) -> None:
+    try:
+        blob_client = (
+            get_blob_service_client()
+            .get_container_client(container_name)
+            .get_blob_client(blob_name)
+        )
+        blob_client.delete_blob()
+    except Exception as exc:
+        status_code = getattr(exc, "status_code", None)
+        if status_code == 404:
+            return
+        raise BlobStoreOperationError("Blob 刪除失敗。") from exc
+
+
 def resolve_standard_blob_tier(
     value: str,
     *,

@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="/assets/theme.css">
     <link rel="stylesheet" href="/assets/portal.css">
   </head>
-  <body class="portal-embedded-body">
+  <body class="portal-embedded-body" data-portal-csrf-token="{{portal_csrf_token}}">
     <main class="embedded-page-shell">
       <section class="content-card embedded-page-card document-workspace-card">
         <div class="event-management-header">
@@ -23,28 +23,31 @@
           </button>
         </div>
 
-        <form class="document-filter-form" aria-label="營業稅繳稅證明篩選">
+        <form class="document-filter-form tax-receipt-filter-form" aria-label="營業稅繳稅證明篩選">
           <div class="field">
             <span class="field-label" id="tax-event-filter-label">活動</span>
             <input id="tax-event-filter" name="eventName" type="hidden" value="">
             <div class="field-static-value" id="tax-event-filter-value">尚無活動資料</div>
           </div>
+          <label class="field" for="tax-id-filter">
+            <span class="field-label">搜尋統編</span>
+            <input id="tax-id-filter" name="taxId" type="search" inputmode="numeric" autocomplete="off" placeholder="輸入統編">
+          </label>
         </form>
 
         <div class="document-table-wrap">
-          <table class="document-list-table" aria-label="營業稅繳稅證明清單">
+          <table class="document-list-table tax-receipt-table" aria-label="營業稅繳稅證明清單">
             <thead>
               <tr>
-                <th scope="col">統編</th>
-                <th scope="col">產製時間</th>
-                <th scope="col">金額</th>
-                <th scope="col">收據聯檔案</th>
-                <th scope="col">操作</th>
+                <th class="tax-receipt-col-tax-id" scope="col">統編</th>
+                <th class="tax-receipt-col-generated-at" scope="col">產製時間</th>
+                <th class="tax-receipt-col-amount" scope="col">金額</th>
+                <th class="tax-receipt-col-actions" scope="col">操作</th>
               </tr>
             </thead>
             <tbody id="tax-receipt-table-body">
               <tr class="document-empty-row" id="tax-receipt-empty-row">
-                <td colspan="5">尚未新增營業稅繳稅證明。</td>
+                <td colspan="4">營業稅繳稅證明資料載入中...</td>
               </tr>
             </tbody>
           </table>
@@ -54,11 +57,11 @@
               <td data-field="generatedAt"></td>
               <td data-field="amount"></td>
               <td>
-                <span class="document-file-name" data-field="fileName"></span>
-              </td>
-              <td>
                 <div class="document-row-actions">
-                  <button class="secondary-button document-download-button" type="button">下載</button>
+                  <button class="secondary-button document-download-button" type="button">
+                    <span class="document-file-icon" aria-hidden="true"></span>
+                    <span>下載</span>
+                  </button>
                   <button class="secondary-button document-edit-button" type="button">修改</button>
                   <button class="secondary-button document-delete-button" type="button">刪除</button>
                 </div>
@@ -66,6 +69,18 @@
             </tr>
           </template>
         </div>
+
+        <nav class="document-pagination" id="tax-receipt-pagination" aria-label="營業稅繳稅證明清單分頁" hidden>
+          <button class="secondary-button document-page-button" id="tax-receipt-page-prev" type="button">
+            上一頁
+          </button>
+          <span class="document-page-status" id="tax-receipt-page-status" aria-live="polite">
+            第 1 / 1 頁
+          </span>
+          <button class="secondary-button document-page-button" id="tax-receipt-page-next" type="button">
+            下一頁
+          </button>
+        </nav>
 
         <div
           class="event-dialog-backdrop"
@@ -128,8 +143,8 @@
                     type="text"
                     inputmode="numeric"
                     autocomplete="off"
-                    placeholder="---- / -- / -- --:--"
-                    pattern="[0-9]{4} / [0-9]{2} / [0-9]{2} ([01][0-9]|2[0-3]):[0-5][0-9]"
+                    placeholder="---- / -- / -- --:--:--"
+                    pattern="[0-9]{4} / [0-9]{2} / [0-9]{2} ([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]"
                     data-1p-ignore="true"
                     data-op-ignore="true"
                     data-lpignore="true"
@@ -143,8 +158,8 @@
               <label class="document-upload-dropzone" for="tax-upload-file">
                 <span class="document-upload-icon" aria-hidden="true">PDF</span>
                 <span class="document-upload-copy">
-                  <strong>選擇 PDF 或圖檔</strong>
-                  <small>每次新增一筆資料，支援 PDF、PNG 與 JPG。</small>
+                  <strong>拖曳或選擇 PDF、PNG、JPG</strong>
+                  <small>每次新增一筆資料，可將檔案拖曳到這裡。</small>
                   <span class="document-upload-file-name" id="tax-upload-file-name">
                     尚未選擇 PDF 或圖檔
                   </span>
@@ -157,6 +172,14 @@
                   accept=".pdf,application/pdf,image/png,image/jpeg,.png,.jpg,.jpeg"
                 >
               </label>
+
+              <div
+                class="document-upload-errors"
+                id="tax-upload-errors"
+                role="status"
+                aria-live="polite"
+                hidden
+              ></div>
 
               <div class="event-form-actions">
                 <button class="secondary-button event-cancel-button" id="tax-upload-cancel" type="button">取消</button>
@@ -180,6 +203,7 @@
 
     <script src="/assets/portal-datetime-picker.js"></script>
     <script src="/assets/portal-event-cache.js"></script>
+    <script src="/assets/page-alert.js"></script>
     <script src="/assets/portal-dashboard-tax-receipts.js"></script>
   </body>
 </html>

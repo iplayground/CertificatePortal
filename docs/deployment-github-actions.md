@@ -20,7 +20,7 @@ Resource Group、Region 與 Function App 名稱由 Bicep 參數或 GitHub Action
 
 `functionAppName` 必須保持 Azure 全域唯一，並會同時影響 Function App 名稱、預設公開網址，以及衍生出的 Storage Account、Application Insights、Log Analytics 與 GitHub 部署身分命名。
 
-若未明確提供 `cosmosAccountName`，Bicep 會依 `functionAppName` 與 Resource Group 產生全域唯一的 Cosmos DB account 名稱。`cosmosDatabaseName` 預設為 `ipg-certificate`。目前已建立活動管理用的 `events` container，以及完訓證明用的 `completionCerts` 與 `completionCertRequests` containers。資料模型與欄位規則請參考 [cosmos-data-model.md](cosmos-data-model.md)。
+若未明確提供 `cosmosAccountName`，Bicep 會依 `functionAppName` 與 Resource Group 產生全域唯一的 Cosmos DB account 名稱。`cosmosDatabaseName` 預設為 `ipg-certificate`。目前已建立活動管理用的 `events` container，完訓證明用的 `completionCerts` 與 `completionCertRequests` containers，以及營業稅繳稅證明用的 `taxReceipts` container。資料模型與欄位規則請參考 [cosmos-data-model.md](cosmos-data-model.md)。
 
 因為 Cosmos DB account 停用 local auth，Azure Portal 的 Data Explorer 也需要 Cosmos native RBAC。Azure RBAC 的 `Owner` 或 `Contributor` 可管理 account，但不會自動取得 Cosmos 資料面讀取權限。
 
@@ -92,15 +92,16 @@ az functionapp config appsettings set \
 - 1 個 Storage Account
 - 4 個 Blob containers
 - `function-releases`
-- `source-uploads`
 - `document-assets`
 - `issued-certs`
 - 1 個 Azure Cosmos DB for NoSQL serverless account，使用 Session consistency，並停用 local auth
 - 1 個 Cosmos DB SQL database，預設名稱 `ipg-certificate`
-- 3 個 Cosmos DB SQL containers
+- 5 個 Cosmos DB SQL containers
 - `events`，partition key 為 `/id`
 - `completionCerts`，partition key 為 `/eventId`
 - `completionCertRequests`，partition key 為 `/eventId`
+- `taxReceipts`，partition key 為 `/eventId`
+- `publicLookupAttempts`，partition key 為 `/id`
 - 1 個 Log Analytics Workspace
 - 1 個 Application Insights
 - 1 個 GitHub Actions 專用 user-assigned managed identity
@@ -110,9 +111,9 @@ az functionapp config appsettings set \
 Blob container 用途：
 
 - `function-releases`：Flex Consumption 部署套件
-- `source-uploads`：來源上傳檔，例如未來 CSV、Excel 或稅務文件來源檔
 - `document-assets`：不進 git 的固定證明附件；目前已使用 `completion-cert/organization-seal.png` 存放單位印章圖，並使用 `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png` 存放首頁證明預覽圖，預覽 PDF 備份則存放於 `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並使用 Archive tier
 - `issued-certs`：產生後可再次下載的完訓證明 PDF；應以 Cool tier 儲存
+- `tax-receipts`：管理端逐筆上傳的營業稅繳稅證明 PDF、PNG 或 JPG/JPEG 檔案
 
 ## 部署後需要設定的 GitHub Actions Secrets 與 Variables
 
@@ -209,9 +210,9 @@ rollback 會重新 checkout rollback ref，並再次透過 `Azure/functions-acti
 - Cosmos DB：Azure Cosmos DB for NoSQL serverless account
 - Cosmos DB local auth：停用，Function App 以 system-assigned managed identity 取得 database 範圍的 Cosmos DB Built-in Data Contributor 權限
 - Cosmos Portal inspection：可透過 `cosmosPortalDataReaderPrincipalIds` 為管理者安全群組授與 account 範圍 Cosmos DB Built-in Data Reader
-- Cosmos app settings：`COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER`、`COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER` 與 `COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER` 由 Bicep 寫入 Function App
-- Blob app settings：`BLOB_SOURCE_CONTAINER`、`BLOB_DOCUMENT_ASSETS_CONTAINER` 與 `BLOB_ISSUED_CERT_CONTAINER` 由 Bicep 寫入 Function App，預設分別指向 `source-uploads`、`document-assets` 與 `issued-certs`
-- Cosmos containers：`events` 使用 `/id` 作為 partition key，供活動管理資料使用；完訓證明 containers 依 [cosmos-data-model.md](cosmos-data-model.md) 使用 `/eventId`
+- Cosmos app settings：`COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER`、`COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER`、`COSMOS_TAX_RECEIPTS_CONTAINER` 與 `COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER` 由 Bicep 寫入 Function App
+- Blob app settings：`BLOB_DOCUMENT_ASSETS_CONTAINER`、`BLOB_ISSUED_CERT_CONTAINER` 與 `BLOB_TAX_RECEIPTS_CONTAINER` 由 Bicep 寫入 Function App，預設分別指向 `document-assets`、`issued-certs` 與 `tax-receipts`
+- Cosmos containers：`events` 使用 `/id` 作為 partition key，供活動管理資料使用；完訓證明與營業稅繳稅證明 containers 依 [cosmos-data-model.md](cosmos-data-model.md) 使用 `/eventId`
 
 Bicep 只建立 Blob containers 與 Function App app settings，不會上傳不進 git 的固定素材。重新建立環境後，仍需將單位印章圖與首頁證明預覽圖上傳到 `document-assets`：
 

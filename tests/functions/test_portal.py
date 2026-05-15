@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
+import io
 import json
+import zipfile
 from http.cookies import SimpleCookie
 from typing import Any
 
@@ -11,6 +14,7 @@ from src.functions.assets import static_asset
 from src.functions.portal import (
     PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR,
     build_portal_csrf_token,
+    build_tax_receipt_download_ticket,
     portal_admin_completion_certs_import_api,
     portal_admin_completion_certs_list_api,
     portal_admin_completion_certs_update_api,
@@ -18,6 +22,9 @@ from src.functions.portal import (
     portal_admin_completion_cert_change_requests_review_api,
     portal_admin_events_create_api,
     portal_admin_events_update_api,
+    portal_admin_tax_receipts_list_create_api,
+    portal_admin_tax_receipts_update_delete_api,
+    public_tax_receipts_download_api,
     portal_dashboard_completion_reviews_page,
     portal_dashboard_completion_certs_page,
     portal_dashboard_events_page,
@@ -213,6 +220,67 @@ class FakeCompletionCertRequestsContainer:
             for item in self.items.values()
             if item["status"] == status
         ]
+
+
+class FakeTaxReceiptsContainer:
+    def __init__(self) -> None:
+        self.items: dict[str, dict[str, Any]] = {}
+        self.query_count = 0
+
+    def read_item(self, item: str, partition_key: str) -> dict[str, Any]:
+        document = self.items.get(item)
+        if document is None or document["eventId"] != partition_key:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        return document
+
+    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]:
+        if item not in self.items:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        self.items[item] = body
+        return body
+
+    def upsert_item(self, body: dict[str, Any]) -> dict[str, Any]:
+        self.items[body["id"]] = body
+        return body
+
+    def delete_item(self, item: str, partition_key: str) -> None:
+        document = self.items.get(item)
+        if document is None or document["eventId"] != partition_key:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        del self.items[item]
+
+    def query_items(
+        self,
+        query: str,
+        *,
+        parameters: list[dict[str, Any]] | None = None,
+        enable_cross_partition_query: bool,
+        partition_key: str | None = None,
+    ) -> list[dict[str, Any]]:
+        self.query_count += 1
+        assert "WHERE c.eventId = @eventId" in query
+        assert not enable_cross_partition_query
+        event_id = next(
+            parameter["value"]
+            for parameter in parameters or []
+            if parameter["name"] == "@eventId"
+        )
+        assert partition_key == event_id
+        return sorted(
+            [
+                item
+                for item in self.items.values()
+                if item["eventId"] == event_id
+            ],
+            key=lambda item: item["generatedAt"],
+            reverse=True,
+        )
 
 
 def build_authorized_portal_api_request(
@@ -1038,6 +1106,565 @@ def test_portal_admin_completion_certs_update_api_rejects_empty_required_fields(
     assert "完訓證明資料缺少必要欄位值：Email" in body
 
 
+def test_portal_admin_tax_receipts_create_api_writes_metadata_to_cosmos_and_file_to_blob(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_tax"] = {
+        "id": "evt_tax",
+        "name": "營業稅活動",
+        "documentTypes": ["taxReceipt"],
+    }
+    fake_tax_container = FakeTaxReceiptsContainer()
+    uploaded_blobs: dict[str, dict[str, Any]] = {}
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_events_container)
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_tax_receipts_blob_container_name",
+        lambda: "tax-receipts",
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.upload_blob_bytes",
+        lambda *, blob_name, container_name, content_type, data: uploaded_blobs.setdefault(
+            blob_name,
+            {
+                "containerName": container_name,
+                "contentType": content_type,
+                "data": data,
+            },
+        ),
+    )
+    file_bytes = b"%PDF-1.4 tax receipt"
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_tax",
+                "taxId": "12345678",
+                "amount": 186000,
+                "generatedAt": "2026-05-13T15:00:44Z",
+                "fileName": "receipt.pdf",
+                "contentType": "application/pdf",
+                "fileBase64": base64.b64encode(file_bytes).decode("ascii"),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        url="http://localhost:7075/api/v1/admin/tax-receipts",
+    )
+
+    response = portal_admin_tax_receipts_list_create_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 201
+    payload = json.loads(body)
+    assert payload["taxReceipt"]["id"].startswith("trec_")
+    assert "downloadUrl" not in payload["taxReceipt"]
+    assert len(fake_tax_container.items) == 1
+    receipt = next(iter(fake_tax_container.items.values()))
+    assert receipt["eventId"] == "evt_tax"
+    assert receipt["taxId"] == "12345678"
+    assert receipt["amount"] == 186000
+    assert receipt["generatedAt"] == "2026-05-13T15:00:44Z"
+    assert receipt["fileName"] == "receipt-12345678-1.pdf"
+    assert receipt["fileSequence"] == 1
+    assert receipt["contentType"] == "application/pdf"
+    assert receipt["fileSize"] == len(file_bytes)
+    assert receipt["sourceBlobName"] == f"evt_tax/{receipt['id']}.pdf"
+    assert receipt["downloadCount"] == 0
+    assert uploaded_blobs[receipt["sourceBlobName"]] == {
+        "containerName": "tax-receipts",
+        "contentType": "application/pdf",
+        "data": file_bytes,
+    }
+
+
+def test_portal_admin_tax_receipts_create_api_rejects_decimal_amount(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_tax",
+                "taxId": "12345678",
+                "amount": "186000.5",
+                "generatedAt": "2026-05-13T15:00:44Z",
+                "fileName": "receipt.pdf",
+                "contentType": "application/pdf",
+                "fileBase64": base64.b64encode(b"%PDF-1.4").decode("ascii"),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        url="http://localhost:7075/api/v1/admin/tax-receipts",
+    )
+
+    response = portal_admin_tax_receipts_list_create_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 400
+    assert "金額必須是大於 0 的整數" in body
+
+
+def test_portal_admin_tax_receipts_create_api_uses_next_tax_id_file_sequence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_tax"] = {
+        "id": "evt_tax",
+        "name": "營業稅活動",
+        "documentTypes": ["taxReceipt"],
+    }
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_existing"] = {
+        "id": "trec_existing",
+        "eventId": "evt_tax",
+        "taxId": "12345678",
+        "amount": 100,
+        "generatedAt": "2026-05-13T15:00:00Z",
+        "sourceBlobName": "evt_tax/trec_existing.pdf",
+        "fileName": "receipt-12345678-1.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+        "fileSize": 8,
+        "downloadCount": 0,
+        "createdAt": "2026-05-13T15:00:00Z",
+        "updatedAt": "2026-05-13T15:00:00Z",
+    }
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_events_container)
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_tax_receipts_blob_container_name",
+        lambda: "tax-receipts",
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.upload_blob_bytes",
+        lambda *, blob_name, container_name, content_type, data: None,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_tax",
+                "taxId": "12345678",
+                "amount": 186000,
+                "generatedAt": "2026-05-13T15:00:44Z",
+                "fileName": "receipt.pdf",
+                "contentType": "application/pdf",
+                "fileBase64": base64.b64encode(b"%PDF-1.4").decode("ascii"),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        url="http://localhost:7075/api/v1/admin/tax-receipts",
+    )
+
+    response = portal_admin_tax_receipts_list_create_api(request)
+
+    assert response.status_code == 201
+    created_receipt = [
+        item
+        for item in fake_tax_container.items.values()
+        if item["id"] != "trec_existing"
+    ][0]
+    assert created_receipt["fileName"] == "receipt-12345678-2.pdf"
+    assert created_receipt["fileSequence"] == 2
+
+
+def test_portal_admin_tax_receipts_list_api_reads_event_partition_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_1"] = {
+        "id": "trec_1",
+        "eventId": "evt_tax",
+        "taxId": "12345678",
+        "amount": 186000,
+        "generatedAt": "2026-05-13T15:00:44Z",
+        "sourceBlobName": "evt_tax/trec_1.pdf",
+        "fileName": "receipt.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+        "fileSize": 8,
+        "downloadCount": 0,
+        "createdAt": "2026-05-13T15:01:00Z",
+        "updatedAt": "2026-05-13T15:01:00Z",
+    }
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        method="GET",
+        url="http://localhost:7075/api/v1/admin/tax-receipts",
+        params={"eventId": "evt_tax"},
+    )
+
+    response = portal_admin_tax_receipts_list_create_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    payload = json.loads(body)
+    assert payload["taxReceipts"][0]["id"] == "trec_1"
+    assert payload["taxReceipts"][0]["amount"] == 186000
+    assert "downloadUrl" not in payload["taxReceipts"][0]
+
+
+def test_portal_admin_tax_receipts_update_api_updates_cosmos_and_replaces_blob(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_tax"] = {
+        "id": "evt_tax",
+        "name": "營業稅活動",
+        "documentTypes": ["taxReceipt"],
+    }
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_1"] = {
+        "id": "trec_1",
+        "eventId": "evt_tax",
+        "taxId": "12345678",
+        "amount": 186000,
+        "generatedAt": "2026-05-13T15:00:44Z",
+        "sourceBlobName": "evt_tax/trec_1.pdf",
+        "fileName": "receipt.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+        "fileSize": 8,
+        "downloadCount": 0,
+        "createdAt": "2026-05-13T15:01:00Z",
+        "updatedAt": "2026-05-13T15:01:00Z",
+    }
+    uploaded_blobs: dict[str, dict[str, Any]] = {}
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_events_container)
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_tax_receipts_blob_container_name",
+        lambda: "tax-receipts",
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.upload_blob_bytes",
+        lambda *, blob_name, container_name, content_type, data: uploaded_blobs.setdefault(
+            blob_name,
+            {
+                "containerName": container_name,
+                "contentType": content_type,
+                "data": data,
+            },
+        ),
+    )
+    replacement_bytes = b"\x89PNG\r\n"
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_tax",
+                "taxId": "12345678",
+                "amount": "187,000",
+                "generatedAt": "2026-05-13T15:02:05Z",
+                "fileName": "receipt.png",
+                "contentType": "image/png",
+                "fileBase64": base64.b64encode(replacement_bytes).decode("ascii"),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"receiptid": "trec_1"},
+        url="http://localhost:7075/api/v1/admin/tax-receipts/trec_1",
+    )
+
+    response = portal_admin_tax_receipts_update_delete_api(request)
+
+    assert response.status_code == 200
+    receipt = fake_tax_container.items["trec_1"]
+    assert receipt["taxId"] == "12345678"
+    assert receipt["amount"] == 187000
+    assert receipt["generatedAt"] == "2026-05-13T15:02:05Z"
+    assert receipt["fileName"] == "receipt-12345678-1.png"
+    assert receipt["fileSequence"] == 1
+    assert receipt["contentType"] == "image/png"
+    assert receipt["sourceBlobName"] == "evt_tax/trec_1.png"
+    assert fake_tax_container.query_count == 0
+    assert uploaded_blobs["evt_tax/trec_1.png"] == {
+        "containerName": "tax-receipts",
+        "contentType": "image/png",
+        "data": replacement_bytes,
+    }
+
+
+def test_portal_admin_tax_receipts_update_api_rejects_tax_id_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_tax"] = {
+        "id": "evt_tax",
+        "name": "營業稅活動",
+        "documentTypes": ["taxReceipt"],
+    }
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_1"] = {
+        "id": "trec_1",
+        "eventId": "evt_tax",
+        "taxId": "12345678",
+        "amount": 186000,
+        "generatedAt": "2026-05-13T15:00:44Z",
+        "sourceBlobName": "evt_tax/trec_1.pdf",
+        "fileName": "receipt-12345678-1.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+        "fileSize": 8,
+        "downloadCount": 0,
+        "createdAt": "2026-05-13T15:01:00Z",
+        "updatedAt": "2026-05-13T15:01:00Z",
+    }
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_events_container)
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_tax",
+                "taxId": "87654321",
+                "amount": "187000",
+                "generatedAt": "2026-05-13T15:02:05Z",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"receiptid": "trec_1"},
+        url="http://localhost:7075/api/v1/admin/tax-receipts/trec_1",
+    )
+
+    response = portal_admin_tax_receipts_update_delete_api(request)
+
+    assert response.status_code == 400
+    payload = json.loads(response.get_body())
+    assert payload["error"]["code"] == "tax_receipt_tax_id_immutable"
+    assert payload["error"]["message"] == "統編不可在編輯時修改。請刪除後重新新增。"
+    assert fake_tax_container.items["trec_1"]["taxId"] == "12345678"
+    assert fake_tax_container.items["trec_1"]["amount"] == 186000
+
+
+def test_portal_admin_tax_receipts_delete_api_removes_cosmos_document_and_blob(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_1"] = {
+        "id": "trec_1",
+        "eventId": "evt_tax",
+        "sourceBlobName": "evt_tax/trec_1.pdf",
+    }
+    deleted_blobs: list[tuple[str, str]] = []
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_tax_receipts_blob_container_name",
+        lambda: "tax-receipts",
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.delete_blob",
+        lambda *, blob_name, container_name: deleted_blobs.append((container_name, blob_name)),
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        method="DELETE",
+        params={"eventId": "evt_tax"},
+        route_params={"receiptid": "trec_1"},
+        url="http://localhost:7075/api/v1/admin/tax-receipts/trec_1",
+    )
+
+    response = portal_admin_tax_receipts_update_delete_api(request)
+
+    assert response.status_code == 200
+    assert fake_tax_container.items == {}
+    assert deleted_blobs == [("tax-receipts", "evt_tax/trec_1.pdf")]
+
+
+def test_public_tax_receipts_download_api_rejects_request_without_portal_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = build_request(
+        "http://localhost:7075/api/v1/tax-receipts/download",
+        body=json.dumps({"eventId": "evt_tax", "receiptIds": ["trec_1"]}).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Host": "localhost:7075",
+            "Origin": "http://localhost:7075",
+        },
+        method="POST",
+    )
+
+    response = public_tax_receipts_download_api(request)
+
+    assert response.status_code == 403
+    assert "invalid_tax_receipt_download_authorization" in response.get_body().decode("utf-8")
+
+
+def test_public_tax_receipts_download_api_rejects_invalid_download_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=b"not-json",
+        method="POST",
+        url="http://localhost:7075/api/v1/tax-receipts/download",
+    )
+
+    response = public_tax_receipts_download_api(request)
+
+    assert response.status_code == 400
+    assert "invalid_tax_receipt_download_payload" in response.get_body().decode("utf-8")
+
+
+def test_public_tax_receipts_download_api_downloads_blob_with_portal_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_1"] = {
+        "id": "trec_1",
+        "eventId": "evt_tax",
+        "sourceBlobName": "evt_tax/trec_1.pdf",
+        "fileName": "receipt-12345678-1.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+    }
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_tax_receipts_blob_container_name",
+        lambda: "tax-receipts",
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.download_blob_bytes",
+        lambda *, blob_name, container_name: b"%PDF-1.4"
+        if (container_name, blob_name) == ("tax-receipts", "evt_tax/trec_1.pdf")
+        else b"",
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps({"eventId": "evt_tax", "receiptIds": ["trec_1"]}).encode("utf-8"),
+        method="POST",
+        url="http://localhost:7075/api/v1/tax-receipts/download",
+    )
+
+    response = public_tax_receipts_download_api(request)
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    assert response.headers["Content-Disposition"] == (
+        'attachment; filename="receipt-12345678-1.pdf"'
+    )
+    assert response.get_body() == b"%PDF-1.4"
+
+
+def test_public_tax_receipts_download_api_downloads_blob_with_download_ticket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TAX_RECEIPT_DOWNLOAD_TICKET_SECRET", "test-download-ticket-secret")
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_1"] = {
+        "id": "trec_1",
+        "eventId": "evt_tax",
+        "sourceBlobName": "evt_tax/trec_1.pdf",
+        "fileName": "receipt-12345678-1.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+    }
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_tax_receipts_blob_container_name",
+        lambda: "tax-receipts",
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.download_blob_bytes",
+        lambda *, blob_name, container_name: b"%PDF-1.4"
+        if (container_name, blob_name) == ("tax-receipts", "evt_tax/trec_1.pdf")
+        else b"",
+    )
+    ticket = build_tax_receipt_download_ticket(
+        event_id="evt_tax",
+        receipt_ids=["trec_1"],
+    )
+    reset_portal_auth_env(monkeypatch)
+    request = build_request(
+        "http://localhost:7075/api/v1/tax-receipts/download",
+        body=json.dumps(
+            {
+                "downloadTicket": ticket,
+                "eventId": "evt_tax",
+                "receiptIds": ["trec_1"],
+            }
+        ).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Host": "localhost:7075",
+            "Origin": "http://localhost:7075",
+        },
+        method="POST",
+    )
+
+    response = public_tax_receipts_download_api(request)
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    assert response.headers["Content-Disposition"] == (
+        'attachment; filename="receipt-12345678-1.pdf"'
+    )
+    assert response.get_body() == b"%PDF-1.4"
+
+
+def test_public_tax_receipts_download_api_downloads_multiple_blobs_as_zip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_1"] = {
+        "id": "trec_1",
+        "eventId": "evt_tax",
+        "sourceBlobName": "evt_tax/trec_1.pdf",
+        "fileName": "receipt-12345678-1.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+    }
+    fake_tax_container.items["trec_2"] = {
+        "id": "trec_2",
+        "eventId": "evt_tax",
+        "sourceBlobName": "evt_tax/trec_2.png",
+        "fileName": "receipt-87654321-1.png",
+        "fileSequence": 1,
+        "contentType": "image/png",
+    }
+    blob_payloads = {
+        ("tax-receipts", "evt_tax/trec_1.pdf"): b"%PDF-1.4",
+        ("tax-receipts", "evt_tax/trec_2.png"): b"PNG",
+    }
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_tax_receipts_blob_container_name",
+        lambda: "tax-receipts",
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.download_blob_bytes",
+        lambda *, blob_name, container_name: blob_payloads[(container_name, blob_name)],
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {"eventId": "evt_tax", "receiptIds": ["trec_1", "trec_2"]}
+        ).encode("utf-8"),
+        method="POST",
+        url="http://localhost:7075/api/v1/tax-receipts/download",
+    )
+
+    response = public_tax_receipts_download_api(request)
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/zip"
+    assert response.headers["Content-Disposition"] == (
+        'attachment; filename="tax-receipts-evt_tax.zip"'
+    )
+    with zipfile.ZipFile(io.BytesIO(response.get_body())) as zip_file:
+        assert sorted(zip_file.namelist()) == [
+            "receipt-12345678-1.pdf",
+            "receipt-87654321-1.png",
+        ]
+        assert zip_file.read("receipt-12345678-1.pdf") == b"%PDF-1.4"
+        assert zip_file.read("receipt-87654321-1.png") == b"PNG"
+
+
 def test_portal_admin_completion_cert_change_requests_list_api_returns_pending_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1685,6 +2312,9 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'id="portal-tax-upload-tax-id"' in body
     assert 'id="portal-tax-upload-amount"' in body
     assert 'id="portal-tax-upload-generated-at"' in body
+    assert 'id="portal-tax-upload-errors"' in body
+    assert 'placeholder="---- / -- / -- --:--:--"' in body
+    assert "[0-5][0-9]:[0-5][0-9]" in body
     assert 'id="portal-tax-upload-continue"' in body
     assert 'id="portal-tax-upload-continue-option"' in body
     assert 'class="form-checkbox-option document-upload-continue-option"' in body
@@ -1695,7 +2325,8 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'aria-labelledby="portal-tax-upload-event-label portal-tax-upload-event-value"' not in body
     assert 'accept=".pdf,application/pdf,image/png,image/jpeg,.png,.jpg,.jpeg"' in body
     assert "新增營業稅繳稅證明" in body
-    assert "選擇 PDF 或圖檔" in body
+    assert "拖曳或選擇 PDF、PNG、JPG" in body
+    assert "可將檔案拖曳到這裡" in body
     assert "尚未選擇 PDF 或圖檔" in body
     assert "每次新增一筆資料" in body
     assert "還有其他檔案要上傳" in body
@@ -2563,8 +3194,15 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert "新增繳稅證明" in body
     assert "檢視已新增的營業稅繳稅證明" in body
     assert "PDF 或圖檔" in body
+    assert 'class="document-filter-form tax-receipt-filter-form"' in body
     assert 'aria-label="營業稅繳稅證明篩選"' in body
     assert 'id="tax-event-filter"' in body
+    assert 'id="tax-id-filter"' in body
+    assert 'name="taxId"' in body
+    assert 'type="search"' in body
+    assert 'inputmode="numeric"' in body
+    assert "搜尋統編" in body
+    assert "輸入統編" in body
     assert 'id="tax-event-filter-select"' not in body
     assert 'id="tax-event-filter-trigger"' not in body
     assert 'id="tax-event-filter-options"' not in body
@@ -2580,12 +3218,16 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert "統編" in body
     assert "金額" in body
     assert "產製時間" in body
-    assert body.index("<th scope=\"col\">產製時間</th>") < body.index("<th scope=\"col\">金額</th>")
+    assert body.index('class="tax-receipt-col-generated-at" scope="col">產製時間</th>') < body.index(
+        'class="tax-receipt-col-amount" scope="col">金額</th>'
+    )
     assert body.index('data-field="generatedAt"') < body.index('data-field="amount"')
     assert "報名序號" not in body
     assert "姓名" not in body
     assert "Email" not in body
-    assert "收據聯檔案" in body
+    assert 'class="document-list-table tax-receipt-table"' in body
+    assert 'class="tax-receipt-col-actions"' in body
+    assert "收據聯檔案" not in body
     assert "下載狀態" not in body
     assert "操作" in body
     assert "下載" in body
@@ -2594,10 +3236,14 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert 'id="tax-receipt-row-template"' in body
     assert 'id="tax-receipt-table-body"' in body
     assert 'id="tax-receipt-empty-row"' in body
-    assert 'class="document-file-name"' in body
+    assert 'id="tax-receipt-pagination"' in body
+    assert 'id="tax-receipt-page-prev"' in body
+    assert 'id="tax-receipt-page-status"' in body
+    assert 'id="tax-receipt-page-next"' in body
+    assert "營業稅繳稅證明清單分頁" in body
     assert 'class="document-row-actions"' in body
-    assert 'data-field="fileName"' in body
     assert 'class="secondary-button document-download-button"' in body
+    assert 'class="document-file-icon"' in body
     assert 'class="secondary-button document-edit-button"' in body
     assert 'class="secondary-button document-delete-button"' in body
     assert 'class="event-status-switch-option document-row-status-switch"' not in body
@@ -2605,8 +3251,8 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert 'data-action="toggle-downloadable"' not in body
     assert 'data-field="downloadStatus"' not in body
     assert 'aria-label="切換下載狀態"' not in body
-    assert 'colspan="5"' in body
-    assert "尚未新增營業稅繳稅證明" in body
+    assert 'colspan="4"' in body
+    assert "營業稅繳稅證明資料載入中..." in body
     assert 'id="tax-upload-open"' in body
     assert 'id="tax-upload-dialog"' in body
     assert 'aria-modal="true"' in body
@@ -2623,12 +3269,14 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert 'id="tax-upload-tax-id"' in body
     assert 'id="tax-upload-amount"' in body
     assert 'id="tax-upload-generated-at"' in body
+    assert 'id="tax-upload-errors"' in body
     assert 'id="tax-upload-continue"' in body
     assert 'id="tax-upload-continue-option"' in body
     assert 'inputmode="decimal"' in body
     assert 'class="form-datetime-input"' in body
     assert 'type="datetime-local"' not in body
-    assert 'placeholder="---- / -- / -- --:--"' in body
+    assert 'placeholder="---- / -- / -- --:--:--"' in body
+    assert "[0-5][0-9]:[0-5][0-9]" in body
     assert 'class="document-detail-grid"' in body
     assert 'class="document-upload-input"' in body
     assert 'class="document-upload-copy"' in body
@@ -2639,16 +3287,22 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert 'id="tax-upload-continue-text"' not in body
     assert body.index('id="tax-upload-submit"') < body.index('id="tax-upload-continue-option"')
     assert 'accept=".pdf,application/pdf,image/png,image/jpeg,.png,.jpg,.jpeg"' in body
+    assert "拖曳或選擇 PDF、PNG、JPG" in body
     assert "每次新增一筆資料" in body
+    assert "可將檔案拖曳到這裡" in body
     assert "還有其他檔案要上傳" in body
     assert "尚未選擇 PDF 或圖檔" in body
     assert 'src="/assets/portal-datetime-picker.js"' in body
     assert 'src="/assets/portal-event-cache.js"' in body
+    assert 'src="/assets/page-alert.js"' in body
     assert 'src="/assets/portal-dashboard-tax-receipts.js"' in body
     assert body.index('src="/assets/portal-datetime-picker.js"') < body.index(
         'src="/assets/portal-event-cache.js"'
     )
     assert body.index('src="/assets/portal-event-cache.js"') < body.index(
+        'src="/assets/page-alert.js"'
+    )
+    assert body.index('src="/assets/page-alert.js"') < body.index(
         'src="/assets/portal-dashboard-tax-receipts.js"'
     )
     assert "CSV" not in body
@@ -2841,6 +3495,8 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".required-field-mark" not in body
     assert ".document-filter-submit" not in body
     assert ".document-list-table" in body
+    assert ".tax-receipt-filter-form" in body
+    assert "grid-template-columns: minmax(260px, 420px) minmax(180px, 240px);" in body
     assert ".completion-cert-table" in body
     assert ".completion-review-table" in body
     assert "table-layout: fixed;" in body
@@ -2866,6 +3522,9 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".document-download-button:disabled" in body
     assert ".document-page-button:disabled" in body
     assert ".document-row-actions" in body
+    assert ".tax-receipt-row.is-disabled" in body
+    assert ".tax-receipt-col-actions,\n.tax-receipt-table td:last-child" in body
+    assert ".tax-receipt-table .document-row-actions" in body
     assert ".completion-cert-table.is-bulk-updating .completion-cert-row" in body
     assert ".event-status-switch-input:disabled + .event-status-switch-track" in body
     assert ".document-delete-button" in body
@@ -2879,7 +3538,7 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".document-upload-copy" in body
     assert ".document-upload-file-name" in body
     assert ".document-detail-grid" in body
-    assert ".document-file-name" in body
+    assert ".document-file-icon" in body
     assert ".document-upload-form input[type=\"file\"]" not in body
     assert ".event-management-header" in body
     assert ".event-management-panel" not in body
@@ -3222,17 +3881,36 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "portal-tax-upload-tax-id" in body
     assert "portal-tax-upload-amount" in body
     assert "portal-tax-upload-generated-at" in body
+    assert "portal-tax-upload-errors" in body
     assert "updateDashboardTaxUploadFileName" in body
     assert "isDashboardTaxReceiptUploadFile" in body
+    assert "validateDashboardTaxUploadForm" in body
+    assert "invalidDashboardTaxUploadTaxIdMessage" in body
+    assert "invalidDashboardTaxUploadAmountMessage" in body
+    assert "請輸入大於 0 的整數金額。" in body
+    assert "invalidDashboardTaxUploadGeneratedAtMessage" in body
+    assert "/^(?:0|[1-9][0-9]*)$/.test(normalizedValue)" in body
     assert "getTaxEventNameFromFrame" in body
     assert "applyDashboardTaxUploadEventValue" in body
     assert "getDashboardTaxUploadEventName" in body
     assert "openDashboardTaxUploadEventSelect" in body
     assert "closeDashboardTaxUploadEventSelect" in body
     assert "sendDashboardTaxUploadFileToFrame" in body
+    assert "handleDashboardTaxUploadDrop" in body
+    assert "assignDashboardTaxUploadFile" in body
+    assert "document.addEventListener(\"drop\", handleDashboardTaxUploadDrop)" in body
     assert "shouldContinueDashboardTaxUpload" in body
     assert "resetDashboardTaxUploadFieldsForNextFile" in body
     assert "setDashboardTaxUploadDialogMode" in body
+    assert "dashboardTaxUploadTaxIdInput.readOnly = isEditMode" in body
+    assert "統編不可修改；如需更正請刪除後重新新增。" in body
+    assert "dashboardTaxUploadInitialDraftState" in body
+    assert "getDashboardTaxUploadDraftState" in body
+    assert "dashboardTaxUploadInitialDraftState = isEditMode" in body
+    assert "setDashboardTaxUploadEventLocked" in body
+    assert "dashboardTaxUploadEventTrigger.disabled = isLocked" in body
+    assert "活動不可在編輯時修改。" in body
+    assert "setDashboardTaxUploadEventLocked(isEditMode)" in body
     assert "taxReceiptUploadImportMessageType" in body
     assert "const adminEventsApiPath = \"/api/v1/admin/events\"" in body
     assert "const portalCsrfToken = portalPage.dataset.portalCsrfToken ?? \"\"" in body
@@ -3245,10 +3923,9 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "ipg:tax-receipt-upload:open" in body
     assert "eventName: getDashboardTaxUploadEventName()" in body
     assert "file: selectedFile ?? null" in body
-    assert "generatedAt: formatUtcIsoDateTimeInputValue(" in body
-    assert "getDashboardTaxUploadTextValue(dashboardTaxUploadGeneratedAtInput)" in body
+    assert "generatedAt: validatedData.generatedAt" in body
     assert "rowId: dashboardTaxUploadEditingRowId" in body
-    assert "taxId: getDashboardTaxUploadTextValue(dashboardTaxUploadTaxIdInput)" in body
+    assert "taxId: validatedData.taxId" in body
     assert "儲存變更" in body
     assert "image/png" in body
     assert ".webp" not in body
@@ -3295,7 +3972,7 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "installDateTimePicker(dashboardEventCompletionDownloadStartsAtInput)" in body
     assert "installDatePicker(dashboardEventStartDateInput)" in body
     assert "installDatePicker(dashboardEventEndDateInput)" in body
-    assert "installDateTimePicker(dashboardTaxUploadGeneratedAtInput)" in body
+    assert "installDateTimePicker(dashboardTaxUploadGeneratedAtInput, { includeSeconds: true })" in body
     assert "dashboardEventDocumentTypeInputs.forEach" in body
     assert "updateDashboardEventFormSubmitState" in body
     assert "dashboardEventNameInput?.addEventListener(\"input\"" in body
@@ -3497,16 +4174,34 @@ def test_portal_dashboard_tax_receipts_js_asset_returns_expected_content_type() 
     assert 'document.getElementById("tax-upload-tax-id")' in body
     assert 'document.getElementById("tax-upload-amount")' in body
     assert 'document.getElementById("tax-upload-generated-at")' in body
+    assert 'document.getElementById("tax-upload-errors")' in body
     assert 'document.getElementById("tax-upload-event")' in body
     assert '"tax-upload-event-trigger"' in body
     assert 'document.getElementById("tax-bulk-downloadable")' not in body
     assert 'document.getElementById("tax-bulk-blocked")' not in body
     assert "updateTaxUploadFileName" in body
     assert "isTaxReceiptUploadFile" in body
+    assert "validateTaxUploadForm" in body
+    assert "invalidTaxUploadTaxIdMessage" in body
+    assert "invalidTaxUploadAmountMessage" in body
+    assert "請輸入大於 0 的整數金額。" in body
+    assert "invalidTaxUploadGeneratedAtMessage" in body
     assert "taxReceiptUploadImportMessageType" in body
     assert "ipg:tax-receipt-upload:import" in body
     assert "ipg:tax-receipt-upload:open" in body
     assert "setTaxUploadDialogMode" in body
+    assert "taxUploadTaxIdInput.readOnly = isEditMode" in body
+    assert "統編不可修改；如需更正請刪除後重新新增。" in body
+    assert "taxUploadInitialDraftState" in body
+    assert "getTaxUploadDraftState" in body
+    assert "taxUploadInitialDraftState = isEditMode" in body
+    assert "setTaxUploadEventLocked" in body
+    assert "taxUploadEventTrigger.disabled = isLocked" in body
+    assert "活動不可在編輯時修改。" in body
+    assert "setTaxUploadEventLocked(isEditMode)" in body
+    assert "handleTaxUploadDrop" in body
+    assert "assignTaxUploadFile" in body
+    assert "document.addEventListener(\"drop\", handleTaxUploadDrop)" in body
     assert "shouldContinueTaxUpload" in body
     assert "resetTaxUploadFieldsForNextFile" in body
     assert "getTaxUploadEventName" in body
@@ -3519,13 +4214,54 @@ def test_portal_dashboard_tax_receipts_js_asset_returns_expected_content_type() 
     assert "message.amount" in body
     assert "message.generatedAt" in body
     assert "renderTaxReceiptRows" in body
-    assert "upsertTaxReceiptFile" in body
+    assert 'document.getElementById("tax-receipt-pagination")' in body
+    assert 'document.getElementById("tax-receipt-page-prev")' in body
+    assert 'document.getElementById("tax-receipt-page-status")' in body
+    assert 'document.getElementById("tax-receipt-page-next")' in body
+    assert "const taxReceiptRowsPerPage = 10" in body
+    assert "visibleRows.slice(startIndex, startIndex + taxReceiptRowsPerPage)" in body
+    assert "updateTaxReceiptPaginationControls" in body
+    assert "goToTaxReceiptPage(taxReceiptCurrentPage - 1)" in body
+    assert "goToTaxReceiptPage(taxReceiptCurrentPage + 1)" in body
+    assert 'document.getElementById("tax-id-filter")' in body
+    assert "getTaxIdFilterValue" in body
+    assert "emptyTaxReceiptSearchRowsMessage" in body
+    assert "查無符合統編的繳稅證明。" in body
+    assert "row.taxId.includes(taxIdQuery)" in body
+    assert 'taxIdFilter?.addEventListener("input"' in body
+    assert "adminTaxReceiptsApiPath" in body
+    assert "buildPendingTaxReceiptRow" in body
+    assert "insertPendingTaxReceiptRow" in body
+    assert "replacePendingTaxReceiptRow" in body
+    assert "removePendingTaxReceiptRow" in body
+    assert "rowElement.classList.toggle(\"is-disabled\", Boolean(rowData.isPending))" in body
+    assert "檔案正在新增中" in body
+    assert "saveTaxReceiptFile" in body
+    assert "upsertTaxReceiptRow" in body
+    assert "showTaxReceiptPageAlert" in body
+    assert "新增成功" in body
+    assert "繳稅證明資料已新增。" in body
+    assert "loadTaxReceiptRows" in body
+    assert "loadingTaxReceiptRowsMessage" in body
+    assert "isLoadingTaxReceiptRows" in body
+    assert "taxReceiptRowsMessageOverride" in body
+    assert "emptyTaxReceiptRowsMessage" in body
+    assert "taxReceiptDownloadApiPath" in body
+    assert "downloadTaxReceiptBlob" in body
+    assert "downloadingTaxReceiptMessage" in body
+    assert "正在準備繳稅證明檔案，請稍候。" in body
+    assert "setTaxReceiptDownloadButtonBusy" in body
+    assert "下載中..." in body
+    assert "下載已開始" in body
+    assert "下載失敗" in body
+    assert "downloadButton.setAttribute(\"aria-busy\", String(isBusy))" in body
     assert "deleteTaxReceiptRow" in body
     assert "openTaxEditDialog" in body
     assert "setTaxReceiptRowDownloadState" not in body
     assert "applyTaxDownloadableStateToCurrentActivity" not in body
-    assert "URL.createObjectURL(file)" in body
-    assert "URL.revokeObjectURL" in body
+    assert "URL.createObjectURL(file)" not in body
+    assert "URL.createObjectURL(fileBlob)" in body
+    assert "URL.revokeObjectURL(objectUrl)" in body
     assert "確定要刪除此筆繳稅證明嗎？" in body
     assert "儲存變更" in body
     assert "formatTaxGeneratedAt" in body
@@ -3539,7 +4275,7 @@ def test_portal_dashboard_tax_receipts_js_asset_returns_expected_content_type() 
     assert "function parseDisplayDateTimeValue" not in body
     assert "textInput.type = \"datetime-local\"" not in body
     assert "document.createElement(\"select\")" not in body
-    assert "installDateTimePicker(taxUploadGeneratedAtInput)" in body
+    assert "installDateTimePicker(taxUploadGeneratedAtInput, { includeSeconds: true })" in body
     assert "可下載" not in body
     assert "停用" not in body
     assert "CSV" not in body

@@ -25,6 +25,11 @@
 | `PUT` | `/api/v1/admin/completion-certs/{certid}` | 修改單筆完訓證明資料 | `application/json` |
 | `GET` | `/api/v1/admin/completion-cert-change-requests` | 查詢完訓證明修改申請 | `application/json` |
 | `PUT` | `/api/v1/admin/completion-cert-change-requests/{requestid}` | 審核完訓證明修改申請 | `application/json` |
+| `GET` | `/api/v1/admin/tax-receipts` | 查詢單一活動的營業稅繳稅證明清單 | `application/json` |
+| `POST` | `/api/v1/admin/tax-receipts` | 新增單筆營業稅繳稅證明 | `application/json` |
+| `PUT` | `/api/v1/admin/tax-receipts/{receiptid}` | 修改單筆營業稅繳稅證明 | `application/json` |
+| `DELETE` | `/api/v1/admin/tax-receipts/{receiptid}` | 刪除單筆營業稅繳稅證明 | `application/json` |
+| `POST` | `/api/v1/tax-receipts/download` | 串流下載單筆或多筆營業稅繳稅證明檔案 | `application/pdf`、`image/png`、`image/jpeg` 或 `application/zip` |
 | `GET` | `/verify/{certId}` | QRCode 入口的公開完訓證明驗證頁面 | `text/html` |
 
 ## 內部導向端點
@@ -41,14 +46,14 @@
 
 ### 呈現方式
 
-目前首頁、公開驗證頁與管理平台都先以 HTML 頁面呈現。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie；活動管理、首頁公開活動清單與完訓證明 CSV 匯入已串接 Cosmos DB，其餘文件資料流程仍逐步實作中。
+目前首頁、公開驗證頁與管理平台都先以 HTML 頁面呈現。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie；活動管理、首頁公開活動清單、完訓證明 CSV 匯入與營業稅繳稅證明新增流程已串接 Cosmos DB。
 
-- 首頁 HTML 不同步查詢 Cosmos DB；頁面先載入後由前端呼叫 `GET /api/v1/events`，再依狀態為 `open` 的活動顯示活動清單。管理平台的活動管理與完訓證明清單已串接 Cosmos DB，營業稅繳稅證明頁仍為前端暫存互動
+- 首頁 HTML 不同步查詢 Cosmos DB；頁面先載入後由前端呼叫 `GET /api/v1/events`，再依狀態為 `open` 的活動顯示活動清單。管理平台的活動管理、完訓證明清單與營業稅繳稅證明清單已串接 Cosmos DB
 - 公開驗證頁面為 QRCode 掃描後的公開入口，會以 QRCode 內的驗證 token 查詢已發證的完訓證明紀錄，並只顯示驗證所需的最低限度資料
-- 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓證明 CSV 由後端解析、驗證並寫入 Cosmos DB；營業稅繳稅證明的後端上傳處理與持久化流程尚未串接
+- 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓證明 CSV 由後端解析、驗證並寫入 Cosmos DB；營業稅繳稅證明由後端驗證 metadata、將檔案寫入 Blob Storage，並將權威 metadata 寫入 Cosmos DB
 - 完訓證明頁目前已有後端 CSV 匯入、活動篩選、清單載入與單筆資料修改流程
 - 完訓證明 PDF 合成邏輯已建立於 `src/shared/completion_certificate_pdf.py`，模板檔跟隨 git 版控，單位印章圖預設位於 Azure Storage `document-assets/completion-cert/organization-seal.png`；首頁確認後會發證、以 Cool tier 上傳 PDF 至 `issued-certs`，已發證資料再次查詢時會下載既有 PDF
-- 營業稅繳稅證明頁目前已有前端單筆 PDF、PNG 或 JPG/JPEG 新增與頁面暫存清單，用於管理介面流程示意；目前不支援 WebP
+- 營業稅繳稅證明頁目前支援單筆 PDF、PNG 或 JPG/JPEG 新增、拖曳上傳、清單讀取、修改、下載與刪除；目前不支援 WebP
 - 首頁完訓證明查詢成功且 `certStatus` 為 `notIssued`、`changeRequested` 或 `issued` 時，會顯示「選擇證明顯示方式」區塊；`notIssued` 時「提出修改申請」會切換到首頁同卡片內的修改申請流程，送出後會寫入 Cosmos DB `completionCertRequests` 並將對應完訓證明狀態改為 `changeRequested`；同一張完訓證明已有 `approved` 或 `rejected` 修改申請時，公開 API 會拒絕再次提出，首頁並顯示已通過或已駁回的審核結果；`changeRequested` 時不再顯示「提出修改申請」，改顯示修改申請處理中提示；`issued` 時再次按下產生按鈕會下載既有 PDF，不重新合成
 
 ### 表單輸入規則
@@ -113,7 +118,7 @@
 - 查詢 IP 是否被封鎖與寫入失敗計次時，Cosmos DB 最多等待 5 秒；若提前回應就立即使用結果，若逾時則不得讓首頁無限卡住。
 - 後端可用 Functions worker 本機記憶體快取已封鎖 IP 的 attempt id，用於封鎖期間快速短路 Cosmos DB；此快取只能作為額外封鎖捷徑，不能取代 Cosmos DB 的權威紀錄，且本機快取期限不得超過 1 小時。
 - 首頁可用 `localStorage` 快取「已被封鎖」狀態與伺服器回傳的封鎖訊息，以減少重整後的等待感並保留 12 小時或 24 小時封鎖文案；此快取只作為使用者體驗提示，不得作為後端安全判斷依據，期限不得超過 1 小時，且必須在到期、格式不合法或查詢成功時清除，避免永久性上鎖。
-- 目前只串接 `completionCert` 的查詢判斷；`taxReceipt` 後端持久化尚未完成前會視為查不到。
+- 目前公開查詢只串接 `completionCert` 的查詢判斷；`taxReceipt` 的管理端持久化與共用下載端點已完成，公開查詢流程仍待後續串接。營業稅繳稅證明的下載能力不是管理端專屬，管理端與首頁查詢成功後都應以 `POST /api/v1/tax-receipts/download` 取得單檔或 ZIP bytes，再由前端以 browser object URL 觸發下載，不回傳可分享的下載 URL。管理端下載以 session 與 CSRF 授權；未來首頁下載則必須由公開查詢成功後取得 `downloadTicket`，並在 POST body 中送回，不放在 URL。
 - 完訓證明查詢成功時，回應會包含 `badgeName`、`name`、`organization`、`certStatus` 與 `canRequestChanges`，供首頁決定是否顯示「選擇證明顯示方式」及修改申請狀態提示。
 - `certStatus` 為 `notIssued`、`changeRequested` 或 `issued` 時，首頁會顯示「選擇證明顯示方式」。`issued` 進入下載模式，姓名與公司顯示選項會鎖定，說明文字會合併提示「一旦確認後，將無法更改」，不顯示證書預覽區塊，按鈕文案改為「下載證書」並下載既有 PDF；公開下載回應的檔名固定為 `certificate.pdf`，不包含報名序號、KKTIX ID 或其他個人資料。
 - 「選擇證明顯示方式」區塊會依實際 `name` 與 `badgeName` 產生姓名顯示選項：`姓名`、`Badge Name`、`姓名 (Badge Name)`；若其中一個值為空，或兩者相同，只顯示單一有效選項。
@@ -406,20 +411,22 @@ Request JSON 範例：
 - 路徑名稱採用簡化的 407 收據相關語意：`tax-receipts`
 - 頁面標題不顯示額外的左上角小字
 - 主畫面提供營業稅繳稅證明的清單檢視區
-- 清單欄位包含統編、產製時間、金額、收據聯檔案與操作
-- 營業稅繳稅證明沒有停用狀態，只要完成上傳即一律可下載
-- 每列在操作欄提供 `下載`、`修改` 與 `刪除` 按鈕
+- 清單欄位包含統編、產製時間、金額與操作；不顯示收據聯檔案名稱，若有檔案則以下載按鈕內的檔案 icon 表示
+- 營業稅繳稅證明沒有停用狀態，只要完成上傳即具備下載資格；管理端清單可立即下載，未來首頁公開查詢成功後也應可下載
+- 管理端每列在操作欄提供 `下載`、`修改` 與 `刪除` 按鈕
 - 清單上方提供活動篩選欄位；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單並直接套用篩選
 - 活動篩選與上傳視窗活動選擇會先使用 portal 分頁內的活動清單快取渲染，再直接呼叫 `GET /api/v1/admin/events` 更新畫面與快取；快取只作為先顯示用途，不作為權威資料來源
 - 標題列右上方提供 `新增繳稅證明` 按鈕
 - 點擊 `新增繳稅證明` 後開啟中央上傳視窗
-- 上傳視窗可選擇資料所屬活動，預設帶入目前清單篩選活動
-- 上傳視窗逐筆輸入統編、金額、產製時間，並選擇一個 PDF、PNG 或 JPG/JPEG 檔；修改既有資料時可不重新選檔
-- 上傳視窗支援 PDF、PNG 與 JPG/JPEG 檔，並使用管理平台風格的檔案選取區；目前不支援 WebP
+- 上傳視窗可選擇資料所屬活動，預設帶入目前清單篩選活動；修改既有資料時活動欄位會鎖定，不提供切換
+- 上傳視窗逐筆輸入統編、金額、產製時間，並選擇或拖曳一個 PDF、PNG 或 JPG/JPEG 檔；修改既有資料時統編會鎖定且可不重新選檔
+- 上傳視窗支援 PDF、PNG 與 JPG/JPEG 檔，並沿用完訓證明 CSV 上傳頁的管理平台風格檔案選取區與拖曳高亮狀態；目前不支援 WebP
+- 修改既有繳稅證明時，取消提示只在管理者變更金額、產製時間或檔案後出現；單純開啟修改視窗後直接取消不提示
+- 新增繳稅證明送出後，前端會先在目前活動表格插入一筆只存在瀏覽器端的新增中資料列，資料列以停用樣式呈現且下載、修改、刪除按鈕皆不可操作；後端成功回應後以正式資料列取代，若失敗則移除該新增中資料列並顯示錯誤
 - 新增模式的上傳視窗在送出按鈕右側提供 `還有其他檔案要上傳` 勾選項，勾選後新增成功會保留視窗並清空欄位以便連續新增
 - `還有其他檔案要上傳` 使用管理端共用 checkbox 色彩樣式，但不顯示外框線或背景，文字不可被滑鼠拖曳選取
 - 若直接開啟營業稅繳稅證明子頁，點擊新增或修改按鈕後會使用頁內中央上傳視窗作為 fallback
-- 現階段尚未串接後端資料來源、永久儲存或實際檔案上傳流程
+- 管理端清單、上傳、修改與刪除透過 `/api/v1/admin/tax-receipts` 系列 API；下載一律使用共用 `POST /api/v1/tax-receipts/download` API。metadata 寫入 Cosmos DB `taxReceipts` container，檔案寫入 Blob Storage `tax-receipts` container
 
 ### `/portal/dashboard/events`
 
@@ -691,6 +698,127 @@ Response JSON example:
   }
 }
 ```
+
+### `GET /api/v1/admin/tax-receipts`
+
+- 查詢單一活動的營業稅繳稅證明清單，query string 必須提供 `eventId`
+- 只接受已登入且通過授權的管理者 session，並檢查同源 `Origin` 或 `Referer`
+- 讀取 Cosmos DB `taxReceipts` container，partition key 為 `/eventId`
+- Response 不包含下載 URL；管理平台下載時會以 `POST /api/v1/tax-receipts/download` 串流取得檔案 bytes，並以管理端 session 與 CSRF 授權，避免暴露可重用連結
+
+Request example:
+
+```text
+GET /api/v1/admin/tax-receipts?eventId=evt_20260425_ipg
+```
+
+Response JSON example:
+
+```json
+{
+  "taxReceipts": [
+    {
+      "id": "trec_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+      "eventId": "evt_20260425_ipg",
+      "taxId": "12345678",
+      "amount": 186000,
+      "generatedAt": "2026-05-13T15:00:44Z",
+      "sourceBlobName": "evt_20260425_ipg/trec_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001.pdf",
+      "fileName": "receipt-12345678-1.pdf",
+      "fileSequence": 1,
+      "contentType": "application/pdf",
+      "fileSize": 204800,
+      "downloadCount": 0,
+      "createdAt": "2026-05-13T15:01:00Z",
+      "updatedAt": "2026-05-13T15:01:00Z"
+    }
+  ]
+}
+```
+
+### `POST /api/v1/admin/tax-receipts`
+
+- 新增單筆營業稅繳稅證明
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
+- 必須帶 `Idempotency-Key` header；後端會以活動、操作者與 idempotency key 產生穩定 `trec_<uuid-v5>` 文件 ID
+- `eventId` 必須指向已開放 `taxReceipt` 文件類型的活動
+- `taxId` 必須為 8 碼數字；`amount` 必須是大於 0 的整數；`generatedAt` 必須是 UTC ISO 8601，格式 `yyyy-MM-dd'T'HH:mm:ss'Z'`
+- `fileBase64` 會解碼後寫入 Blob Storage `tax-receipts` container，Cosmos DB 只儲存 metadata 與 blob 名稱
+- `fileName` 為上傳來源檔名，只作為請求驗證；後端會重新產生 `receipt-{taxId}-{fileSequence}` 格式的下載檔名，`fileSequence` 是同一活動、同一統編下第幾份，避免同一統編多筆資料混淆
+- 檔案格式只接受 PDF、PNG、JPG/JPEG，大小上限 10 MB；目前不支援 WebP
+- 管理端前端會在等待此 API 回應時先顯示新增中資料列；該資料列不是 Cosmos DB 文件，也不應被視為後端流程狀態。API 成功回應後才會以 `taxReceipt` response 取代為正式資料列
+
+Request JSON example:
+
+```json
+{
+  "eventId": "evt_20260425_ipg",
+  "taxId": "12345678",
+  "amount": 186000,
+  "generatedAt": "2026-05-13T15:00:44Z",
+  "fileName": "receipt.pdf",
+  "contentType": "application/pdf",
+  "fileBase64": "JVBERi0xLjQK..."
+}
+```
+
+Response JSON example:
+
+```json
+{
+  "taxReceipt": {
+    "id": "trec_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+    "eventId": "evt_20260425_ipg",
+    "taxId": "12345678",
+    "amount": 186000,
+    "generatedAt": "2026-05-13T15:00:44Z",
+    "sourceBlobName": "evt_20260425_ipg/trec_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001.pdf",
+    "fileName": "receipt-12345678-1.pdf",
+    "fileSequence": 1,
+    "contentType": "application/pdf",
+    "fileSize": 204800,
+    "downloadCount": 0,
+    "createdAt": "2026-05-13T15:01:00Z",
+    "updatedAt": "2026-05-13T15:01:00Z"
+  }
+}
+```
+
+### `PUT /api/v1/admin/tax-receipts/{receiptid}`
+
+- 修改單筆營業稅繳稅證明 metadata；若 request 含 `fileBase64`，會同步替換 Blob 檔案
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
+- 編輯時不可修改 `eventId` 與 `taxId`。管理端修改視窗會鎖定活動與統編；若活動或統編需要更正，管理者必須刪除該筆繳稅證明後重新新增，以維持同一活動、同一統編下的 `fileSequence` 與下載檔名規則一致
+- Request JSON 格式與新增相同；修改既有資料時可不帶 `fileBase64`、`fileName` 與 `contentType`
+- Response JSON 格式與新增相同，`createdAt` 與 `createdBy` 保持原值，`updatedAt` 與 `updatedBy` 會更新
+
+### `DELETE /api/v1/admin/tax-receipts/{receiptid}`
+
+- 刪除單筆營業稅繳稅證明，query string 必須提供 `eventId`
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
+- 後端會先刪除 Cosmos DB `taxReceipts` 文件，再刪除對應 Blob 檔案
+
+Response JSON example:
+
+```json
+{
+  "deleted": true
+}
+```
+
+### `POST /api/v1/tax-receipts/download`
+
+- 串流下載單筆或多筆營業稅繳稅證明檔案，request body 必須提供 `eventId` 與 `receiptIds`
+- 不回傳、不要求下載 URL token；前端應使用 `fetch()` 讀取 response blob，並以 browser object URL 觸發下載
+- 所有呼叫都必須通過同源 `Origin` 或 `Referer` 檢查
+- 管理端呼叫時必須通過管理者 session，並帶 `X-Portal-CSRF-Token` header
+- 未登入首頁呼叫時必須在 POST body 帶公開查詢成功後取得的 `downloadTicket`；ticket 由後端簽發，綁定 `receiptIds`、`eventId` 與過期時間，且不放在 URL
+- 後端讀取 Cosmos DB `taxReceipts` metadata 後，依 `sourceBlobName` 從 Blob Storage `tax-receipts` 下載檔案
+- 單筆下載會使用資料中保存的 `contentType` 與 `fileName` 作為下載格式與檔名；多筆下載會回傳 ZIP，檔名為 `tax-receipts-{eventId}.zip`
+- 未來首頁下載營業稅繳稅證明時，應先在公開查詢流程中以最小揭露方式核對活動、統編與產製時間，再回傳 `downloadTicket` 供前端直接下載回應
 
 ### `GET /api/v1/admin/completion-cert-change-requests`
 

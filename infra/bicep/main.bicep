@@ -47,6 +47,9 @@ param cosmosCompletionCertsContainerName string = 'completionCerts'
 @description('Cosmos DB container name for completion certificate requests.')
 param cosmosCompletionCertRequestsContainerName string = 'completionCertRequests'
 
+@description('Cosmos DB container name for tax receipt records.')
+param cosmosTaxReceiptsContainerName string = 'taxReceipts'
+
 @description('Cosmos DB container name for public document lookup attempt tracking.')
 param cosmosPublicLookupAttemptsContainerName string = 'publicLookupAttempts'
 
@@ -74,20 +77,19 @@ var logAnalyticsWorkspaceName = take('${normalizedFunctionAppName}-law', 63)
 var githubIdentityName = '${normalizedFunctionAppName}-gh-oidc'
 var effectiveCosmosAccountName = empty(cosmosAccountName) ? take('cosmos-${take(replace(normalizedFunctionAppName, '-', ''), 20)}-${uniqueString(resourceGroup().id, functionAppName)}', 44) : toLower(cosmosAccountName)
 var deploymentContainerName = 'function-releases'
-var sourceUploadsContainerName = 'source-uploads'
 var documentAssetsContainerName = 'document-assets'
 var issuedCertsContainerName = 'issued-certs'
+var taxReceiptsContainerName = 'tax-receipts'
 var blobContainers = [
   deploymentContainerName
-  sourceUploadsContainerName
   documentAssetsContainerName
   issuedCertsContainerName
+  taxReceiptsContainerName
 ]
 var githubOidcSubject = 'repo:${githubRepository}:ref:refs/heads/${githubBranch}'
 var tags = {
-  environment: 'production'
+  app: 'certificate'
   managedBy: 'codex'
-  system: 'ipg-certificate'
 }
 var roleDefinitionIds = {
   storageBlobDataOwner: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
@@ -282,6 +284,22 @@ resource cosmosCompletionCertRequestsContainer 'Microsoft.DocumentDB/databaseAcc
   }
 }
 
+resource cosmosTaxReceiptsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  name: cosmosTaxReceiptsContainerName
+  parent: cosmosSqlDatabase
+  properties: {
+    resource: {
+      id: cosmosTaxReceiptsContainerName
+      partitionKey: {
+        kind: 'Hash'
+        paths: [
+          '/eventId'
+        ]
+      }
+    }
+  }
+}
+
 resource cosmosPublicLookupAttemptsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
   name: cosmosPublicLookupAttemptsContainerName
   parent: cosmosSqlDatabase
@@ -371,12 +389,12 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: cosmosCompletionCertRequestsContainer.name
         }
         {
-          name: 'COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER'
-          value: cosmosPublicLookupAttemptsContainer.name
+          name: 'COSMOS_TAX_RECEIPTS_CONTAINER'
+          value: cosmosTaxReceiptsContainer.name
         }
         {
-          name: 'BLOB_SOURCE_CONTAINER'
-          value: sourceUploadsContainerName
+          name: 'COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER'
+          value: cosmosPublicLookupAttemptsContainer.name
         }
         {
           name: 'BLOB_DOCUMENT_ASSETS_CONTAINER'
@@ -385,6 +403,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'BLOB_ISSUED_CERT_CONTAINER'
           value: issuedCertsContainerName
+        }
+        {
+          name: 'BLOB_TAX_RECEIPTS_CONTAINER'
+          value: taxReceiptsContainerName
         }
         {
           name: 'PORTAL_GOOGLE_CLIENT_ID'
@@ -476,6 +498,7 @@ output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 output cosmosEventsContainerName string = cosmosEventsContainer.name
 output cosmosCompletionCertsContainerName string = cosmosCompletionCertsContainer.name
 output cosmosCompletionCertRequestsContainerName string = cosmosCompletionCertRequestsContainer.name
+output cosmosTaxReceiptsContainerName string = cosmosTaxReceiptsContainer.name
 output cosmosPublicLookupAttemptsContainerName string = cosmosPublicLookupAttemptsContainer.name
 output deploymentContainerName string = deploymentContainerName
 output deploymentContainerUrl string = '${storageAccount.properties.primaryEndpoints.blob}${deploymentContainerName}'

@@ -5,9 +5,11 @@ import binascii
 import csv
 import hashlib
 import hmac
+import io
 import json
 import os
 import time
+import zipfile
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date
 from functools import lru_cache
@@ -34,6 +36,13 @@ from src.shared.portal_auth import (
     resolve_portal_access,
 )
 from src.shared.datetime_values import parse_utc_iso_datetime
+from src.shared.blob_store import (
+    BlobStoreConfigurationError,
+    BlobStoreOperationError,
+    delete_blob,
+    download_blob_bytes,
+    upload_blob_bytes,
+)
 from src.shared.completion_store import (
     CompletionStoreConfigurationError,
     CompletionStoreOperationError,
@@ -71,6 +80,20 @@ from src.shared.page_alerts import (
     build_page_alert_html,
     resolve_page_alert_dismiss_delay_ms,
 )
+from src.shared.tax_receipt_store import (
+    TaxReceiptStoreConfigurationError,
+    TaxReceiptStoreOperationError,
+    build_tax_receipt_blob_name,
+    build_tax_receipt_document,
+    build_tax_receipt_file_name,
+    build_tax_receipt_id,
+    delete_tax_receipt_document,
+    get_tax_receipts_container,
+    list_tax_receipt_documents,
+    read_tax_receipt_document,
+    replace_tax_receipt_document,
+    upsert_tax_receipt_document,
+)
 from src.shared.templates import render_html_template
 
 blueprint = func.Blueprint()
@@ -90,6 +113,8 @@ PORTAL_LOGIN_ALERT_DISMISS_DELAY_MS_BY_ERROR_CODE = {
 }
 PORTAL_API_CSRF_MAX_AGE_SECONDS = 28800
 PORTAL_API_CSRF_HEADER_NAME = "X-Portal-CSRF-Token"
+TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS = 600
+TAX_RECEIPT_DOWNLOAD_TICKET_SCOPE = "taxReceiptDownload"
 PORTAL_API_IDEMPOTENCY_HEADER_NAME = "Idempotency-Key"
 PORTAL_ALLOWED_EVENT_STATUSES = frozenset({"open", "unlisted"})
 PORTAL_ALLOWED_EVENT_DOCUMENT_TYPES = frozenset({"completionCert", "taxReceipt"})
@@ -129,6 +154,10 @@ PORTAL_COMPLETION_CERT_ALLOWED_ATTENDANCE_STATUSES = frozenset(
 PORTAL_COMPLETION_CERT_REQUEST_ALLOWED_REVIEW_STATUSES = frozenset(
     {"approved", "rejected"}
 )
+PORTAL_TAX_RECEIPT_ALLOWED_CONTENT_TYPES = frozenset(
+    {"application/pdf", "image/png", "image/jpeg"}
+)
+PORTAL_TAX_RECEIPT_MAX_FILE_BYTES = 10 * 1024 * 1024
 PORTAL_LOGIN_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_login.html"
 PORTAL_DASHBOARD_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_dashboard.html"
 PORTAL_DASHBOARD_WELCOME_TEMPLATE_PATH = (
@@ -614,6 +643,26 @@ def normalize_completion_cert_request_for_api(
     return payload
 
 
+def normalize_tax_receipt_for_api(document: dict[str, Any]) -> dict[str, Any]:
+    receipt_id = str(document.get("id", "")).strip()
+    event_id = str(document.get("eventId", "")).strip()
+    return {
+        "id": receipt_id,
+        "eventId": event_id,
+        "taxId": str(document.get("taxId", "")).strip(),
+        "amount": read_non_negative_int_field(document, ("amount",)),
+        "generatedAt": str(document.get("generatedAt", "")).strip(),
+        "sourceBlobName": str(document.get("sourceBlobName", "")).strip(),
+        "fileName": str(document.get("fileName", "")).strip(),
+        "fileSequence": read_non_negative_int_field(document, ("fileSequence",)),
+        "contentType": str(document.get("contentType", "")).strip(),
+        "fileSize": read_non_negative_int_field(document, ("fileSize",)),
+        "downloadCount": read_non_negative_int_field(document, ("downloadCount",)),
+        "createdAt": str(document.get("createdAt", "")).strip(),
+        "updatedAt": str(document.get("updatedAt", "")).strip(),
+    }
+
+
 def normalize_completion_cert_number(value: Any) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
@@ -851,6 +900,152 @@ def parse_completion_cert_request_review_payload(
     }, None
 
 
+def parse_tax_receipt_payload(
+    payload: Any,
+    *,
+    require_file: bool,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(payload, dict):
+        return None, "請提供 JSON 物件。"
+
+    event_id = str(payload.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return None, "活動識別碼不合法。"
+
+    tax_id = str(payload.get("taxId", "")).strip()
+    if not tax_id.isdecimal() or len(tax_id) != 8:
+        return None, "統編必須是 8 碼數字。"
+
+    amount_value = payload.get("amount")
+    if isinstance(amount_value, bool):
+        return None, "金額必須是大於 0 的整數。"
+    if isinstance(amount_value, int):
+        amount = amount_value
+    elif isinstance(amount_value, str) and amount_value.replace(",", "").isdecimal():
+        amount = int(amount_value.replace(",", ""))
+    else:
+        return None, "金額必須是大於 0 的整數。"
+    if amount <= 0:
+        return None, "金額必須是大於 0 的整數。"
+
+    generated_at = str(payload.get("generatedAt", "")).strip()
+    if parse_utc_iso_datetime(generated_at) is None:
+        return None, "產製時間必須使用 UTC ISO 8601 格式。"
+
+    file_payload, file_error = parse_tax_receipt_file_payload(
+        payload,
+        require_file=require_file,
+    )
+    if file_error is not None:
+        return None, file_error
+
+    return {
+        "amount": amount,
+        "eventId": event_id,
+        "file": file_payload,
+        "generatedAt": generated_at,
+        "taxId": tax_id,
+    }, None
+
+
+def parse_tax_receipt_file_payload(
+    payload: dict[str, Any],
+    *,
+    require_file: bool,
+) -> tuple[dict[str, Any] | None, str | None]:
+    file_base64_payload = payload.get("fileBase64")
+    if file_base64_payload in (None, ""):
+        if require_file:
+            return None, "請上傳 PDF、PNG 或 JPG 檔案。"
+        return None, None
+
+    content_type = str(payload.get("contentType", "")).strip().lower()
+    if content_type not in PORTAL_TAX_RECEIPT_ALLOWED_CONTENT_TYPES:
+        return None, "檔案格式僅支援 PDF、PNG 或 JPG。"
+
+    file_name = str(payload.get("fileName", "")).strip()
+    if not file_name:
+        return None, "檔案名稱不可空白。"
+
+    try:
+        file_bytes = base64.b64decode(str(file_base64_payload), validate=True)
+    except (binascii.Error, ValueError):
+        return None, "檔案內容格式不合法。"
+
+    if not file_bytes:
+        return None, "檔案不可為空。"
+    if len(file_bytes) > PORTAL_TAX_RECEIPT_MAX_FILE_BYTES:
+        return None, "檔案大小不可超過 10 MB。"
+
+    return {
+        "bytes": file_bytes,
+        "contentType": content_type,
+        "fileName": file_name,
+        "fileSize": len(file_bytes),
+    }, None
+
+
+def get_tax_receipts_blob_container_name() -> str:
+    container_name = os.getenv("BLOB_TAX_RECEIPTS_CONTAINER", "").strip()
+    if not container_name:
+        raise BlobStoreConfigurationError(
+            "Blob Storage 繳稅證明容器尚未設定完成。請設定 BLOB_TAX_RECEIPTS_CONTAINER。"
+        )
+    return container_name
+
+
+def resolve_next_tax_receipt_file_sequence(
+    *,
+    container: Any,
+    event_id: str,
+    tax_id: str,
+    exclude_receipt_id: str = "",
+) -> int:
+    matching_documents = [
+        document
+        for document in list_tax_receipt_documents(
+            container=container,
+            event_id=event_id,
+        )
+        if str(document.get("id", "")).strip() != exclude_receipt_id
+        and str(document.get("taxId", "")).strip() == tax_id
+    ]
+    max_existing_sequence = max(
+        (
+            read_non_negative_int_field(document, ("fileSequence",))
+            for document in matching_documents
+        ),
+        default=0,
+    )
+    return max(max_existing_sequence, len(matching_documents)) + 1
+
+
+def resolve_existing_tax_receipt_file_sequence(
+    *,
+    container: Any,
+    current_document: dict[str, Any],
+    event_id: str,
+    receipt_id: str,
+    tax_id: str,
+) -> int:
+    file_sequence = read_non_negative_int_field(current_document, ("fileSequence",))
+    if file_sequence > 0:
+        return file_sequence
+    return resolve_next_tax_receipt_file_sequence(
+        container=container,
+        event_id=event_id,
+        exclude_receipt_id=receipt_id,
+        tax_id=tax_id,
+    )
+
+
+def ensure_event_supports_tax_receipt(event_id: str) -> None:
+    event = read_portal_event(event_id)
+    document_types = normalize_portal_event_document_types(event.get("documentTypes"))
+    if "taxReceipt" not in document_types:
+        raise EventStoreOperationError("指定活動未開放營業稅繳稅證明。")
+
+
 def build_portal_event_row_html(event: dict[str, Any]) -> str:
     event_name = str(event.get("name", "")).strip()
     event_status = str(event.get("status", "")).strip()
@@ -1005,6 +1200,78 @@ def is_valid_portal_csrf_token(
     )
 
 
+def build_tax_receipt_download_ticket(
+    *,
+    event_id: str,
+    receipt_ids: list[str],
+) -> str:
+    payload = {
+        "eventId": event_id,
+        "exp": int(time.time()) + TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS,
+        "receiptIds": receipt_ids,
+        "scope": TAX_RECEIPT_DOWNLOAD_TICKET_SCOPE,
+    }
+    encoded_payload = _base64url_encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    signature = hmac.new(
+        _get_tax_receipt_download_ticket_secret().encode("utf-8"),
+        encoded_payload.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    return f"{encoded_payload}.{_base64url_encode(signature)}"
+
+
+def is_valid_tax_receipt_download_ticket(
+    *,
+    ticket: str,
+    event_id: str,
+    receipt_ids: list[str],
+) -> bool:
+    try:
+        encoded_payload, encoded_signature = ticket.split(".", maxsplit=1)
+    except ValueError:
+        return False
+
+    expected_signature = hmac.new(
+        _get_tax_receipt_download_ticket_secret().encode("utf-8"),
+        encoded_payload.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    actual_signature = _base64url_decode(encoded_signature)
+    if actual_signature is None or not hmac.compare_digest(actual_signature, expected_signature):
+        return False
+
+    payload_bytes = _base64url_decode(encoded_payload)
+    if payload_bytes is None:
+        return False
+
+    try:
+        payload = json.loads(payload_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+
+    if not isinstance(payload, dict):
+        return False
+
+    expires_at = payload.get("exp")
+    if not isinstance(expires_at, int) or expires_at < int(time.time()):
+        return False
+
+    return (
+        payload.get("scope") == TAX_RECEIPT_DOWNLOAD_TICKET_SCOPE
+        and payload.get("eventId") == event_id
+        and payload.get("receiptIds") == receipt_ids
+    )
+
+
+def _get_tax_receipt_download_ticket_secret() -> str:
+    configured_secret = os.getenv("TAX_RECEIPT_DOWNLOAD_TICKET_SECRET", "").strip()
+    if configured_secret:
+        return configured_secret
+    return _get_portal_csrf_secret()
+
+
 def require_portal_api_access(req: func.HttpRequest) -> PortalAccess | func.HttpResponse:
     access = resolve_portal_access(req)
     if not access.is_authorized:
@@ -1041,6 +1308,28 @@ def require_portal_api_read_access(req: func.HttpRequest) -> PortalAccess | func
         )
 
     return access
+
+
+def is_authorized_tax_receipt_download_request(
+    req: func.HttpRequest,
+    *,
+    event_id: str,
+    receipt_ids: list[str],
+    ticket: str,
+) -> bool:
+    if not is_same_origin_portal_api_request(req):
+        return False
+
+    access = resolve_portal_access(req)
+    csrf_token = req.headers.get(PORTAL_API_CSRF_HEADER_NAME, "").strip()
+    if access.is_authorized and csrf_token and is_valid_portal_csrf_token(req, access, csrf_token):
+        return True
+
+    return bool(ticket) and is_valid_tax_receipt_download_ticket(
+        ticket=ticket,
+        event_id=event_id,
+        receipt_ids=receipt_ids,
+    )
 
 
 def is_same_origin_portal_api_request(req: func.HttpRequest) -> bool:
@@ -1732,6 +2021,581 @@ def portal_admin_completion_certs_update_api(req: func.HttpRequest) -> func.Http
     )
 
 
+@blueprint.function_name(name="portal_admin_tax_receipts_list_create_api")
+@blueprint.route(
+    route="api/v1/admin/tax-receipts",
+    methods=["GET", "POST"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_tax_receipts_list_create_api(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "GET":
+        return portal_admin_tax_receipts_list_api(req)
+    return portal_admin_tax_receipts_create_api(req)
+
+
+def portal_admin_tax_receipts_list_api(req: func.HttpRequest) -> func.HttpResponse:
+    access = require_portal_api_read_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    event_id = str(req.params.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_event_id",
+            "活動識別碼不合法。",
+        )
+
+    try:
+        documents = list_tax_receipt_documents(
+            container=get_tax_receipts_container(),
+            event_id=event_id,
+        )
+    except TaxReceiptStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "tax_receipt_store_not_configured",
+            str(exc),
+        )
+    except TaxReceiptStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "tax_receipt_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {"taxReceipts": [normalize_tax_receipt_for_api(document) for document in documents]},
+        status_code=200,
+    )
+
+
+def portal_admin_tax_receipts_create_api(req: func.HttpRequest) -> func.HttpResponse:
+    access = require_portal_api_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    idempotency_key = req.headers.get(PORTAL_API_IDEMPOTENCY_HEADER_NAME, "").strip()
+    if not idempotency_key:
+        return build_portal_api_error_response(
+            400,
+            "missing_idempotency_key",
+            "缺少 Idempotency-Key。請重新整理管理平台後再試一次。",
+        )
+
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return build_portal_api_error_response(400, "invalid_json", "請提供合法 JSON。")
+
+    receipt_payload, payload_error = parse_tax_receipt_payload(payload, require_file=True)
+    if receipt_payload is None:
+        return build_portal_api_error_response(
+            400,
+            "invalid_tax_receipt_payload",
+            payload_error or "繳稅證明資料格式不合法。",
+        )
+
+    event_id = receipt_payload["eventId"]
+    actor = get_portal_api_actor(access)
+    receipt_id = build_tax_receipt_id(
+        idempotency_key,
+        actor=actor,
+        event_id=event_id,
+    )
+    file_payload = receipt_payload["file"]
+    assert file_payload is not None
+    source_blob_name = build_tax_receipt_blob_name(
+        content_type=file_payload["contentType"],
+        event_id=event_id,
+        receipt_id=receipt_id,
+    )
+
+    try:
+        ensure_event_supports_tax_receipt(event_id)
+        container = get_tax_receipts_container()
+        current_document = None
+        try:
+            current_document = read_tax_receipt_document(
+                container=container,
+                event_id=event_id,
+                receipt_id=receipt_id,
+            )
+        except TaxReceiptStoreOperationError as exc:
+            if str(exc) != "找不到指定繳稅證明資料。":
+                raise
+        if current_document is not None:
+            file_sequence = resolve_existing_tax_receipt_file_sequence(
+                container=container,
+                current_document=current_document,
+                event_id=event_id,
+                receipt_id=receipt_id,
+                tax_id=receipt_payload["taxId"],
+            )
+        else:
+            file_sequence = resolve_next_tax_receipt_file_sequence(
+                container=container,
+                event_id=event_id,
+                tax_id=receipt_payload["taxId"],
+            )
+        receipt_file_name = build_tax_receipt_file_name(
+            content_type=file_payload["contentType"],
+            file_sequence=file_sequence,
+            tax_id=receipt_payload["taxId"],
+        )
+        upload_blob_bytes(
+            blob_name=source_blob_name,
+            container_name=get_tax_receipts_blob_container_name(),
+            content_type=file_payload["contentType"],
+            data=file_payload["bytes"],
+        )
+        document = build_tax_receipt_document(
+            actor=actor,
+            amount=receipt_payload["amount"],
+            content_type=file_payload["contentType"],
+            event_id=event_id,
+            file_name=receipt_file_name,
+            file_sequence=file_sequence,
+            file_size=file_payload["fileSize"],
+            generated_at=receipt_payload["generatedAt"],
+            receipt_id=receipt_id,
+            source_blob_name=source_blob_name,
+            tax_id=receipt_payload["taxId"],
+        )
+        saved_document = upsert_tax_receipt_document(
+            container=container,
+            document=document,
+        )
+    except EventStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "event_store_not_configured",
+            str(exc),
+        )
+    except EventStoreOperationError as exc:
+        status_code = 404 if str(exc) == "找不到指定活動。" else 400
+        return build_portal_api_error_response(
+            status_code,
+            "event_not_found" if status_code == 404 else "event_not_open_for_tax_receipts",
+            str(exc),
+        )
+    except (TaxReceiptStoreConfigurationError, BlobStoreConfigurationError) as exc:
+        return build_portal_api_error_response(
+            503,
+            "tax_receipt_store_not_configured",
+            str(exc),
+        )
+    except (TaxReceiptStoreOperationError, BlobStoreOperationError) as exc:
+        return build_portal_api_error_response(
+            503,
+            "tax_receipt_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {"taxReceipt": normalize_tax_receipt_for_api(saved_document)},
+        status_code=201,
+    )
+
+
+@blueprint.function_name(name="portal_admin_tax_receipts_update_delete_api")
+@blueprint.route(
+    route="api/v1/admin/tax-receipts/{receiptid}",
+    methods=["PUT", "DELETE"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_tax_receipts_update_delete_api(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    if req.method == "DELETE":
+        return portal_admin_tax_receipts_delete_api(req)
+    return portal_admin_tax_receipts_update_api(req)
+
+
+def portal_admin_tax_receipts_update_api(req: func.HttpRequest) -> func.HttpResponse:
+    access = require_portal_api_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    receipt_id = str(req.route_params.get("receiptid", "")).strip()
+    if not receipt_id.startswith("trec_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_tax_receipt_id",
+            "繳稅證明資料識別碼不合法。",
+        )
+
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return build_portal_api_error_response(400, "invalid_json", "請提供合法 JSON。")
+
+    receipt_payload, payload_error = parse_tax_receipt_payload(payload, require_file=False)
+    if receipt_payload is None:
+        return build_portal_api_error_response(
+            400,
+            "invalid_tax_receipt_payload",
+            payload_error or "繳稅證明資料格式不合法。",
+        )
+
+    event_id = receipt_payload["eventId"]
+    actor = get_portal_api_actor(access)
+    try:
+        ensure_event_supports_tax_receipt(event_id)
+        container = get_tax_receipts_container()
+        document = read_tax_receipt_document(
+            container=container,
+            event_id=event_id,
+            receipt_id=receipt_id,
+        )
+        existing_tax_id = str(document.get("taxId", "")).strip()
+        if receipt_payload["taxId"] != existing_tax_id:
+            return build_portal_api_error_response(
+                400,
+                "tax_receipt_tax_id_immutable",
+                "統編不可在編輯時修改。請刪除後重新新增。",
+            )
+        updated_document = {
+            **document,
+            "amount": receipt_payload["amount"],
+            "generatedAt": receipt_payload["generatedAt"],
+            "taxId": receipt_payload["taxId"],
+            "updatedBy": actor,
+            "updatedAt": utc_now_iso(),
+        }
+        file_sequence = resolve_existing_tax_receipt_file_sequence(
+            container=container,
+            current_document=document,
+            event_id=event_id,
+            receipt_id=receipt_id,
+            tax_id=receipt_payload["taxId"],
+        )
+        updated_document["fileSequence"] = file_sequence
+        file_payload = receipt_payload["file"]
+        receipt_content_type = str(document.get("contentType", "")).strip()
+        if file_payload is not None:
+            receipt_content_type = file_payload["contentType"]
+        updated_document["fileName"] = build_tax_receipt_file_name(
+            content_type=receipt_content_type,
+            file_sequence=file_sequence,
+            tax_id=receipt_payload["taxId"],
+        )
+        if file_payload is not None:
+            source_blob_name = build_tax_receipt_blob_name(
+                content_type=file_payload["contentType"],
+                event_id=event_id,
+                receipt_id=receipt_id,
+            )
+            upload_blob_bytes(
+                blob_name=source_blob_name,
+                container_name=get_tax_receipts_blob_container_name(),
+                content_type=file_payload["contentType"],
+                data=file_payload["bytes"],
+            )
+            updated_document.update(
+                {
+                    "contentType": file_payload["contentType"],
+                    "fileSize": file_payload["fileSize"],
+                    "sourceBlobName": source_blob_name,
+                }
+            )
+        saved_document = replace_tax_receipt_document(
+            container=container,
+            document=updated_document,
+        )
+    except EventStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "event_store_not_configured",
+            str(exc),
+        )
+    except EventStoreOperationError as exc:
+        status_code = 404 if str(exc) == "找不到指定活動。" else 400
+        return build_portal_api_error_response(
+            status_code,
+            "event_not_found" if status_code == 404 else "event_not_open_for_tax_receipts",
+            str(exc),
+        )
+    except (TaxReceiptStoreConfigurationError, BlobStoreConfigurationError) as exc:
+        return build_portal_api_error_response(
+            503,
+            "tax_receipt_store_not_configured",
+            str(exc),
+        )
+    except TaxReceiptStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定繳稅證明資料。" else 503,
+            "tax_receipt_not_found"
+            if str(exc) == "找不到指定繳稅證明資料。"
+            else "tax_receipt_store_unavailable",
+            str(exc),
+        )
+    except BlobStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "tax_receipt_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {"taxReceipt": normalize_tax_receipt_for_api(saved_document)},
+        status_code=200,
+    )
+
+
+def portal_admin_tax_receipts_delete_api(req: func.HttpRequest) -> func.HttpResponse:
+    access = require_portal_api_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    receipt_id = str(req.route_params.get("receiptid", "")).strip()
+    event_id = str(req.params.get("eventId", "")).strip()
+    if not receipt_id.startswith("trec_") or not event_id.startswith("evt_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_tax_receipt_id",
+            "繳稅證明資料識別碼不合法。",
+        )
+
+    try:
+        container = get_tax_receipts_container()
+        document = read_tax_receipt_document(
+            container=container,
+            event_id=event_id,
+            receipt_id=receipt_id,
+        )
+        delete_tax_receipt_document(
+            container=container,
+            event_id=event_id,
+            receipt_id=receipt_id,
+        )
+        blob_name = str(document.get("sourceBlobName", "")).strip()
+        if blob_name:
+            delete_blob(
+                blob_name=blob_name,
+                container_name=get_tax_receipts_blob_container_name(),
+            )
+    except (TaxReceiptStoreConfigurationError, BlobStoreConfigurationError) as exc:
+        return build_portal_api_error_response(
+            503,
+            "tax_receipt_store_not_configured",
+            str(exc),
+        )
+    except TaxReceiptStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定繳稅證明資料。" else 503,
+            "tax_receipt_not_found"
+            if str(exc) == "找不到指定繳稅證明資料。"
+            else "tax_receipt_store_unavailable",
+            str(exc),
+        )
+    except BlobStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "tax_receipt_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response({"deleted": True}, status_code=200)
+
+
+@blueprint.function_name(name="public_tax_receipts_download_api")
+@blueprint.route(
+    route="api/v1/tax-receipts/download",
+    methods=["POST"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def public_tax_receipts_download_api(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return build_portal_api_error_response(
+            400,
+            "invalid_tax_receipt_download_payload",
+            "請提供 JSON 物件。",
+        )
+
+    if not isinstance(payload, dict):
+        return build_portal_api_error_response(
+            400,
+            "invalid_tax_receipt_download_payload",
+            "請提供 JSON 物件。",
+        )
+
+    event_id = str(payload.get("eventId", "")).strip()
+    receipt_ids = parse_tax_receipt_download_receipt_ids(payload.get("receiptIds"))
+    ticket = str(payload.get("downloadTicket", "")).strip()
+    if not is_authorized_tax_receipt_download_request(
+        req,
+        event_id=event_id,
+        receipt_ids=receipt_ids,
+        ticket=ticket,
+    ):
+        return build_portal_api_error_response(
+            403,
+            "invalid_tax_receipt_download_authorization",
+            "下載資格已失效，請重新查詢後再下載。",
+        )
+
+    return build_tax_receipts_download_response(event_id=event_id, receipt_ids=receipt_ids)
+
+
+def parse_tax_receipt_download_receipt_ids(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    receipt_ids: list[str] = []
+    for item in value:
+        receipt_id = str(item).strip()
+        if receipt_id and receipt_id not in receipt_ids:
+            receipt_ids.append(receipt_id)
+    return receipt_ids
+
+
+def build_tax_receipts_download_response(
+    *,
+    event_id: str,
+    receipt_ids: list[str],
+) -> func.HttpResponse:
+    if (
+        not event_id.startswith("evt_")
+        or not receipt_ids
+        or any(not receipt_id.startswith("trec_") for receipt_id in receipt_ids)
+    ):
+        return build_portal_api_error_response(
+            400,
+            "invalid_tax_receipt_id",
+            "繳稅證明資料識別碼不合法。",
+        )
+
+    try:
+        documents: list[dict[str, Any]] = []
+        file_payloads: list[tuple[dict[str, Any], bytes]] = []
+        document = read_tax_receipt_document(
+            container=get_tax_receipts_container(),
+            event_id=event_id,
+            receipt_id=receipt_ids[0],
+        )
+        documents.append(document)
+        for receipt_id in receipt_ids[1:]:
+            documents.append(
+                read_tax_receipt_document(
+                    container=get_tax_receipts_container(),
+                    event_id=event_id,
+                    receipt_id=receipt_id,
+                )
+            )
+        blob_container_name = get_tax_receipts_blob_container_name()
+        for document in documents:
+            file_payloads.append(
+                (
+                    document,
+                    download_blob_bytes(
+                        blob_name=str(document.get("sourceBlobName", "")).strip(),
+                        container_name=blob_container_name,
+                    ),
+                )
+            )
+    except (TaxReceiptStoreConfigurationError, BlobStoreConfigurationError) as exc:
+        return build_portal_api_error_response(
+            503,
+            "tax_receipt_store_not_configured",
+            str(exc),
+        )
+    except TaxReceiptStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定繳稅證明資料。" else 503,
+            "tax_receipt_not_found"
+            if str(exc) == "找不到指定繳稅證明資料。"
+            else "tax_receipt_store_unavailable",
+            str(exc),
+        )
+    except BlobStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "tax_receipt_store_unavailable",
+            str(exc),
+        )
+
+    if len(file_payloads) == 1:
+        document, blob_bytes = file_payloads[0]
+        return build_tax_receipt_file_http_response(document=document, blob_bytes=blob_bytes)
+
+    return build_tax_receipts_zip_response(event_id=event_id, file_payloads=file_payloads)
+
+
+def build_tax_receipt_file_http_response(
+    *,
+    document: dict[str, Any],
+    blob_bytes: bytes,
+) -> func.HttpResponse:
+    receipt_id = str(document.get("id", "")).strip()
+    file_name = str(document.get("fileName", "")).strip() or f"{receipt_id}.pdf"
+    download_file_name = sanitize_tax_receipt_download_file_name(file_name)
+    return func.HttpResponse(
+        body=blob_bytes,
+        status_code=200,
+        mimetype=str(document.get("contentType", "")).strip() or "application/octet-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{download_file_name}"',
+        },
+    )
+
+
+def build_tax_receipts_zip_response(
+    *,
+    event_id: str,
+    file_payloads: list[tuple[dict[str, Any], bytes]],
+) -> func.HttpResponse:
+    zip_buffer = io.BytesIO()
+    used_file_names: set[str] = set()
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        for document, blob_bytes in file_payloads:
+            receipt_id = str(document.get("id", "")).strip()
+            file_name = str(document.get("fileName", "")).strip() or f"{receipt_id}.pdf"
+            zip_file.writestr(
+                uniquify_tax_receipt_zip_file_name(
+                    sanitize_tax_receipt_download_file_name(file_name),
+                    used_file_names,
+                ),
+                blob_bytes,
+            )
+
+    return func.HttpResponse(
+        body=zip_buffer.getvalue(),
+        status_code=200,
+        mimetype="application/zip",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": (
+                f'attachment; filename="tax-receipts-{sanitize_tax_receipt_download_file_name(event_id)}.zip"'
+            ),
+        },
+    )
+
+
+def sanitize_tax_receipt_download_file_name(file_name: str) -> str:
+    return file_name.replace("\\", "_").replace('"', "'").replace("\r", "").replace("\n", "")
+
+
+def uniquify_tax_receipt_zip_file_name(file_name: str, used_file_names: set[str]) -> str:
+    if file_name not in used_file_names:
+        used_file_names.add(file_name)
+        return file_name
+
+    stem, dot, suffix = file_name.rpartition(".")
+    base_name = stem if dot else file_name
+    extension = f".{suffix}" if dot else ""
+    index = 2
+    while True:
+        candidate = f"{base_name}-{index}{extension}"
+        if candidate not in used_file_names:
+            used_file_names.add(candidate)
+            return candidate
+        index += 1
+
+
 @blueprint.function_name(name="portal_admin_completion_cert_change_requests_list_api")
 @blueprint.route(
     route="api/v1/admin/completion-cert-change-requests",
@@ -2005,7 +2869,10 @@ def portal_dashboard_tax_receipts_page(
         return access
 
     return build_portal_page_response(
-        load_portal_dashboard_tax_receipts_template()
+        render_html_template(
+            load_portal_dashboard_tax_receipts_template(),
+            build_portal_dashboard_context(req, access),
+        )
     )
 
 

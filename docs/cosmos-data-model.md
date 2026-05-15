@@ -183,13 +183,16 @@ partition key = <event-id>
 
 ## 完訓證明 containers
 
-完訓證明目前採用兩個 Cosmos DB container：
+證明文件目前採用下列 Cosmos DB containers：
 
 ```text
 container: completionCerts
 partition key: /eventId
 
 container: completionCertRequests
+partition key: /eventId
+
+container: taxReceipts
 partition key: /eventId
 
 container: publicLookupAttempts
@@ -201,6 +204,58 @@ partition key: /id
 `completionCertRequests` 只記錄會眾是否申請資料調整、申請備註、審核狀態與通知狀態。這類資料不是完訓證明權威清單本身，因此獨立存放。
 
 目前不保留原始 CSV 檔案。完訓證明 PDF 底圖模板跟隨 git 版控，因欄位座標需要與模板版本同步；固定印章圖存放於 Blob Storage `document-assets` container，預設 blob 名稱為 `completion-cert/organization-seal.png`；首頁證明預覽 PNG 也存放於 `document-assets`，blob 名稱格式為 `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`，預覽 PDF 備份則使用 `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並設定為 Archive tier。產生後 PDF 存放於 Blob Storage `issued-certs` container，並以 Cool tier 儲存。Cosmos DB 只儲存完訓證明清單資料、狀態、顯示選項與產生後檔案的 blob 名稱，不儲存 CSV 原文、印章圖、預覽圖或 PDF 二進位。
+
+`taxReceipts` 是營業稅繳稅證明 metadata 的權威資料來源。管理端逐筆新增時，後端會先驗證活動已開放 `taxReceipt` 文件類型、統編、整數金額、UTC 產製時間與檔案格式，再將 PDF、PNG 或 JPG/JPEG 檔案寫入 Blob Storage `tax-receipts` container，並將 metadata 寫入 Cosmos DB。Cosmos DB 不儲存檔案二進位；`sourceBlobName` 指向對應 Blob。
+
+管理端新增時，表格可能先顯示只存在瀏覽器端的新增中資料列，用於回饋檔案正在寫入。這不是 `taxReceipts` 文件，不會寫入 Cosmos DB，也沒有獨立後端狀態；只有 `POST /api/v1/admin/tax-receipts` 成功回應後，正式 metadata 才會成為 Cosmos DB 的權威資料。
+
+### 營業稅繳稅證明文件
+
+`taxReceipts` 以活動作為 partition key，支援管理端依活動列出、逐筆新增、修改、下載與刪除營業稅繳稅證明。這個 container 是營業稅繳稅證明的權威 metadata；未來首頁公開查詢與公開下載也應讀取同一份 metadata，並使用共用 `POST /api/v1/tax-receipts/download` 下載端點直接串流單檔或 ZIP bytes，不回傳可分享的下載 URL。未登入首頁下載時，公開查詢成功後應回傳 `downloadTicket`，並在下載 POST body 中送回；ticket 不作為持久化 metadata 存入 Cosmos DB。
+
+必要欄位：
+
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `id` | string | 繳稅證明資料識別碼，格式 `trec_<uuid-v5>` |
+| `eventId` | string | 活動識別碼，同時作為 partition key |
+| `taxId` | string | 8 碼統一編號 |
+| `amount` | int | 繳稅金額；必須為大於 0 的整數 |
+| `generatedAt` | string | 產製時間，UTC ISO 8601，格式 `yyyy-MM-dd'T'HH:mm:ss'Z'` |
+| `sourceBlobName` | string | `tax-receipts` container 中的 blob 名稱，格式 `{eventId}/{receiptId}.pdf`、`.png` 或 `.jpg` |
+| `fileName` | string | 後端產生的下載檔名，格式 `receipt-{taxId}-{fileSequence}.{ext}`；不使用上傳原始檔名 |
+| `fileSequence` | int | 同一活動、同一統編下的檔案序號，從 `1` 開始 |
+| `contentType` | string | 檔案 MIME type，只接受 `application/pdf`、`image/png` 或 `image/jpeg` |
+| `fileSize` | int | 檔案大小，bytes |
+| `downloadCount` | int | 累計下載次數；初始為 `0` |
+| `createdBy` | string | 建立者管理端識別 |
+| `createdAt` | string | 建立時間，UTC ISO 8601 |
+| `updatedBy` | string | 最後更新者管理端識別 |
+| `updatedAt` | string | 最後更新時間，UTC ISO 8601 |
+
+`fileSequence` 由後端依同一活動、同一統編既有資料計算，搭配 `fileName` 避免同一統編多筆收據使用相同下載檔名。若管理者替換收據聯檔案，系統會沿用原本的 `fileSequence`。編輯營業稅繳稅證明時不可修改 `eventId` 與 `taxId`；若活動或統編需要更正，應刪除該筆資料後重新新增。
+
+範例：
+
+```json
+{
+  "id": "trec_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+  "eventId": "evt_20260425_ipg",
+  "taxId": "12345678",
+  "amount": 186000,
+  "generatedAt": "2026-05-13T15:00:44Z",
+  "sourceBlobName": "evt_20260425_ipg/trec_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001.pdf",
+  "fileName": "receipt-12345678-1.pdf",
+  "fileSequence": 1,
+  "contentType": "application/pdf",
+  "fileSize": 204800,
+  "downloadCount": 0,
+  "createdBy": "admin@iplayground.io",
+  "createdAt": "2026-05-13T15:01:00Z",
+  "updatedBy": "admin@iplayground.io",
+  "updatedAt": "2026-05-13T15:01:00Z"
+}
+```
 
 ### 完訓證明清單文件
 
