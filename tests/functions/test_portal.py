@@ -42,6 +42,10 @@ from src.functions.portal import (
 from src.shared.portal_auth import resolve_portal_access
 from src.shared.event_store import EventStoreOperationError
 from src.shared.portal_google_group_auth import PortalGoogleGroupAuthorizationError
+from src.shared.public_lookup_store import (
+    build_public_lookup_attempt_id,
+    clear_public_lookup_local_block,
+)
 
 
 def build_request(
@@ -283,6 +287,24 @@ class FakeTaxReceiptsContainer:
             key=lambda item: item["generatedAt"],
             reverse=True,
         )
+
+
+class FakeLookupAttemptsContainer:
+    def __init__(self) -> None:
+        self.items: dict[str, dict[str, Any]] = {}
+
+    def read_item(self, item: str, partition_key: str, **_: Any) -> dict[str, Any]:
+        assert item == partition_key
+        if item not in self.items:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+
+        return self.items[item]
+
+    def upsert_item(self, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        self.items[body["id"]] = body
+        return body
 
 
 def build_authorized_portal_api_request(
@@ -1496,6 +1518,99 @@ def test_public_tax_receipts_download_api_rejects_request_without_portal_access(
 
     assert response.status_code == 403
     assert "invalid_tax_receipt_download_authorization" in response.get_body().decode("utf-8")
+
+
+def test_public_tax_receipts_download_api_blocks_ip_after_fifth_invalid_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    attempts_container = FakeLookupAttemptsContainer()
+    attempt_id = build_public_lookup_attempt_id("203.0.113.25")
+    clear_public_lookup_local_block(attempt_id=attempt_id)
+    monkeypatch.setattr(
+        "src.functions.portal.get_public_lookup_attempts_container",
+        lambda: attempts_container,
+    )
+    request_body = json.dumps(
+        {"eventId": "evt_tax", "receiptIds": ["trec_1"], "downloadTicket": "invalid"}
+    ).encode("utf-8")
+
+    try:
+        responses = [
+            public_tax_receipts_download_api(
+                build_request(
+                    "http://localhost:7075/api/v1/tax-receipts/download",
+                    body=request_body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Host": "localhost:7075",
+                        "Origin": "http://localhost:7075",
+                        "X-Forwarded-For": "203.0.113.25",
+                    },
+                    method="POST",
+                )
+            )
+            for _ in range(5)
+        ]
+    finally:
+        clear_public_lookup_local_block(attempt_id=attempt_id)
+
+    blocked_body = responses[-1].get_body().decode("utf-8")
+    attempt_document = attempts_container.items[attempt_id]
+
+    assert [response.status_code for response in responses] == [403, 403, 403, 403, 429]
+    assert '"code":"lookup_blocked"' in blocked_body
+    assert "暫停查詢 24 小時" in blocked_body
+    assert attempt_document["ipAddress"] == "203.0.113.25"
+    assert attempt_document["failureCount"] == 5
+    assert attempt_document["blockedUntil"] is not None
+
+
+def test_public_tax_receipts_download_api_keeps_blocked_ip_from_downloading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    attempts_container = FakeLookupAttemptsContainer()
+    attempt_id = build_public_lookup_attempt_id("203.0.113.25")
+    attempts_container.items[attempt_id] = {
+        "id": attempt_id,
+        "ipAddress": "203.0.113.25",
+        "failureCount": 5,
+        "firstFailedAt": "2026-04-29T00:00:00Z",
+        "lastFailedAt": "2026-04-29T00:04:00Z",
+        "blockedUntil": "2999-04-29T00:04:00Z",
+        "updatedAt": "2026-04-29T00:04:00Z",
+    }
+    clear_public_lookup_local_block(attempt_id=attempt_id)
+    monkeypatch.setattr(
+        "src.functions.portal.get_public_lookup_attempts_container",
+        lambda: attempts_container,
+    )
+
+    try:
+        response = public_tax_receipts_download_api(
+            build_request(
+                "http://localhost:7075/api/v1/tax-receipts/download",
+                body=json.dumps(
+                    {"eventId": "evt_tax", "receiptIds": ["trec_1"], "downloadTicket": "invalid"}
+                ).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Host": "localhost:7075",
+                    "Origin": "http://localhost:7075",
+                    "X-Forwarded-For": "203.0.113.25",
+                },
+                method="POST",
+            )
+        )
+    finally:
+        clear_public_lookup_local_block(attempt_id=attempt_id)
+
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 429
+    assert '"code":"lookup_blocked"' in body
+    assert "invalid_tax_receipt_download_authorization" not in body
 
 
 def test_public_tax_receipts_download_api_rejects_invalid_download_payload(

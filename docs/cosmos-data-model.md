@@ -211,7 +211,7 @@ partition key: /id
 
 ### 營業稅繳稅證明文件
 
-`taxReceipts` 以活動作為 partition key，支援管理端依活動列出、逐筆新增、修改、下載與刪除營業稅繳稅證明。這個 container 是營業稅繳稅證明的權威 metadata；管理端歡迎頁會依最近一期開放 `taxReceipt` 活動讀取同一個 container，計算收據張數、用戶 `downloadCount` 合計與 `amount` 合計。歡迎頁的 `已查詢公司數` 需要公開查詢流程的權威事件來源，目前不得以收據張數或建檔統編數替代。首頁公開查詢會以活動、8 碼統編與產製時間核對是否存在同統編收據，命中後依 `generatedAt` 由早到晚回傳同活動同統編的所有收據公開 metadata，但不暴露 `sourceBlobName` 或下載 URL。首頁公開下載讀取同一份 metadata，並使用共用 `POST /api/v1/tax-receipts/download` 下載端點直接串流單檔或 ZIP bytes，不回傳可分享的下載 URL。未登入首頁下載時，公開查詢成功後會回傳 `downloadTicket`，並在下載 POST body 中送回；ticket 不作為持久化 metadata 存入 Cosmos DB，且只授權該次查詢可下載收據集合的非空子集合。多筆收據下載時，HTTP `Content-Disposition` 的 ZIP 檔名固定為 `tax-receipts.zip`，避免將 `eventId` 等內部識別碼放進使用者下載檔名。
+`taxReceipts` 以活動作為 partition key，支援管理端依活動列出、逐筆新增、修改、下載與刪除營業稅繳稅證明。這個 container 是營業稅繳稅證明的權威 metadata；管理端歡迎頁會依最近一期開放 `taxReceipt` 活動讀取同一個 container，計算收據張數、用戶 `downloadCount` 合計與 `amount` 合計。歡迎頁的 `已查詢公司數` 需要公開查詢流程的權威事件來源，目前不得以收據張數或建檔統編數替代。首頁公開查詢會以活動、8 碼統編與產製時間核對是否存在同統編收據，命中後依 `generatedAt` 由早到晚回傳同活動同統編的所有收據公開 metadata，但不暴露 `sourceBlobName` 或下載 URL。首頁公開下載讀取同一份 metadata，並使用共用 `POST /api/v1/tax-receipts/download` 下載端點直接串流單檔或 ZIP bytes，不回傳可分享的下載 URL。未登入首頁下載時，公開查詢成功後會回傳 `downloadTicket`，並在下載 POST body 中送回；ticket 不作為持久化 metadata 存入 Cosmos DB，且只授權該次查詢可下載收據集合的非空子集合。首頁下載若送出無效 payload 或無效 `downloadTicket`，會寫入 `publicLookupAttempts` 並套用與完訓證明公開查詢相同的 5 次失敗封鎖規則。多筆收據下載時，HTTP `Content-Disposition` 的 ZIP 檔名固定為 `tax-receipts.zip`，避免將 `eventId` 等內部識別碼放進使用者下載檔名。
 
 必要欄位：
 
@@ -418,7 +418,7 @@ ORDER BY c.createdAt ASC
 
 ## 公開查詢限制 container
 
-`publicLookupAttempts` 記錄公開文件查詢的連續失敗狀態，用於降低暴力嘗試。此 container 會儲存 Azure Functions 收到的 `X-Forwarded-For` 第一個 IP，並在寫入前移除常見的來源 port 格式，例如 `198.51.100.25:54321` 或 `[2001:db8::25]:54321`，供營運稽核與安全追蹤使用；`id` 使用由該 IP 穩定產生的 UUIDv5，讓後端仍可用 point read 取得單一 IP 的查詢限制狀態。若請求沒有 `X-Forwarded-For`，後端會照常查詢文件，但不會建立或更新 `publicLookupAttempts` 文件，避免把本機或特殊環境的請求共同寫成 `unknown`。
+`publicLookupAttempts` 記錄公開文件查詢與首頁收據下載的連續失敗狀態，用於降低暴力嘗試。此 container 會儲存 Azure Functions 收到的 `X-Forwarded-For` 第一個 IP，並在寫入前移除常見的來源 port 格式，例如 `198.51.100.25:54321` 或 `[2001:db8::25]:54321`，供營運稽核與安全追蹤使用；`id` 使用由該 IP 穩定產生的 UUIDv5，讓後端仍可用 point read 取得單一 IP 的查詢限制狀態。若請求沒有 `X-Forwarded-For`，後端會照常處理請求，但不會建立或更新 `publicLookupAttempts` 文件，避免把本機或特殊環境的請求共同寫成 `unknown`。
 
 ```text
 container: publicLookupAttempts
@@ -443,11 +443,11 @@ partition key: /id
 規則：
 
 - IP 來源只使用 `X-Forwarded-For` 的第一個值，並移除 IPv4 `host:port` 與 bracketed IPv6 `[host]:port` 的 port；本機 `func start` 直連通常不會自動帶此 header，需由測試請求自行明確提供。
-- 同一 IP 在 24 小時內連續查詢失敗 5 次後，`blockedUntil` 設為開始封鎖時間加 24 小時。
+- 同一 IP 在 24 小時內連續公開查詢失敗，或首頁收據下載送出無效 payload / 無效下載資格累計 5 次後，`blockedUntil` 設為開始封鎖時間加 24 小時。
 - 同一 IP 在 24 小時內查詢尚未開放的完訓證明 10 次後，`blockedUntil` 設為開始封鎖時間加 12 小時；此計數與一般查不到資料的 `failureCount` 分開記錄。
-- 封鎖期間公開查詢 API 直接回覆封鎖錯誤，不查詢文件資料。
+- 封鎖期間公開查詢 API 與首頁收據下載 API 直接回覆封鎖錯誤，不查詢文件 metadata 或 Blob。
 - 對使用者顯示的封鎖訊息不得提到 IP；若可取得 `blockedUntil`，滿 1 小時以上以小時計算並無條件進位，不足 1 小時以分鐘計算並無條件進位，不足 1 分鐘顯示 1 分鐘。
-- 查詢成功時，將 `failureCount` 與 `notAvailableCount` 歸零，並清除對應時間欄位與 `blockedUntil`。
+- 公開查詢成功時，將 `failureCount` 與 `notAvailableCount` 歸零，並清除對應時間欄位與 `blockedUntil`；首頁收據下載成功時也會清除一般失敗計數與封鎖狀態。
 - 對使用者顯示的失敗訊息不得指出哪個欄位錯誤，也不得提示剩餘嘗試次數。
-- 此 container 只供公開查詢限制使用；公開查詢流程對此 container 的 point read 與 upsert 最多等待 5 秒，若 Cosmos DB 提前回應就立即使用結果，避免 Cosmos DB 延遲讓首頁查詢長時間卡住。
+- 此 container 只供公開查詢與首頁收據下載限制使用；公開查詢流程對此 container 的 point read 與 upsert 最多等待 5 秒，若 Cosmos DB 提前回應就立即使用結果，避免 Cosmos DB 延遲讓首頁查詢長時間卡住。
 - Functions worker 可在記憶體中快取已封鎖 attempt id 與 `blockedUntil`，讓封鎖期間的後續查詢不必每次讀取 Cosmos DB；此快取不得用於放行，只能用於提早拒絕，且即使 DB 文件異常帶有更遠的 `blockedUntil`，本機快取也不得超過 1 小時。

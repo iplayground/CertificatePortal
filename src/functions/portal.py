@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import io
 import json
+import logging
 import os
 import time
 import zipfile
@@ -80,6 +81,21 @@ from src.shared.page_alerts import (
     build_page_alert_html,
     resolve_page_alert_dismiss_delay_ms,
 )
+from src.shared.public_lookup_store import (
+    PublicLookupStoreConfigurationError,
+    PublicLookupStoreOperationError,
+    build_public_lookup_attempt_id,
+    clear_public_lookup_local_block,
+    get_public_lookup_attempts_container,
+    is_public_lookup_blocked,
+    is_public_lookup_blocked_by_local_cache,
+    read_public_lookup_cached_attempt_document,
+    read_public_lookup_attempt_document,
+    record_public_lookup_failure,
+    record_public_lookup_success,
+    remember_public_lookup_attempt_document,
+    remember_public_lookup_block,
+)
 from src.shared.tax_receipt_store import (
     TaxReceiptStoreConfigurationError,
     TaxReceiptStoreOperationError,
@@ -101,6 +117,7 @@ from src.shared.tax_receipt_download_ticket import (
 from src.shared.templates import render_html_template
 
 blueprint = func.Blueprint()
+LOGGER = logging.getLogger(__name__)
 
 PORTAL_ENTRY_PATH = "/portal"
 PORTAL_DASHBOARD_PATH = "/portal/dashboard"
@@ -1366,6 +1383,140 @@ def is_portal_tax_receipt_download_request(req: func.HttpRequest) -> bool:
     )
 
 
+def resolve_public_download_client_ip(req: func.HttpRequest) -> str | None:
+    forwarded_for = req.headers.get("X-Forwarded-For", "").split(",", maxsplit=1)[0].strip()
+    return normalize_public_download_client_ip(forwarded_for)
+
+
+def normalize_public_download_client_ip(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    client_ip = value.strip().strip("\"'")
+    if not client_ip:
+        return None
+
+    if client_ip.startswith("["):
+        closing_bracket_index = client_ip.find("]")
+        if closing_bracket_index > 1:
+            return client_ip[1:closing_bracket_index]
+
+    if client_ip.count(":") == 1:
+        host, port = client_ip.rsplit(":", maxsplit=1)
+        if host and port.isdecimal():
+            return host
+
+    return client_ip
+
+
+def read_public_download_attempt_document(
+    *,
+    attempt_id: str,
+) -> dict[str, Any] | None:
+    cached_document = read_public_lookup_cached_attempt_document(attempt_id=attempt_id)
+    if cached_document is not None:
+        return cached_document
+
+    try:
+        attempt_document = read_public_lookup_attempt_document(
+            attempt_id=attempt_id,
+            container=get_public_lookup_attempts_container(),
+        )
+    except (PublicLookupStoreConfigurationError, PublicLookupStoreOperationError):
+        LOGGER.warning("Public tax receipt download attempt store is unavailable.", exc_info=True)
+        return None
+
+    if attempt_document is not None:
+        remember_public_lookup_attempt_document(
+            attempt_id=attempt_id,
+            attempt_document=attempt_document,
+        )
+
+    return attempt_document
+
+
+def build_tax_receipt_download_blocked_response(
+    attempt_document: dict[str, Any] | None,
+) -> func.HttpResponse:
+    return build_portal_api_error_response(
+        429,
+        "lookup_blocked",
+        build_public_download_blocked_message(attempt_document),
+    )
+
+
+def build_public_download_blocked_message(
+    attempt_document: dict[str, Any] | None,
+) -> str:
+    from src.functions.home import build_document_lookup_blocked_message
+
+    return build_document_lookup_blocked_message(attempt_document)
+
+
+def record_public_download_failure(
+    *,
+    attempt_id: str | None,
+    attempt_document: dict[str, Any] | None,
+    client_ip: str | None,
+) -> dict[str, Any] | None:
+    if attempt_id is None or client_ip is None:
+        return None
+
+    try:
+        updated_attempt_document = record_public_lookup_failure(
+            attempt_id=attempt_id,
+            container=get_public_lookup_attempts_container(),
+            existing_document=attempt_document,
+            ip_address=client_ip,
+        )
+    except (PublicLookupStoreConfigurationError, PublicLookupStoreOperationError):
+        LOGGER.warning(
+            "Public tax receipt download failure count could not be recorded.",
+            exc_info=True,
+        )
+        return None
+
+    remember_public_lookup_attempt_document(
+        attempt_id=attempt_id,
+        attempt_document=updated_attempt_document,
+    )
+    if is_public_lookup_blocked(attempt_document=updated_attempt_document):
+        remember_public_lookup_block(
+            attempt_id=attempt_id,
+            attempt_document=updated_attempt_document,
+        )
+
+    return updated_attempt_document
+
+
+def record_public_download_success(
+    *,
+    attempt_id: str | None,
+    client_ip: str | None,
+) -> None:
+    if attempt_id is None or client_ip is None:
+        return
+
+    try:
+        updated_attempt_document = record_public_lookup_success(
+            attempt_id=attempt_id,
+            container=get_public_lookup_attempts_container(),
+            ip_address=client_ip,
+        )
+    except (PublicLookupStoreConfigurationError, PublicLookupStoreOperationError):
+        LOGGER.warning(
+            "Public tax receipt download failure count could not be reset after success.",
+            exc_info=True,
+        )
+        return
+
+    remember_public_lookup_attempt_document(
+        attempt_id=attempt_id,
+        attempt_document=updated_attempt_document,
+    )
+    clear_public_lookup_local_block(attempt_id=attempt_id)
+
+
 def is_same_origin_portal_api_request(req: func.HttpRequest) -> bool:
     request_origin = _resolve_request_origin(req)
     origin_header = req.headers.get("Origin", "").strip()
@@ -2463,9 +2614,36 @@ def portal_admin_tax_receipts_delete_api(req: func.HttpRequest) -> func.HttpResp
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 def public_tax_receipts_download_api(req: func.HttpRequest) -> func.HttpResponse:
+    client_ip = resolve_public_download_client_ip(req)
+    attempt_id = build_public_lookup_attempt_id(client_ip) if client_ip else None
+    if attempt_id is not None and is_public_lookup_blocked_by_local_cache(attempt_id=attempt_id):
+        return build_tax_receipt_download_blocked_response(
+            read_public_lookup_cached_attempt_document(attempt_id=attempt_id)
+        )
+
+    attempt_document = (
+        read_public_download_attempt_document(attempt_id=attempt_id)
+        if attempt_id is not None
+        else None
+    )
+    if is_public_lookup_blocked(attempt_document=attempt_document):
+        remember_public_lookup_block(
+            attempt_id=attempt_id,
+            attempt_document=attempt_document or {},
+        )
+        return build_tax_receipt_download_blocked_response(attempt_document)
+
     try:
         payload = req.get_json()
     except ValueError:
+        updated_attempt_document = record_public_download_failure(
+            attempt_id=attempt_id,
+            attempt_document=attempt_document,
+            client_ip=client_ip,
+        )
+        if is_public_lookup_blocked(attempt_document=updated_attempt_document):
+            return build_tax_receipt_download_blocked_response(updated_attempt_document)
+
         return build_portal_api_error_response(
             400,
             "invalid_tax_receipt_download_payload",
@@ -2473,6 +2651,14 @@ def public_tax_receipts_download_api(req: func.HttpRequest) -> func.HttpResponse
         )
 
     if not isinstance(payload, dict):
+        updated_attempt_document = record_public_download_failure(
+            attempt_id=attempt_id,
+            attempt_document=attempt_document,
+            client_ip=client_ip,
+        )
+        if is_public_lookup_blocked(attempt_document=updated_attempt_document):
+            return build_tax_receipt_download_blocked_response(updated_attempt_document)
+
         return build_portal_api_error_response(
             400,
             "invalid_tax_receipt_download_payload",
@@ -2489,17 +2675,29 @@ def public_tax_receipts_download_api(req: func.HttpRequest) -> func.HttpResponse
         receipt_ids=receipt_ids,
         ticket=ticket,
     ):
+        updated_attempt_document = record_public_download_failure(
+            attempt_id=attempt_id,
+            attempt_document=attempt_document,
+            client_ip=client_ip,
+        )
+        if is_public_lookup_blocked(attempt_document=updated_attempt_document):
+            return build_tax_receipt_download_blocked_response(updated_attempt_document)
+
         return build_portal_api_error_response(
             403,
             "invalid_tax_receipt_download_authorization",
             "下載資格已失效，請重新查詢後再下載。",
         )
 
-    return build_tax_receipts_download_response(
+    response = build_tax_receipts_download_response(
         event_id=event_id,
         is_portal_download=is_portal_download,
         receipt_ids=receipt_ids,
     )
+    if not is_portal_download and response.status_code < 400:
+        record_public_download_success(attempt_id=attempt_id, client_ip=client_ip)
+
+    return response
 
 
 def parse_tax_receipt_download_receipt_ids(value: Any) -> list[str]:

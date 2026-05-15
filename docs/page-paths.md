@@ -119,7 +119,7 @@
 - 後端可用 Functions worker 本機記憶體快取已封鎖 IP 的 attempt id，用於封鎖期間快速短路 Cosmos DB；此快取只能作為額外封鎖捷徑，不能取代 Cosmos DB 的權威紀錄，且本機快取期限不得超過 1 小時。
 - 首頁可用 `localStorage` 快取「已被封鎖」狀態與伺服器回傳的封鎖訊息，以減少重整後的等待感並保留 12 小時或 24 小時封鎖文案；此快取只作為使用者體驗提示，不得作為後端安全判斷依據，期限不得超過 1 小時，且必須在到期、格式不合法或查詢成功時清除，避免永久性上鎖。
 - `taxReceipt` 公開查詢使用活動、統編與產製時間核對。若該活動中同一統編至少有一筆收據的 `generatedAt` 與查詢值完全相同，API 會回傳該活動與該統編相同的所有收據 metadata，依 `generatedAt` 由早到晚排序，供首頁列出；回應不包含 `sourceBlobName` 或下載 URL。
-- 營業稅繳稅證明的下載能力不是管理端專屬，管理端與首頁查詢成功後都應以 `POST /api/v1/tax-receipts/download` 取得單檔或 ZIP bytes，再由前端以 browser object URL 觸發下載，不回傳可分享的下載 URL。管理端下載以 session 與 CSRF 授權；首頁下載由公開查詢成功後取得的 `downloadTicket` 授權，並在 POST body 中送回，不放在 URL。首頁會將收據列為可勾選清單，預設只勾選查詢時命中的產製時間那一筆，至少勾選一筆才可下載；勾選多筆時下載 ZIP，勾選單筆時下載原始 PDF 或圖檔。
+- 營業稅繳稅證明的下載能力不是管理端專屬，管理端與首頁查詢成功後都應以 `POST /api/v1/tax-receipts/download` 取得單檔或 ZIP bytes，再由前端以 browser object URL 觸發下載，不回傳可分享的下載 URL。管理端下載以 session 與 CSRF 授權；首頁下載由公開查詢成功後取得的 `downloadTicket` 授權，並在 POST body 中送回，不放在 URL。首頁會將收據列為可勾選清單，預設只勾選查詢時命中的產製時間那一筆，至少勾選一筆才可下載；勾選多筆時下載 ZIP，勾選單筆時下載原始 PDF 或圖檔。首頁收據下載若發生無效 payload 或無效下載資格，應與公開查詢失敗共用同一套 IP 鎖定規則：同一 IP 在 24 小時內連續失敗 5 次後封鎖 24 小時；封鎖期間應回覆 `429` 與 `lookup_blocked`，且不得讀取收據 metadata 或 Blob。
 - 完訓證明查詢成功時，回應會包含 `badgeName`、`name`、`organization`、`certStatus` 與 `canRequestChanges`，供首頁決定是否顯示「選擇證明顯示方式」及修改申請狀態提示。
 - `certStatus` 為 `notIssued`、`changeRequested` 或 `issued` 時，首頁會顯示「選擇證明顯示方式」。`issued` 進入下載模式，姓名與公司顯示選項會鎖定，說明文字會合併提示「一旦確認後，將無法更改」，不顯示證書預覽區塊，按鈕文案改為「下載證書」並下載既有 PDF；公開下載回應的檔名固定為 `certificate.pdf`，不包含報名序號、KKTIX ID 或其他個人資料。
 - 「選擇證明顯示方式」區塊會依實際 `name` 與 `badgeName` 產生姓名顯示選項：`姓名`、`Badge Name`、`姓名 (Badge Name)`；若其中一個值為空，或兩者相同，只顯示單一有效選項。
