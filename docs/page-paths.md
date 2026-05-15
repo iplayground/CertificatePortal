@@ -355,21 +355,25 @@ Request JSON 範例：
 - 顯示與首頁頂部一致的品牌 logo、平台標題、登入帳號歡迎訊息與文件類型統計資訊
 - 歡迎頁 HTML 不同步查詢 Cosmos DB；首屏先顯示頁面與 `--` 指標，再由前端呼叫 `GET /api/v1/admin/dashboard/welcome-metrics` 補上統計資料；`--` 與最後數字使用相同字體樣式，避免載入完成時造成卡片高度變化
 - 統計區使用單一 `最近一期活動資料` 標題，避免在各文件類型區段重複顯示
+- `最近一期活動資料` 標題下方會顯示資料來源；若完訓證明與營業稅繳稅證明使用同一場活動，只顯示單一活動名稱，若來源不同則分別列出各文件類型對應活動
 - 文件類型統計區段使用類似完訓證明頁工作區的大外框樣式包覆，內部為四格指標
-- `完訓證明` 區段顯示最近一期活動的 `系統可下載數`、`下載人次`、`驗證次數`、`待處理案件數量`
-- 最近一期活動以活動清單中 `status = open` 且 `eventStartDate` 最新的活動為準，不使用建立時間排序決定
+- `完訓證明` 區段顯示最近一期開放完訓證明活動的 `系統可下載數`、`下載人次`、`驗證次數`、`待處理案件數量`
+- 最近一期活動以活動清單中 `status = open`、含對應文件類型且 `eventStartDate` 最新的活動為準，不使用建立時間排序決定；完訓證明與營業稅繳稅證明會各自選擇最近一期對應活動
 - 完訓證明統計優先讀取活動文件的 `metrics.completionCert` 預聚合資料；若活動文件缺少目前欄位，後端會以該活動的 `completionCerts` 文件重算並寫回活動文件
 - `下載人次` 讀取 `metrics.completionCert.downloadCount`；公開首頁第一次產生證書並下載時計 1 次，已產生證書再次下載時每次都加 1，同一位重複下載會重複計次
 - `驗證次數` 讀取 `metrics.completionCert.verificationCount`；公開驗證頁成功驗證一次就加 1
 - CSV 匯入、首次下載、再次下載與公開驗證流程都會更新活動文件的 `metrics.completionCert`，避免歡迎頁每次載入時掃描該活動全部完訓證明文件
-- `營業稅繳稅證明` 區段顯示 `收據張數`、`已查詢公司數`、`已下載次數`、`收據總金額`
+- `營業稅繳稅證明` 區段顯示最近一期開放營業稅繳稅證明活動的 `收據張數`、`已查詢公司數`、`已下載次數`、`收據總金額`
+- `收據張數` 為該活動 `taxReceipts` 文件數，`已下載次數` 為各收據用戶端 `downloadCount` 合計，`收據總金額` 為各收據 `amount` 合計
+- 管理端 portal 下載應另外寫入 `portalDownloadCount` 與 `lastPortalDownloadAt` 作為 DB 留底，不納入歡迎頁 `已下載次數`
+- `已查詢公司數` 目前尚未有公開查詢流程的權威事件來源，因此 API 回傳 `queriedCompanyCount: null`，前端維持顯示 `--`；不得以收據張數或建檔統編數替代
 - `營業稅繳稅證明` 的 `收據總金額` 使用 `$` 與完整金額格式，例如 `$186,000`，不使用 `NT$` 或 `K` 縮寫
 
 ### `GET /api/v1/admin/dashboard/welcome-metrics`
 
 - 查詢歡迎頁需要的管理端統計資料
 - 只接受已登入且通過授權的管理者 session，並要求同源 `Origin` 或 `Referer`
-- 目前回傳完訓證明最近一期開放活動統計；若活動文件缺少預聚合欄位，後端會重算該活動完訓證明文件並回寫活動文件
+- 回傳完訓證明與營業稅繳稅證明最近一期開放活動統計；若活動文件缺少完訓證明預聚合欄位，後端會重算該活動完訓證明文件並回寫活動文件
 - Response JSON 範例：
 
 ```json
@@ -380,6 +384,13 @@ Request JSON 範例：
     "downloadCount": 3,
     "verificationCount": 15,
     "pendingCount": 1
+  },
+  "taxReceiptMetrics": {
+    "eventName": "iPlayground 2026",
+    "receiptCount": 24,
+    "queriedCompanyCount": null,
+    "downloadCount": 31,
+    "totalAmount": 186000
   }
 }
 ```
@@ -749,6 +760,9 @@ Response JSON example:
       "contentType": "application/pdf",
       "fileSize": 204800,
       "downloadCount": 0,
+      "portalDownloadCount": 0,
+      "lastDownloadAt": null,
+      "lastPortalDownloadAt": null,
       "createdAt": "2026-05-13T15:01:00Z",
       "updatedAt": "2026-05-13T15:01:00Z"
     }
@@ -799,6 +813,9 @@ Response JSON example:
     "contentType": "application/pdf",
     "fileSize": 204800,
     "downloadCount": 0,
+    "portalDownloadCount": 0,
+    "lastDownloadAt": null,
+    "lastPortalDownloadAt": null,
     "createdAt": "2026-05-13T15:01:00Z",
     "updatedAt": "2026-05-13T15:01:00Z"
   }
@@ -837,6 +854,8 @@ Response JSON example:
 - 管理端呼叫時必須通過管理者 session，並帶 `X-Portal-CSRF-Token` header
 - 未登入首頁呼叫時必須在 POST body 帶公開查詢成功後取得的 `downloadTicket`；ticket 由後端簽發，綁定 `receiptIds`、`eventId` 與過期時間，且不放在 URL
 - 後端讀取 Cosmos DB `taxReceipts` metadata 後，依 `sourceBlobName` 從 Blob Storage `tax-receipts` 下載檔案
+- Blob 讀取成功後，後端會依下載來源分開計數：用戶端下載將每筆收據的 `downloadCount` 加 1 並更新 `lastDownloadAt`；管理端 portal 下載將每筆收據的 `portalDownloadCount` 加 1 並更新 `lastPortalDownloadAt`
+- 歡迎頁的 `已下載次數` 只讀取用戶端 `downloadCount` 累計值，不包含 portal 下載
 - 單筆下載會使用資料中保存的 `contentType` 與 `fileName` 作為下載格式與檔名；多筆下載會回傳 ZIP，檔名為 `tax-receipts-{eventId}.zip`
 - 未來首頁下載營業稅繳稅證明時，應先在公開查詢流程中以最小揭露方式核對活動、統編與產製時間，再回傳 `downloadTicket` 供前端直接下載回應
 

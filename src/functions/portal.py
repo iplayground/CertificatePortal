@@ -474,6 +474,10 @@ def build_portal_welcome_completion_metrics_placeholder_context() -> dict[str, s
         "completion_downloaded_member_count": "--",
         "completion_verification_count": "--",
         "completion_pending_count": "--",
+        "tax_receipt_count": "--",
+        "tax_receipt_queried_company_count": "--",
+        "tax_receipt_download_count": "--",
+        "tax_receipt_total_amount": "--",
     }
 
 
@@ -485,58 +489,133 @@ def build_portal_welcome_metrics_payload() -> dict[str, Any]:
         "verificationCount": 0,
         "pendingCount": 0,
     }
+    default_tax_receipt_metrics = {
+        "eventName": "尚無活動資料",
+        "receiptCount": 0,
+        "queriedCompanyCount": None,
+        "downloadCount": 0,
+        "totalAmount": 0,
+    }
 
     try:
         events = list_event_documents(container=get_events_container())
-        event = resolve_latest_welcome_metrics_event(events)
-        if event is None:
-            return {"completionCertMetrics": default_metrics}
-
-        event_id = str(event.get("id", "")).strip()
-        if not event_id:
-            return {"completionCertMetrics": default_metrics}
-
-        summary = normalize_event_completion_metrics(event)
-        if summary is None:
-            documents = list_completion_cert_documents(
-                container=get_completion_records_container(),
-                event_id=event_id,
+        completion_event = resolve_latest_welcome_metrics_event(
+            events,
+            document_type="completionCert",
+        )
+        tax_receipt_event = resolve_latest_welcome_metrics_event(
+            events,
+            document_type="taxReceipt",
+        )
+        if completion_event is None:
+            completion_metrics = default_metrics
+        else:
+            completion_metrics = build_portal_welcome_completion_metrics(
+                completion_event
             )
-            summary = summarize_completion_cert_documents(documents)
-            try:
-                replace_event_completion_metrics(
-                    container=get_events_container(),
-                    event_id=event_id,
-                    metrics=summary,
-                )
-            except (EventStoreConfigurationError, EventStoreOperationError):
-                pass
+
+        if tax_receipt_event is None:
+            tax_receipt_metrics = default_tax_receipt_metrics
+        else:
+            tax_receipt_metrics = build_portal_welcome_tax_receipt_metrics(
+                tax_receipt_event
+            )
     except (
         CompletionStoreConfigurationError,
         CompletionStoreOperationError,
         EventStoreConfigurationError,
         EventStoreOperationError,
+        TaxReceiptStoreConfigurationError,
+        TaxReceiptStoreOperationError,
     ) as exc:
         raise EventStoreOperationError(str(exc)) from exc
 
+    return {
+        "completionCertMetrics": completion_metrics,
+        "taxReceiptMetrics": tax_receipt_metrics,
+    }
+
+
+def build_portal_welcome_completion_metrics(event: dict[str, Any]) -> dict[str, Any]:
+    event_id = str(event.get("id", "")).strip()
+    if not event_id:
+        return {
+            "eventName": "尚無活動資料",
+            "downloadableCount": 0,
+            "downloadCount": 0,
+            "verificationCount": 0,
+            "pendingCount": 0,
+        }
+
+    summary = normalize_event_completion_metrics(event)
+    if summary is None:
+        documents = list_completion_cert_documents(
+            container=get_completion_records_container(),
+            event_id=event_id,
+        )
+        summary = summarize_completion_cert_documents(documents)
+        try:
+            replace_event_completion_metrics(
+                container=get_events_container(),
+                event_id=event_id,
+                metrics=summary,
+            )
+        except (EventStoreConfigurationError, EventStoreOperationError):
+            pass
+
     event_name = str(event.get("name", "")).strip()
     return {
-        "completionCertMetrics": {
-            "eventName": event_name or event_id,
-            "downloadableCount": max(0, int(summary["downloadableCount"])),
-            "downloadCount": max(0, int(summary["downloadCount"])),
-            "verificationCount": max(0, int(summary["verificationCount"])),
-            "pendingCount": max(0, int(summary["pendingCount"])),
+        "eventName": event_name or event_id,
+        "downloadableCount": max(0, int(summary["downloadableCount"])),
+        "downloadCount": max(0, int(summary["downloadCount"])),
+        "verificationCount": max(0, int(summary["verificationCount"])),
+        "pendingCount": max(0, int(summary["pendingCount"])),
+    }
+
+
+def build_portal_welcome_tax_receipt_metrics(event: dict[str, Any]) -> dict[str, Any]:
+    event_id = str(event.get("id", "")).strip()
+    if not event_id:
+        return {
+            "eventName": "尚無活動資料",
+            "receiptCount": 0,
+            "queriedCompanyCount": None,
+            "downloadCount": 0,
+            "totalAmount": 0,
         }
+
+    documents = list_tax_receipt_documents(
+        container=get_tax_receipts_container(),
+        event_id=event_id,
+    )
+    event_name = str(event.get("name", "")).strip()
+    return {
+        "eventName": event_name or event_id,
+        "receiptCount": len(documents),
+        "queriedCompanyCount": None,
+        "downloadCount": sum(
+            read_non_negative_int_field(document, ("downloadCount",))
+            for document in documents
+        ),
+        "totalAmount": sum(
+            read_non_negative_int_field(document, ("amount",))
+            for document in documents
+        ),
     }
 
 
 def resolve_latest_welcome_metrics_event(
     events: list[dict[str, Any]],
+    *,
+    document_type: str | None = None,
 ) -> dict[str, Any] | None:
     open_events: list[tuple[dict[str, Any], date]] = []
     for event in events:
         if str(event.get("status", "")).strip() != "open":
+            continue
+        if document_type and document_type not in normalize_portal_event_document_types(
+            event.get("documentTypes")
+        ):
             continue
 
         event_start_date = parse_event_start_date_for_metrics(event)
@@ -664,6 +743,12 @@ def normalize_tax_receipt_for_api(document: dict[str, Any]) -> dict[str, Any]:
         "contentType": str(document.get("contentType", "")).strip(),
         "fileSize": read_non_negative_int_field(document, ("fileSize",)),
         "downloadCount": read_non_negative_int_field(document, ("downloadCount",)),
+        "portalDownloadCount": read_non_negative_int_field(
+            document,
+            ("portalDownloadCount",),
+        ),
+        "lastDownloadAt": document.get("lastDownloadAt"),
+        "lastPortalDownloadAt": document.get("lastPortalDownloadAt"),
         "createdAt": str(document.get("createdAt", "")).strip(),
         "updatedAt": str(document.get("updatedAt", "")).strip(),
     }
@@ -1335,6 +1420,19 @@ def is_authorized_tax_receipt_download_request(
         ticket=ticket,
         event_id=event_id,
         receipt_ids=receipt_ids,
+    )
+
+
+def is_portal_tax_receipt_download_request(req: func.HttpRequest) -> bool:
+    if not is_same_origin_portal_api_request(req):
+        return False
+
+    access = resolve_portal_access(req)
+    csrf_token = req.headers.get(PORTAL_API_CSRF_HEADER_NAME, "").strip()
+    return bool(
+        access.is_authorized
+        and csrf_token
+        and is_valid_portal_csrf_token(req, access, csrf_token)
     )
 
 
@@ -2454,6 +2552,7 @@ def public_tax_receipts_download_api(req: func.HttpRequest) -> func.HttpResponse
     event_id = str(payload.get("eventId", "")).strip()
     receipt_ids = parse_tax_receipt_download_receipt_ids(payload.get("receiptIds"))
     ticket = str(payload.get("downloadTicket", "")).strip()
+    is_portal_download = is_portal_tax_receipt_download_request(req)
     if not is_authorized_tax_receipt_download_request(
         req,
         event_id=event_id,
@@ -2466,7 +2565,11 @@ def public_tax_receipts_download_api(req: func.HttpRequest) -> func.HttpResponse
             "下載資格已失效，請重新查詢後再下載。",
         )
 
-    return build_tax_receipts_download_response(event_id=event_id, receipt_ids=receipt_ids)
+    return build_tax_receipts_download_response(
+        event_id=event_id,
+        is_portal_download=is_portal_download,
+        receipt_ids=receipt_ids,
+    )
 
 
 def parse_tax_receipt_download_receipt_ids(value: Any) -> list[str]:
@@ -2484,6 +2587,7 @@ def parse_tax_receipt_download_receipt_ids(value: Any) -> list[str]:
 def build_tax_receipts_download_response(
     *,
     event_id: str,
+    is_portal_download: bool,
     receipt_ids: list[str],
 ) -> func.HttpResponse:
     if (
@@ -2525,6 +2629,10 @@ def build_tax_receipts_download_response(
                     ),
                 )
             )
+        record_tax_receipt_downloads(
+            documents,
+            is_portal_download=is_portal_download,
+        )
     except (TaxReceiptStoreConfigurationError, BlobStoreConfigurationError) as exc:
         return build_portal_api_error_response(
             503,
@@ -2551,6 +2659,50 @@ def build_tax_receipts_download_response(
         return build_tax_receipt_file_http_response(document=document, blob_bytes=blob_bytes)
 
     return build_tax_receipts_zip_response(event_id=event_id, file_payloads=file_payloads)
+
+
+def record_tax_receipt_downloads(
+    documents: list[dict[str, Any]],
+    *,
+    is_portal_download: bool,
+) -> None:
+    timestamp = utc_now_iso()
+    try:
+        container = get_tax_receipts_container()
+        for document in documents:
+            receipt_id = str(document.get("id", "")).strip()
+            event_id = str(document.get("eventId", "")).strip()
+            if not receipt_id or not event_id:
+                continue
+
+            updated_document = {
+                **document,
+            }
+            if is_portal_download:
+                updated_document["portalDownloadCount"] = (
+                    read_non_negative_int_field(
+                        document,
+                        ("portalDownloadCount",),
+                    )
+                    + 1
+                )
+                updated_document["lastPortalDownloadAt"] = timestamp
+            else:
+                updated_document["downloadCount"] = (
+                    read_non_negative_int_field(
+                        document,
+                        ("downloadCount",),
+                    )
+                    + 1
+                )
+                updated_document["lastDownloadAt"] = timestamp
+            replace_tax_receipt_document(
+                container=container,
+                document=updated_document,
+            )
+            document.update(updated_document)
+    except (TaxReceiptStoreConfigurationError, TaxReceiptStoreOperationError):
+        pass
 
 
 def build_tax_receipt_file_http_response(

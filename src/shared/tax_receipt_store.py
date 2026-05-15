@@ -121,6 +121,7 @@ def build_tax_receipt_document(
         "contentType": content_type,
         "fileSize": file_size,
         "downloadCount": 0,
+        "portalDownloadCount": 0,
         "createdBy": actor,
         "createdAt": timestamp,
         "updatedBy": actor,
@@ -139,7 +140,8 @@ def list_tax_receipt_documents(
                 query=(
                     "SELECT c.id, c.eventId, c.taxId, c.amount, c.generatedAt, "
                     "c.sourceBlobName, c.fileName, c.contentType, c.fileSize, "
-                    "c.fileSequence, c.downloadCount, c.createdAt, c.updatedAt FROM c "
+                    "c.fileSequence, c.downloadCount, c.portalDownloadCount, "
+                    "c.lastDownloadAt, c.lastPortalDownloadAt, c.createdAt, c.updatedAt FROM c "
                     "WHERE c.eventId = @eventId ORDER BY c.generatedAt DESC"
                 ),
                 parameters=[{"name": "@eventId", "value": event_id}],

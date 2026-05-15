@@ -1172,6 +1172,7 @@ def test_portal_admin_tax_receipts_create_api_writes_metadata_to_cosmos_and_file
     assert receipt["fileSize"] == len(file_bytes)
     assert receipt["sourceBlobName"] == f"evt_tax/{receipt['id']}.pdf"
     assert receipt["downloadCount"] == 0
+    assert receipt["portalDownloadCount"] == 0
     assert uploaded_blobs[receipt["sourceBlobName"]] == {
         "containerName": "tax-receipts",
         "contentType": "application/pdf",
@@ -1550,6 +1551,10 @@ def test_public_tax_receipts_download_api_downloads_blob_with_portal_session(
         'attachment; filename="receipt-12345678-1.pdf"'
     )
     assert response.get_body() == b"%PDF-1.4"
+    assert fake_tax_container.items["trec_1"].get("downloadCount", 0) == 0
+    assert "lastDownloadAt" not in fake_tax_container.items["trec_1"]
+    assert fake_tax_container.items["trec_1"]["portalDownloadCount"] == 1
+    assert fake_tax_container.items["trec_1"]["lastPortalDownloadAt"].endswith("Z")
 
 
 def test_public_tax_receipts_download_api_downloads_blob_with_download_ticket(
@@ -1606,6 +1611,9 @@ def test_public_tax_receipts_download_api_downloads_blob_with_download_ticket(
         'attachment; filename="receipt-12345678-1.pdf"'
     )
     assert response.get_body() == b"%PDF-1.4"
+    assert fake_tax_container.items["trec_1"]["downloadCount"] == 1
+    assert fake_tax_container.items["trec_1"]["lastDownloadAt"].endswith("Z")
+    assert fake_tax_container.items["trec_1"].get("portalDownloadCount", 0) == 0
 
 
 def test_public_tax_receipts_download_api_downloads_multiple_blobs_as_zip(
@@ -1664,6 +1672,10 @@ def test_public_tax_receipts_download_api_downloads_multiple_blobs_as_zip(
         ]
         assert zip_file.read("receipt-12345678-1.pdf") == b"%PDF-1.4"
         assert zip_file.read("receipt-87654321-1.png") == b"PNG"
+    assert fake_tax_container.items["trec_1"].get("downloadCount", 0) == 0
+    assert fake_tax_container.items["trec_2"].get("downloadCount", 0) == 0
+    assert fake_tax_container.items["trec_1"]["portalDownloadCount"] == 1
+    assert fake_tax_container.items["trec_2"]["portalDownloadCount"] == 1
 
 
 def test_portal_admin_completion_cert_change_requests_list_api_returns_pending_requests(
@@ -2677,13 +2689,20 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert "最近一期活動資料" in body
     assert body.count("最近一期活動資料") == 1
     assert "下列是最近一期活動的資料" not in body
+    assert 'id="welcome-metric-source"' in body
+    assert "資料來源：--" in body
     assert 'id="welcome-metric-overview"' in body
     assert 'aria-busy="true"' in body
     assert 'data-metric-field="completion.downloadableCount"' in body
     assert 'data-metric-field="completion.downloadCount"' in body
     assert 'data-metric-field="completion.verificationCount"' in body
     assert 'data-metric-field="completion.pendingCount"' in body
+    assert 'data-metric-field="taxReceipt.receiptCount"' in body
+    assert 'data-metric-field="taxReceipt.queriedCompanyCount"' in body
+    assert 'data-metric-field="taxReceipt.downloadCount"' in body
+    assert 'data-metric-field="taxReceipt.totalAmount"' in body
     assert "<strong class=\"metric-value is-loading\" data-metric-field=\"completion.downloadableCount\">--</strong>" in body
+    assert "<strong class=\"metric-value is-loading\" data-metric-field=\"taxReceipt.totalAmount\">--</strong>" in body
     assert "載入中" not in body
     assert "系統可下載數" in body
     assert "下載人次" in body
@@ -2691,9 +2710,10 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert "待處理案件數量" in body
     assert "收據張數" in body
     assert "已查詢公司數" in body
+    assert "已建檔公司數" not in body
     assert "已下載次數" in body
     assert "收據總金額" in body
-    assert "$186,000" in body
+    assert "$186,000" not in body
     assert "NT$ 186K" not in body
     assert "上傳檔案數" not in body
     assert "尚未下載公司數" not in body
@@ -2768,6 +2788,55 @@ def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_f
         "verificationCount": 3,
         "createdAt": "2026-04-28T06:04:00Z",
     }
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_1"] = {
+        "id": "trec_1",
+        "eventId": "evt_tax",
+        "taxId": "12345678",
+        "amount": 186000,
+        "generatedAt": "2026-05-13T15:00:44Z",
+        "sourceBlobName": "evt_tax/trec_1.pdf",
+        "fileName": "receipt-12345678-1.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+        "fileSize": 100,
+        "downloadCount": 4,
+        "portalDownloadCount": 99,
+        "createdAt": "2026-05-13T15:00:44Z",
+        "updatedAt": "2026-05-13T15:00:44Z",
+    }
+    fake_tax_container.items["trec_2"] = {
+        "id": "trec_2",
+        "eventId": "evt_tax",
+        "taxId": "12345678",
+        "amount": 2000,
+        "generatedAt": "2026-05-14T15:00:44Z",
+        "sourceBlobName": "evt_tax/trec_2.pdf",
+        "fileName": "receipt-12345678-2.pdf",
+        "fileSequence": 2,
+        "contentType": "application/pdf",
+        "fileSize": 100,
+        "downloadCount": 1,
+        "portalDownloadCount": 88,
+        "createdAt": "2026-05-14T15:00:44Z",
+        "updatedAt": "2026-05-14T15:00:44Z",
+    }
+    fake_tax_container.items["trec_3"] = {
+        "id": "trec_3",
+        "eventId": "evt_tax",
+        "taxId": "87654321",
+        "amount": 3000,
+        "generatedAt": "2026-05-15T15:00:44Z",
+        "sourceBlobName": "evt_tax/trec_3.pdf",
+        "fileName": "receipt-87654321-1.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+        "fileSize": 100,
+        "downloadCount": 2,
+        "portalDownloadCount": 77,
+        "createdAt": "2026-05-15T15:00:44Z",
+        "updatedAt": "2026-05-15T15:00:44Z",
+    }
     monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
     monkeypatch.setattr(
         "src.functions.portal.list_event_documents",
@@ -2796,6 +2865,10 @@ def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_f
         "src.functions.portal.get_completion_records_container",
         lambda: fake_completion_container,
     )
+    monkeypatch.setattr(
+        "src.functions.portal.get_tax_receipts_container",
+        lambda: fake_tax_container,
+    )
 
     response = portal_admin_dashboard_welcome_metrics_api(
         build_authorized_portal_api_request(
@@ -2814,6 +2887,13 @@ def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_f
     assert '"downloadCount":3' in body
     assert '"verificationCount":15' in body
     assert '"pendingCount":1' in body
+    assert '"taxReceiptMetrics"' in body
+    assert '"eventName":"營業稅活動"' in body
+    assert '"receiptCount":3' in body
+    assert '"queriedCompanyCount":null' in body
+    assert '"downloadCount":7' in body
+    assert '"downloadCount":264' not in body
+    assert '"totalAmount":191000' in body
     assert '"downloadableCount":128' not in body
     assert '"downloadCount":18' not in body
     assert '"verificationCount":46' not in body
@@ -4461,6 +4541,12 @@ def test_portal_dashboard_welcome_js_asset_returns_expected_content_type() -> No
     assert 'welcomeAccountDisplay.textContent = "管理者"' in body
     assert 'const welcomeMetricsApiPath = "/api/v1/admin/dashboard/welcome-metrics"' in body
     assert "loadWelcomeMetrics" in body
+    assert "formatMetricCurrency" in body
+    assert "taxReceipt.totalAmount" in body
+    assert "taxReceipt.queriedCompanyCount" in body
+    assert "updateMetricSource" in body
+    assert "資料來源：完訓證明" in body
+    assert "資料來源：營業稅繳稅證明" in body
     assert "sessionStorage" not in body
     assert "logoutButton.addEventListener" not in body
 
