@@ -353,6 +353,7 @@ Request JSON 範例：
 
 - 作為 dashboard 右側 iframe 預設載入的歡迎頁
 - 顯示與首頁頂部一致的品牌 logo、平台標題、登入帳號歡迎訊息與文件類型統計資訊
+- 歡迎頁 HTML 不同步查詢 Cosmos DB；首屏先顯示頁面與 `--` 指標，再由前端呼叫 `GET /api/v1/admin/dashboard/welcome-metrics` 補上統計資料；`--` 與最後數字使用相同字體樣式，避免載入完成時造成卡片高度變化
 - 統計區使用單一 `最近一期活動資料` 標題，避免在各文件類型區段重複顯示
 - 文件類型統計區段使用類似完訓證明頁工作區的大外框樣式包覆，內部為四格指標
 - `完訓證明` 區段顯示最近一期活動的 `系統可下載數`、`下載人次`、`驗證次數`、`待處理案件數量`
@@ -363,6 +364,25 @@ Request JSON 範例：
 - CSV 匯入、首次下載、再次下載與公開驗證流程都會更新活動文件的 `metrics.completionCert`，避免歡迎頁每次載入時掃描該活動全部完訓證明文件
 - `營業稅繳稅證明` 區段顯示 `收據張數`、`已查詢公司數`、`已下載次數`、`收據總金額`
 - `營業稅繳稅證明` 的 `收據總金額` 使用 `$` 與完整金額格式，例如 `$186,000`，不使用 `NT$` 或 `K` 縮寫
+
+### `GET /api/v1/admin/dashboard/welcome-metrics`
+
+- 查詢歡迎頁需要的管理端統計資料
+- 只接受已登入且通過授權的管理者 session，並要求同源 `Origin` 或 `Referer`
+- 目前回傳完訓證明最近一期開放活動統計；若活動文件缺少預聚合欄位，後端會重算該活動完訓證明文件並回寫活動文件
+- Response JSON 範例：
+
+```json
+{
+  "completionCertMetrics": {
+    "eventName": "iPlayground 2026",
+    "downloadableCount": 2,
+    "downloadCount": 3,
+    "verificationCount": 15,
+    "pendingCount": 1
+  }
+}
+```
 
 ### `/portal/dashboard/completion-certs`
 

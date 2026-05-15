@@ -463,28 +463,38 @@ def build_portal_dashboard_welcome_context(
 ) -> dict[str, str]:
     return {
         **build_portal_dashboard_context(req, access),
-        **build_portal_welcome_completion_metrics_context(),
+        **build_portal_welcome_completion_metrics_placeholder_context(),
     }
 
 
-def build_portal_welcome_completion_metrics_context() -> dict[str, str]:
-    metrics = {
+def build_portal_welcome_completion_metrics_placeholder_context() -> dict[str, str]:
+    return {
         "completion_metrics_event_name": "尚無活動資料",
-        "completion_downloadable_count": "0",
-        "completion_downloaded_member_count": "0",
-        "completion_verification_count": "0",
-        "completion_pending_count": "0",
+        "completion_downloadable_count": "--",
+        "completion_downloaded_member_count": "--",
+        "completion_verification_count": "--",
+        "completion_pending_count": "--",
+    }
+
+
+def build_portal_welcome_metrics_payload() -> dict[str, Any]:
+    default_metrics = {
+        "eventName": "尚無活動資料",
+        "downloadableCount": 0,
+        "downloadCount": 0,
+        "verificationCount": 0,
+        "pendingCount": 0,
     }
 
     try:
         events = list_event_documents(container=get_events_container())
         event = resolve_latest_welcome_metrics_event(events)
         if event is None:
-            return metrics
+            return {"completionCertMetrics": default_metrics}
 
         event_id = str(event.get("id", "")).strip()
         if not event_id:
-            return metrics
+            return {"completionCertMetrics": default_metrics}
 
         summary = normalize_event_completion_metrics(event)
         if summary is None:
@@ -506,22 +516,18 @@ def build_portal_welcome_completion_metrics_context() -> dict[str, str]:
         CompletionStoreOperationError,
         EventStoreConfigurationError,
         EventStoreOperationError,
-    ):
-        return metrics
+    ) as exc:
+        raise EventStoreOperationError(str(exc)) from exc
 
     event_name = str(event.get("name", "")).strip()
     return {
-        "completion_metrics_event_name": event_name or event_id,
-        "completion_downloadable_count": format_portal_metric_number(
-            summary["downloadableCount"]
-        ),
-        "completion_downloaded_member_count": format_portal_metric_number(
-            summary["downloadCount"]
-        ),
-        "completion_verification_count": format_portal_metric_number(
-            summary["verificationCount"]
-        ),
-        "completion_pending_count": format_portal_metric_number(summary["pendingCount"]),
+        "completionCertMetrics": {
+            "eventName": event_name or event_id,
+            "downloadableCount": max(0, int(summary["downloadableCount"])),
+            "downloadCount": max(0, int(summary["downloadCount"])),
+            "verificationCount": max(0, int(summary["verificationCount"])),
+            "pendingCount": max(0, int(summary["pendingCount"])),
+        }
     }
 
 
@@ -1736,6 +1742,29 @@ def portal_admin_events_create_api(req: func.HttpRequest) -> func.HttpResponse:
         {"event": event},
         status_code=201 if was_created else 200,
     )
+
+
+@blueprint.function_name(name="portal_admin_dashboard_welcome_metrics_api")
+@blueprint.route(
+    route="api/v1/admin/dashboard/welcome-metrics",
+    methods=["GET"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_dashboard_welcome_metrics_api(req: func.HttpRequest) -> func.HttpResponse:
+    access = require_portal_api_read_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    try:
+        payload = build_portal_welcome_metrics_payload()
+    except EventStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "welcome_metrics_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(payload, status_code=200)
 
 
 @blueprint.function_name(name="portal_admin_events_update_api")

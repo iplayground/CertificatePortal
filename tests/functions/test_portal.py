@@ -15,6 +15,7 @@ from src.functions.portal import (
     PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR,
     build_portal_csrf_token,
     build_tax_receipt_download_ticket,
+    portal_admin_dashboard_welcome_metrics_api,
     portal_admin_completion_certs_import_api,
     portal_admin_completion_certs_list_api,
     portal_admin_completion_certs_update_api,
@@ -2639,6 +2640,11 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     reset_portal_auth_env(monkeypatch)
     configure_portal_auth_bypass_env(monkeypatch, display_name="系統管理者")
 
+    def fail_if_events_are_queried(**_: Any) -> list[dict[str, Any]]:
+        raise AssertionError("welcome page should not query Cosmos DB before rendering HTML")
+
+    monkeypatch.setattr("src.functions.portal.list_event_documents", fail_if_events_are_queried)
+
     response = portal_dashboard_welcome_page(
         build_request(
             "http://localhost:7075/portal/dashboard/welcome",
@@ -2671,6 +2677,14 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert "最近一期活動資料" in body
     assert body.count("最近一期活動資料") == 1
     assert "下列是最近一期活動的資料" not in body
+    assert 'id="welcome-metric-overview"' in body
+    assert 'aria-busy="true"' in body
+    assert 'data-metric-field="completion.downloadableCount"' in body
+    assert 'data-metric-field="completion.downloadCount"' in body
+    assert 'data-metric-field="completion.verificationCount"' in body
+    assert 'data-metric-field="completion.pendingCount"' in body
+    assert "<strong class=\"metric-value is-loading\" data-metric-field=\"completion.downloadableCount\">--</strong>" in body
+    assert "載入中" not in body
     assert "系統可下載數" in body
     assert "下載人次" in body
     assert "驗證次數" in body
@@ -2692,7 +2706,7 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert 'src="/assets/portal-dashboard-welcome.js"' in body
 
 
-def test_portal_dashboard_welcome_page_renders_completion_metrics_from_cosmos(
+def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_from_cosmos(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
@@ -2783,23 +2797,29 @@ def test_portal_dashboard_welcome_page_renders_completion_metrics_from_cosmos(
         lambda: fake_completion_container,
     )
 
-    response = portal_dashboard_welcome_page(
-        build_request("http://localhost:7075/portal/dashboard/welcome")
+    response = portal_admin_dashboard_welcome_metrics_api(
+        build_authorized_portal_api_request(
+            monkeypatch,
+            method="GET",
+            url="http://localhost:7075/api/v1/admin/dashboard/welcome-metrics",
+        )
     )
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
-    assert "資料來源：iPlayground 2026" not in body
-    assert "<strong class=\"metric-value\">2</strong>" in body
-    assert "<strong class=\"metric-value\">3</strong>" in body
-    assert "<strong class=\"metric-value\">15</strong>" in body
-    assert "<strong class=\"metric-value\">1</strong>" in body
-    assert "<strong class=\"metric-value\">128</strong>" not in body
-    assert "<strong class=\"metric-value\">18</strong>" not in body
-    assert "<strong class=\"metric-value\">46</strong>" not in body
+    assert response.mimetype == "application/json"
+    assert '"completionCertMetrics"' in body
+    assert '"eventName":"iPlayground 2026"' in body
+    assert '"downloadableCount":2' in body
+    assert '"downloadCount":3' in body
+    assert '"verificationCount":15' in body
+    assert '"pendingCount":1' in body
+    assert '"downloadableCount":128' not in body
+    assert '"downloadCount":18' not in body
+    assert '"verificationCount":46' not in body
 
 
-def test_portal_dashboard_welcome_page_uses_latest_open_event_start_date(
+def test_portal_admin_dashboard_welcome_metrics_api_uses_latest_open_event_start_date(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
@@ -2897,18 +2917,23 @@ def test_portal_dashboard_welcome_page_uses_latest_open_event_start_date(
         lambda: fake_completion_container,
     )
 
-    response = portal_dashboard_welcome_page(
-        build_request("http://localhost:7075/portal/dashboard/welcome")
+    response = portal_admin_dashboard_welcome_metrics_api(
+        build_authorized_portal_api_request(
+            monkeypatch,
+            method="GET",
+            url="http://localhost:7075/api/v1/admin/dashboard/welcome-metrics",
+        )
     )
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
-    assert "<strong class=\"metric-value\">7</strong>" in body
-    assert "<strong class=\"metric-value\">99</strong>" not in body
-    assert "<strong class=\"metric-value\">42</strong>" not in body
+    assert '"eventName":"最新上架活動"' in body
+    assert '"verificationCount":7' in body
+    assert '"verificationCount":99' not in body
+    assert '"verificationCount":42' not in body
 
 
-def test_portal_dashboard_welcome_page_prefers_preaggregated_completion_metrics(
+def test_portal_admin_dashboard_welcome_metrics_api_prefers_preaggregated_completion_metrics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_portal_auth_env(monkeypatch)
@@ -2944,16 +2969,20 @@ def test_portal_dashboard_welcome_page_prefers_preaggregated_completion_metrics(
         fail_if_completion_documents_are_queried,
     )
 
-    response = portal_dashboard_welcome_page(
-        build_request("http://localhost:7075/portal/dashboard/welcome")
+    response = portal_admin_dashboard_welcome_metrics_api(
+        build_authorized_portal_api_request(
+            monkeypatch,
+            method="GET",
+            url="http://localhost:7075/api/v1/admin/dashboard/welcome-metrics",
+        )
     )
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
-    assert "<strong class=\"metric-value\">12</strong>" in body
-    assert "<strong class=\"metric-value\">1</strong>" in body
-    assert "<strong class=\"metric-value\">5</strong>" in body
-    assert "<strong class=\"metric-value\">2</strong>" in body
+    assert '"downloadableCount":12' in body
+    assert '"downloadCount":1' in body
+    assert '"verificationCount":5' in body
+    assert '"pendingCount":2' in body
 
 
 def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_authorized(
@@ -4430,6 +4459,8 @@ def test_portal_dashboard_welcome_js_asset_returns_expected_content_type() -> No
     assert response.mimetype == "application/javascript"
     assert "ensureWelcomeAccountDisplay" in body
     assert 'welcomeAccountDisplay.textContent = "管理者"' in body
+    assert 'const welcomeMetricsApiPath = "/api/v1/admin/dashboard/welcome-metrics"' in body
+    assert "loadWelcomeMetrics" in body
     assert "sessionStorage" not in body
     assert "logoutButton.addEventListener" not in body
 

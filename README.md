@@ -30,6 +30,7 @@ iPlayground 完訓證明系統。
 - 共用 alert 元件已支援 i18n；若頁面本身未接入 i18n，alert 文案預設使用 `zh-TW`
 - 首頁與管理平台共用 `/assets/theme.css` 主題 token，並依 `prefers-color-scheme` 切換日夜模式
 - 所有 HTML 頁面都載入共用 favicon 與標題格式，`/portal/dashboard` 會同步 iframe 內容頁 title
+- 管理平台歡迎頁會先回傳可立即顯示的 HTML；最近一期活動統計以 `--` 作為不改變字體高度的暫存值，再由前端呼叫 `GET /api/v1/admin/dashboard/welcome-metrics` 非同步補上資料，避免 Cosmos DB 查詢阻塞首屏
 - 首頁只保留 `twitter:card`，其餘社群分享資訊以 Open Graph metadata 為主
 - locale JSON 字典檔集中於 `src/shared/locales/`，並由測試驗證結構一致性
 
@@ -47,6 +48,7 @@ iPlayground 完訓證明系統。
 | `GET` | `/api/v1/events` | 公開首頁可申請活動清單 | `application/json` |
 | `POST` | `/api/v1/document-lookup` | 公開首頁文件查詢 | `application/json` |
 | `GET` | `/portal` | 管理平台登入入口 | `text/html; charset=utf-8` |
+| `GET` | `/api/v1/admin/dashboard/welcome-metrics` | 管理平台歡迎頁最近一期活動統計 | `application/json` |
 | `GET` | `/assets/{assetName}` | 目前頁面所需的靜態樣式、互動腳本與品牌素材 | 依資產而定 |
 | `GET` | `/verify/{certId}` | QRCode 入口的公開完訓證明驗證頁面 | `text/html; charset=utf-8` |
 

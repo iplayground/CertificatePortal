@@ -137,7 +137,7 @@ FROM c
 ORDER BY c.createdAt DESC
 ```
 
-活動清單只投影管理端 UI 需要的欄位，並依建立時間由新到舊排序。管理端歡迎頁的「最近一期活動資料」會讀取狀態為 `open`、且活動開始日期最新的活動，並優先使用活動文件上的 `metrics.completionCert` 預聚合資料，避免每次載入歡迎頁都掃描該活動全部完訓證明文件。
+活動清單只投影管理端 UI 需要的欄位，並依建立時間由新到舊排序。管理端歡迎頁的 HTML 首屏不查詢 Cosmos DB；畫面先以 `--` 指標顯示，再由 `GET /api/v1/admin/dashboard/welcome-metrics` 讀取狀態為 `open`、且活動開始日期最新的活動，並優先使用活動文件上的 `metrics.completionCert` 預聚合資料，避免每次載入歡迎頁都掃描該活動全部完訓證明文件。
 
 公開首頁活動清單：
 

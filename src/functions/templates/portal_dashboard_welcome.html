@@ -35,7 +35,12 @@
         </div>
       </section>
 
-      <section class="metric-overview" aria-labelledby="recent-activity-metrics-title">
+      <section
+        class="metric-overview"
+        id="welcome-metric-overview"
+        aria-labelledby="recent-activity-metrics-title"
+        aria-busy="true"
+      >
         <div class="metric-overview-heading">
           <h2 id="recent-activity-metrics-title">最近一期活動資料</h2>
         </div>
@@ -47,22 +52,22 @@
           <div class="metric-grid">
             <article class="metric-card">
               <span class="metric-label">系統可下載數</span>
-              <strong class="metric-value">{{completion_downloadable_count}}</strong>
+              <strong class="metric-value is-loading" data-metric-field="completion.downloadableCount">{{completion_downloadable_count}}</strong>
               <p class="metric-note">目前已完成完訓證明檔案建立並可提供下載的數量</p>
             </article>
             <article class="metric-card">
               <span class="metric-label">下載人次</span>
-              <strong class="metric-value">{{completion_downloaded_member_count}}</strong>
+              <strong class="metric-value is-loading" data-metric-field="completion.downloadCount">{{completion_downloaded_member_count}}</strong>
               <p class="metric-note">最近一期活動完訓證明檔案累計下載人次</p>
             </article>
             <article class="metric-card">
               <span class="metric-label">驗證次數</span>
-              <strong class="metric-value">{{completion_verification_count}}</strong>
+              <strong class="metric-value is-loading" data-metric-field="completion.verificationCount">{{completion_verification_count}}</strong>
               <p class="metric-note">完訓證明公開驗證頁面累計收到的查詢次數</p>
             </article>
             <article class="metric-card">
               <span class="metric-label">待處理案件數量</span>
-              <strong class="metric-value">{{completion_pending_count}}</strong>
+              <strong class="metric-value is-loading" data-metric-field="completion.pendingCount">{{completion_pending_count}}</strong>
               <p class="metric-note">目前尚未完成發證或仍需管理者處理的完訓證明案件總數</p>
             </article>
           </div>
