@@ -211,7 +211,7 @@ partition key: /id
 
 ### 營業稅繳稅證明文件
 
-`taxReceipts` 以活動作為 partition key，支援管理端依活動列出、逐筆新增、修改、下載與刪除營業稅繳稅證明。這個 container 是營業稅繳稅證明的權威 metadata；管理端歡迎頁會依最近一期開放 `taxReceipt` 活動讀取同一個 container，計算收據張數、用戶 `downloadCount` 合計與 `amount` 合計。歡迎頁的 `已查詢公司數` 需要公開查詢流程的權威事件來源，目前不得以收據張數或建檔統編數替代。首頁公開查詢會以活動、8 碼統編與產製時間核對是否存在同統編收據，命中後依 `generatedAt` 由早到晚回傳同活動同統編的所有收據公開 metadata，但不暴露 `sourceBlobName` 或下載 URL。首頁公開下載讀取同一份 metadata，並使用共用 `POST /api/v1/tax-receipts/download` 下載端點直接串流單檔或 ZIP bytes，不回傳可分享的下載 URL。未登入首頁下載時，公開查詢成功後會回傳 `downloadTicket`，並在下載 POST body 中送回；ticket 不作為持久化 metadata 存入 Cosmos DB，且只授權該次查詢可下載收據集合的非空子集合。首頁下載若送出無效 payload 或無效 `downloadTicket`，會寫入 `publicLookupAttempts` 並套用與完訓證明公開查詢相同的 5 次失敗封鎖規則。多筆收據下載時，HTTP `Content-Disposition` 的 ZIP 檔名固定為 `tax-receipts.zip`，避免將 `eventId` 等內部識別碼放進使用者下載檔名。
+`taxReceipts` 以活動作為 partition key，支援管理端依活動列出、逐筆新增、修改、下載與刪除營業稅繳稅證明。這個 container 是營業稅繳稅證明的權威 metadata；管理端歡迎頁會依最近一期開放 `taxReceipt` 活動讀取同一個 container，計算收據張數、用戶 `downloadCount` 合計與 `amount` 合計。歡迎頁的 `已查詢公司數` 需要公開查詢流程的權威事件來源，目前不得以收據張數或建檔統編數替代。首頁公開查詢會以活動、8 碼統編與產製時間核對是否存在同統編收據，命中後依 `generatedAt` 由早到晚回傳同活動同統編的所有收據公開 metadata，但不暴露 `sourceBlobName` 或下載 URL。首頁公開下載讀取同一份 metadata，並使用共用 `POST /api/v1/tax-receipts/download` 下載端點直接串流單檔或 ZIP bytes，不回傳可分享的下載 URL。未登入首頁下載時，公開查詢成功後會回傳含 `subjectKey` 的 `downloadTicket`，並在下載 POST body 中送回；ticket 不作為持久化 metadata 存入 Cosmos DB，且只授權該次查詢可下載收據集合的非空子集合。首頁下載會以 ticket 內的下載主體與單筆收據逐檔檢查短時間重複下載；多選時若至少一筆收據未冷卻，會下載使用者選取的完整集合，只有選取的收據全數冷卻時才阻擋。首頁下載若送出無效 payload 或無效 `downloadTicket`，會寫入 `publicLookupAttempts` 並套用與完訓證明公開查詢相同的 5 次失敗封鎖規則。多筆收據下載時，HTTP `Content-Disposition` 的 ZIP 檔名固定為 `tax-receipts.zip`，避免將 `eventId` 等內部識別碼放進使用者下載檔名。
 
 必要欄位：
 
@@ -229,6 +229,7 @@ partition key: /id
 | `fileSize` | int | 檔案大小，bytes |
 | `downloadCount` | int | 用戶端累計下載次數；初始為 `0`，只統計公開查詢成功後以 `downloadTicket` 下載的次數 |
 | `lastDownloadAt` | string \| null | 最後一次成功準備用戶端下載檔案的 UTC ISO 8601 時間；尚未下載時可不存在或為 `null` |
+| `lastDownloadSubjectKey` | string \| null | 最近一次用戶端下載主體 key；由公開查詢核對資料產生，用於同主體同收據短時間重複下載限制 |
 | `portalDownloadCount` | int | 管理端 portal 累計下載次數；初始為 `0`，只作為 DB 留底，不納入歡迎頁統計 |
 | `lastPortalDownloadAt` | string \| null | 最後一次成功準備管理端下載檔案的 UTC ISO 8601 時間；尚未下載時可不存在或為 `null` |
 | `createdBy` | string | 建立者管理端識別 |

@@ -336,8 +336,8 @@ Request JSON 範例：
 - `營業稅繳稅證明` 的產製時間秒數欄位按下 return 時，日期時間輸入會退出焦點；若統編與產製時間皆已完整，會直接送出查詢
 - 查詢文件送出後使用滿版 loading 遮罩鎖住整個 window，避免等待期間切換語系或調整表單資料
 - 營業稅繳稅證明查詢成功後，首頁會改顯示可下載收據 view state，並鎖住活動、文件類型、統編與產製時間；活動與統編摘要同列顯示。收據清單依產製時間由早到晚排序，列上只突出使用者需要比對的產製時間與金額，不以檔名作為主要辨識資訊
-- 可下載收據清單提供每筆 checkbox，預設只勾選查詢命中的那筆；清單上方提供 `全選` 按鈕，當全部收據已勾選時改為 `全不選`。`全選` 不放在底部返回與下載操作旁，避免與提交下載行為混淆
-- 可下載收據 view state 底部提供 `返回查詢` 與 `下載收據`；按下下載後按鈕文案改為 `收據下載準備中，請稍候。`，並暫時停用下載、全選與各筆勾選，直到下載完成或失敗後還原
+- 可下載收據清單使用表格呈現，左上角表頭提供全選 checkbox，資料列提供每筆 checkbox；預設只勾選查詢命中的那筆。表頭 checkbox 應支援未選、半選與全選狀態，半選代表目前只選取部分收據；全選控制不放在底部返回與下載操作旁，避免與提交下載行為混淆。手機版應保留足夠點擊範圍，並持續顯示 `已選取 {selected} / {total} 筆` 狀態
+- 可下載收據 view state 底部提供 `返回查詢` 與 `下載收據`；按下下載後按鈕文案改為 `收據下載準備中，請稍候。`，並暫時停用下載、全選與各筆勾選，直到下載完成或失敗後還原。若因短時間連續下載被擋，錯誤訊息顯示在下載按鈕上方，文案不得揭露實際冷卻秒數
 - 完訓證明查詢成功且 `certStatus` 為 `notIssued` 或 `changeRequested` 時，首頁顯示「選擇證明顯示方式」，讓使用者選擇姓名顯示方式與是否顯示公司名；準備生成模式會即時顯示對應語系與顯示選項的 PNG 預覽，並在確認按鈕旁提示確認後將無法更改
 - 「選擇證明顯示方式」目前包含 `返回查詢`、`確認產生證書`，並依 `canRequestChanges` 顯示 `提出修改申請`；其中 `返回查詢` 已可回到查詢表單，`提出修改申請` 已可切換到首頁內修改申請 view state 並寫入後端修改申請資料，`確認產生證書` 會呼叫發證 API 產生並下載 PDF；`issued` 下載模式不顯示 PNG 預覽，會鎖定顯示選項，並把按鈕文案改為 `下載證書`；下載檔名固定為 `certificate.pdf`
 - `changeRequested` 時，首頁會在「選擇證明顯示方式」顯示處理中提示，並說明若現在確認產生證書會視為放棄本次修改申請
@@ -894,9 +894,10 @@ Response JSON example:
 - 不回傳、不要求下載 URL token；前端應使用 `fetch()` 讀取 response blob，並以 browser object URL 觸發下載
 - 所有呼叫都必須通過同源 `Origin` 或 `Referer` 檢查
 - 管理端呼叫時必須通過管理者 session，並帶 `X-Portal-CSRF-Token` header
-- 未登入首頁呼叫時必須在 POST body 帶公開查詢成功後取得的 `downloadTicket`；ticket 由後端簽發，綁定可下載的 `receiptIds` 集合、`eventId` 與過期時間，且不放在 URL。下載時的 `receiptIds` 可為 ticket 內可下載集合的非空子集合
+- 未登入首頁呼叫時必須在 POST body 帶公開查詢成功後取得的 `downloadTicket`；ticket 由後端簽發，綁定可下載的 `receiptIds` 集合、`eventId`、下載主體 `subjectKey` 與過期時間，且不放在 URL。下載時的 `receiptIds` 可為 ticket 內可下載集合的非空子集合
 - 後端讀取 Cosmos DB `taxReceipts` metadata 後，依 `sourceBlobName` 從 Blob Storage `tax-receipts` 下載檔案
-- Blob 讀取成功後，後端會依下載來源分開計數：用戶端下載將每筆收據的 `downloadCount` 加 1 並更新 `lastDownloadAt`；管理端 portal 下載將每筆收據的 `portalDownloadCount` 加 1 並更新 `lastPortalDownloadAt`
+- Blob 讀取成功後，後端會依下載來源分開計數：用戶端下載將每筆收據的 `downloadCount` 加 1，更新 `lastDownloadAt` 與 `lastDownloadSubjectKey`；管理端 portal 下載將每筆收據的 `portalDownloadCount` 加 1 並更新 `lastPortalDownloadAt`
+- 未登入首頁下載會以 `subjectKey + receiptId` 逐檔套用短時間重複下載限制；單筆若仍在冷卻期間會回覆 `429 tax_receipt_download_cooldown`，多選時若至少一筆收據未冷卻，會下載使用者選取的完整集合，只有選取收據全數冷卻時才回覆 `429 tax_receipt_download_cooldown`
 - 歡迎頁的 `已下載次數` 只讀取用戶端 `downloadCount` 累計值，不包含 portal 下載
 - 單筆下載會使用資料中保存的 `contentType` 與 `fileName` 作為下載格式與檔名；多筆下載會回傳 ZIP，公開檔名固定為 `tax-receipts.zip`，不得帶入 `eventId` 或其他內部識別碼
 - 首頁下載營業稅繳稅證明時，會先在公開查詢流程中以最小揭露方式核對活動、統編與產製時間，再回傳 `downloadTicket` 供前端依使用者勾選的收據直接下載回應

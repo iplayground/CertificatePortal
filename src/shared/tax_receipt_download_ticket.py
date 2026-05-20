@@ -17,6 +17,7 @@ def build_tax_receipt_download_ticket(
     *,
     event_id: str,
     receipt_ids: list[str],
+    subject_key: str = "",
 ) -> str:
     payload = {
         "eventId": event_id,
@@ -24,6 +25,8 @@ def build_tax_receipt_download_ticket(
         "receiptIds": receipt_ids,
         "scope": TAX_RECEIPT_DOWNLOAD_TICKET_SCOPE,
     }
+    if subject_key:
+        payload["subjectKey"] = subject_key
     encoded_payload = _base64url_encode(
         json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     )
@@ -35,16 +38,42 @@ def build_tax_receipt_download_ticket(
     return f"{encoded_payload}.{_base64url_encode(signature)}"
 
 
+def build_tax_receipt_download_subject_key(*, event_id: str, tax_id: str) -> str:
+    subject_material = f"taxReceipt:{event_id.strip()}:{tax_id.strip()}".encode("utf-8")
+    digest = hmac.new(
+        _get_tax_receipt_download_ticket_secret().encode("utf-8"),
+        subject_material,
+        hashlib.sha256,
+    ).hexdigest()
+    return f"tdl_{digest}"
+
+
 def is_valid_tax_receipt_download_ticket(
     *,
     ticket: str,
     event_id: str,
     receipt_ids: list[str],
 ) -> bool:
+    return (
+        read_tax_receipt_download_ticket_payload(
+            ticket=ticket,
+            event_id=event_id,
+            receipt_ids=receipt_ids,
+        )
+        is not None
+    )
+
+
+def read_tax_receipt_download_ticket_payload(
+    *,
+    ticket: str,
+    event_id: str,
+    receipt_ids: list[str],
+) -> dict[str, object] | None:
     try:
         encoded_payload, encoded_signature = ticket.split(".", maxsplit=1)
     except ValueError:
-        return False
+        return None
 
     expected_signature = hmac.new(
         _get_tax_receipt_download_ticket_secret().encode("utf-8"),
@@ -53,19 +82,19 @@ def is_valid_tax_receipt_download_ticket(
     ).digest()
     actual_signature = _base64url_decode(encoded_signature)
     if actual_signature is None or not hmac.compare_digest(actual_signature, expected_signature):
-        return False
+        return None
 
     payload_bytes = _base64url_decode(encoded_payload)
     if payload_bytes is None:
-        return False
+        return None
 
     try:
         payload = json.loads(payload_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return False
+        return None
 
     if not isinstance(payload, dict):
-        return False
+        return None
 
     expires_at = payload.get("exp")
     allowed_receipt_ids = payload.get("receiptIds")
@@ -74,14 +103,17 @@ def is_valid_tax_receipt_download_ticket(
         or expires_at < int(time.time())
         or not isinstance(allowed_receipt_ids, list)
     ):
-        return False
+        return None
 
-    return (
+    if (
         payload.get("scope") == TAX_RECEIPT_DOWNLOAD_TICKET_SCOPE
         and payload.get("eventId") == event_id
         and bool(receipt_ids)
         and all(receipt_id in allowed_receipt_ids for receipt_id in receipt_ids)
-    )
+    ):
+        return payload
+
+    return None
 
 
 def _get_tax_receipt_download_ticket_secret() -> str:

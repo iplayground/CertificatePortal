@@ -377,7 +377,8 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "報名序號" in body
     assert "統編" in body
     assert "產製時間" in body
-    assert 'id="tax-receipt-results-toggle-selection-action"' in body
+    assert 'id="tax-receipt-selection-status"' in body
+    assert 'id="tax-receipt-download-feedback"' in body
     assert "全選" in body
     assert "下載收據" in body
     assert "會眾姓名" not in body
@@ -1960,6 +1961,15 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert ".certificate-change-request-view" in body
     assert ".certificate-summary-list" in body
     assert ".tax-receipt-results-view .certificate-summary-list" in body
+    assert ".tax-receipt-results-table" in body
+    assert ".tax-receipt-results-table th" in body
+    assert ".tax-receipt-results-table tbody tr:has(input:checked)" in body
+    assert ".tax-receipt-checkbox-option" in body
+    assert ".tax-receipt-checkbox-option:has(input:checked)" in body
+    assert ".tax-receipt-select-all-option" in body
+    assert ".tax-receipt-selection-status" in body
+    assert "box-shadow: none;" in body
+    assert ".visually-hidden" in body
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in body
     assert ".certificate-change-request-form textarea" not in body
     assert ".form-textarea" in body
@@ -2168,13 +2178,24 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "getTaxReceiptSelectionCheckboxes" in body
     assert "toggleTaxReceiptSelection" in body
     assert "checkbox.checked = receipt.generatedAt === documentData?.generatedAt" in body
+    assert "tax-receipt-results-table" in body
+    assert "選取第 ${index + 1} 筆收據" in body
+    assert "formatTaxReceiptSelectionStatus" in body
+    assert "tax_receipt_selection_status_template" in body
     assert "tax_receipt_select_all_action_label" in body
     assert "tax_receipt_deselect_all_action_label" in body
     assert "tax_receipt_download_pending_message" in body
+    assert "tax_receipt_download_cooldown_message" in body
+    assert "tax_receipt_download_unavailable_message" in body
     assert "setTaxReceiptDownloadBusy(true)" in body
     assert "setTaxReceiptDownloadBusy(false)" in body
     assert "isTaxReceiptDownloadInProgress" in body
-    assert "taxReceiptResultsToggleSelectionAction?.addEventListener" in body
+    assert "tax_receipt_download_cooldown" in body
+    assert "showTaxReceiptDownloadFeedback" in body
+    assert "clearTaxReceiptDownloadFeedback" in body
+    assert 'checkbox.id = "tax-receipt-results-toggle-selection-action"' in body
+    assert "taxReceiptResultsToggleSelectionAction.indeterminate = isPartiallySelected" in body
+    assert 'checkbox.addEventListener("change", toggleTaxReceiptSelection)' in body
     assert 'input.addEventListener("keydown", submitDocumentLookupFromCompletionCertInput)' in body
     assert 'generatedAt?.addEventListener("datetime-picker-return", submitDocumentLookupFromDateTimePickerReturn)' in body
     assert "lookupBlockedStorageKey" in body

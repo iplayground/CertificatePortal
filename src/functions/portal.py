@@ -12,7 +12,7 @@ import os
 import time
 import zipfile
 from concurrent.futures import Future, ThreadPoolExecutor
-from datetime import date
+from datetime import date, timedelta
 from functools import lru_cache
 from html import escape
 from http.cookies import SimpleCookie
@@ -113,6 +113,7 @@ from src.shared.tax_receipt_store import (
 from src.shared.tax_receipt_download_ticket import (
     build_tax_receipt_download_ticket,
     is_valid_tax_receipt_download_ticket,
+    read_tax_receipt_download_ticket_payload,
 )
 from src.shared.templates import render_html_template
 
@@ -177,6 +178,7 @@ PORTAL_TAX_RECEIPT_ALLOWED_CONTENT_TYPES = frozenset(
     {"application/pdf", "image/png", "image/jpeg"}
 )
 PORTAL_TAX_RECEIPT_MAX_FILE_BYTES = 10 * 1024 * 1024
+PUBLIC_TAX_RECEIPT_DOWNLOAD_COOLDOWN_SECONDS = 300
 PORTAL_LOGIN_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_login.html"
 PORTAL_DASHBOARD_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "portal_dashboard.html"
 PORTAL_DASHBOARD_WELCOME_TEMPLATE_PATH = (
@@ -2689,9 +2691,19 @@ def public_tax_receipts_download_api(req: func.HttpRequest) -> func.HttpResponse
             "下載資格已失效，請重新查詢後再下載。",
         )
 
+    ticket_payload = (
+        read_tax_receipt_download_ticket_payload(
+            ticket=ticket,
+            event_id=event_id,
+            receipt_ids=receipt_ids,
+        )
+        if not is_portal_download and ticket
+        else None
+    )
     response = build_tax_receipts_download_response(
         event_id=event_id,
         is_portal_download=is_portal_download,
+        public_download_subject_key=str((ticket_payload or {}).get("subjectKey", "")).strip(),
         receipt_ids=receipt_ids,
     )
     if not is_portal_download and response.status_code < 400:
@@ -2716,6 +2728,7 @@ def build_tax_receipts_download_response(
     *,
     event_id: str,
     is_portal_download: bool,
+    public_download_subject_key: str = "",
     receipt_ids: list[str],
 ) -> func.HttpResponse:
     if (
@@ -2746,6 +2759,14 @@ def build_tax_receipts_download_response(
                     receipt_id=receipt_id,
                 )
             )
+        if not is_portal_download:
+            blocked_documents = list_public_tax_receipt_documents_in_cooldown(
+                documents,
+                public_download_subject_key=public_download_subject_key,
+            )
+            if len(blocked_documents) == len(documents):
+                return build_public_tax_receipt_download_cooldown_response(blocked_documents)
+
         blob_container_name = get_tax_receipts_blob_container_name()
         for document in documents:
             file_payloads.append(
@@ -2760,6 +2781,7 @@ def build_tax_receipts_download_response(
         record_tax_receipt_downloads(
             documents,
             is_portal_download=is_portal_download,
+            public_download_subject_key=public_download_subject_key,
         )
     except (TaxReceiptStoreConfigurationError, BlobStoreConfigurationError) as exc:
         return build_portal_api_error_response(
@@ -2789,10 +2811,81 @@ def build_tax_receipts_download_response(
     return build_tax_receipts_zip_response(event_id=event_id, file_payloads=file_payloads)
 
 
+def list_public_tax_receipt_documents_in_cooldown(
+    documents: list[dict[str, Any]],
+    *,
+    public_download_subject_key: str,
+) -> list[dict[str, Any]]:
+    if not public_download_subject_key:
+        return []
+
+    blocked_documents: list[dict[str, Any]] = []
+    for document in documents:
+        if is_public_tax_receipt_download_in_cooldown(
+            document,
+            public_download_subject_key=public_download_subject_key,
+        ):
+            blocked_documents.append(document)
+
+    return blocked_documents
+
+
+def is_public_tax_receipt_download_in_cooldown(
+    document: dict[str, Any],
+    *,
+    public_download_subject_key: str,
+) -> bool:
+    if str(document.get("lastDownloadSubjectKey", "")).strip() != public_download_subject_key:
+        return False
+
+    last_download_at = parse_utc_iso_datetime(str(document.get("lastDownloadAt", "")).strip())
+    if last_download_at is None:
+        return False
+
+    cooldown_seconds = read_public_tax_receipt_download_cooldown_seconds()
+    if cooldown_seconds <= 0:
+        return False
+
+    return last_download_at + timedelta(seconds=cooldown_seconds) > utc_now_iso_datetime()
+
+
+def build_public_tax_receipt_download_cooldown_response(
+    blocked_documents: list[dict[str, Any]],
+) -> func.HttpResponse:
+    return build_portal_api_error_response(
+        429,
+        "tax_receipt_download_cooldown",
+        "這份收據剛剛已下載，請稍後再試，或改選其他尚未下載的檔案。",
+        details={
+            "blockedReceiptIds": [
+                str(document.get("id", "")).strip()
+                for document in blocked_documents
+                if str(document.get("id", "")).strip()
+            ],
+        },
+    )
+
+
+def read_public_tax_receipt_download_cooldown_seconds() -> int:
+    raw_value = os.getenv("TAX_RECEIPT_PUBLIC_DOWNLOAD_COOLDOWN_SECONDS", "").strip()
+    if raw_value.isdecimal():
+        return max(0, int(raw_value))
+
+    return PUBLIC_TAX_RECEIPT_DOWNLOAD_COOLDOWN_SECONDS
+
+
+def utc_now_iso_datetime() -> Any:
+    parsed_now = parse_utc_iso_datetime(utc_now_iso())
+    if parsed_now is None:
+        raise ValueError("utc_now_iso returned an invalid timestamp")
+    return parsed_now
+
+
 def record_tax_receipt_downloads(
     documents: list[dict[str, Any]],
     *,
     is_portal_download: bool,
+    public_download_subject_key: str = "",
 ) -> None:
     timestamp = utc_now_iso()
     try:
@@ -2824,6 +2917,8 @@ def record_tax_receipt_downloads(
                     + 1
                 )
                 updated_document["lastDownloadAt"] = timestamp
+                if public_download_subject_key:
+                    updated_document["lastDownloadSubjectKey"] = public_download_subject_key
             replace_tax_receipt_document(
                 container=container,
                 document=updated_document,

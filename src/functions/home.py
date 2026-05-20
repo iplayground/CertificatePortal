@@ -81,7 +81,10 @@ from src.shared.tax_receipt_store import (
     get_tax_receipts_container,
     list_tax_receipt_documents_by_tax_id,
 )
-from src.shared.tax_receipt_download_ticket import build_tax_receipt_download_ticket
+from src.shared.tax_receipt_download_ticket import (
+    build_tax_receipt_download_subject_key,
+    build_tax_receipt_download_ticket,
+)
 from src.shared.templates import render_html_template
 
 blueprint = func.Blueprint()
@@ -401,6 +404,10 @@ def lookup_public_tax_receipts(payload: dict[str, Any]) -> dict[str, Any] | None
                 for document in documents
                 if str(document.get("id", "")).strip()
             ],
+            subject_key=build_tax_receipt_download_subject_key(
+                event_id=payload["eventId"],
+                tax_id=payload["businessTaxId"],
+            ),
         ),
     }
 

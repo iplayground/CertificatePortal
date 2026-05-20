@@ -1732,6 +1732,141 @@ def test_public_tax_receipts_download_api_downloads_blob_with_download_ticket(
     assert fake_tax_container.items["trec_1"].get("portalDownloadCount", 0) == 0
 
 
+def test_public_tax_receipts_download_api_blocks_repeated_public_receipt_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TAX_RECEIPT_DOWNLOAD_TICKET_SECRET", "test-download-ticket-secret")
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_1"] = {
+        "id": "trec_1",
+        "eventId": "evt_tax",
+        "sourceBlobName": "evt_tax/trec_1.pdf",
+        "fileName": "receipt-12345678-1.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+        "downloadCount": 1,
+        "lastDownloadAt": "2999-05-01T00:00:00Z",
+        "lastDownloadSubjectKey": "lookup_subject",
+    }
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_tax_receipts_blob_container_name",
+        lambda: "tax-receipts",
+    )
+    ticket = build_tax_receipt_download_ticket(
+        event_id="evt_tax",
+        receipt_ids=["trec_1"],
+        subject_key="lookup_subject",
+    )
+    reset_portal_auth_env(monkeypatch)
+
+    response = public_tax_receipts_download_api(
+        build_request(
+            "http://localhost:7075/api/v1/tax-receipts/download",
+            body=json.dumps(
+                {
+                    "downloadTicket": ticket,
+                    "eventId": "evt_tax",
+                    "receiptIds": ["trec_1"],
+                }
+            ).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Host": "localhost:7075",
+                "Origin": "http://localhost:7075",
+            },
+            method="POST",
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 429
+    assert "tax_receipt_download_cooldown" in body
+    assert "trec_1" in body
+    assert fake_tax_container.items["trec_1"]["downloadCount"] == 1
+
+
+def test_public_tax_receipts_download_api_downloads_full_selection_when_some_are_not_cooling_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TAX_RECEIPT_DOWNLOAD_TICKET_SECRET", "test-download-ticket-secret")
+    fake_tax_container = FakeTaxReceiptsContainer()
+    fake_tax_container.items["trec_1"] = {
+        "id": "trec_1",
+        "eventId": "evt_tax",
+        "sourceBlobName": "evt_tax/trec_1.pdf",
+        "fileName": "receipt-12345678-1.pdf",
+        "fileSequence": 1,
+        "contentType": "application/pdf",
+        "downloadCount": 1,
+        "lastDownloadAt": "2999-05-01T00:00:00Z",
+        "lastDownloadSubjectKey": "lookup_subject",
+    }
+    fake_tax_container.items["trec_2"] = {
+        "id": "trec_2",
+        "eventId": "evt_tax",
+        "sourceBlobName": "evt_tax/trec_2.pdf",
+        "fileName": "receipt-12345678-2.pdf",
+        "fileSequence": 2,
+        "contentType": "application/pdf",
+        "downloadCount": 0,
+    }
+    monkeypatch.setattr("src.functions.portal.get_tax_receipts_container", lambda: fake_tax_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_tax_receipts_blob_container_name",
+        lambda: "tax-receipts",
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.download_blob_bytes",
+        lambda *, blob_name, container_name: {
+            ("tax-receipts", "evt_tax/trec_1.pdf"): b"%PDF-1",
+            ("tax-receipts", "evt_tax/trec_2.pdf"): b"%PDF-2",
+        }[(container_name, blob_name)],
+    )
+    ticket = build_tax_receipt_download_ticket(
+        event_id="evt_tax",
+        receipt_ids=["trec_1", "trec_2"],
+        subject_key="lookup_subject",
+    )
+    reset_portal_auth_env(monkeypatch)
+
+    response = public_tax_receipts_download_api(
+        build_request(
+            "http://localhost:7075/api/v1/tax-receipts/download",
+            body=json.dumps(
+                {
+                    "downloadTicket": ticket,
+                    "eventId": "evt_tax",
+                    "receiptIds": ["trec_1", "trec_2"],
+                }
+            ).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Host": "localhost:7075",
+                "Origin": "http://localhost:7075",
+            },
+            method="POST",
+        )
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/zip"
+    assert response.headers["Content-Disposition"] == (
+        'attachment; filename="tax-receipts.zip"'
+    )
+    with zipfile.ZipFile(io.BytesIO(response.get_body())) as zip_file:
+        assert sorted(zip_file.namelist()) == [
+            "receipt-12345678-1.pdf",
+            "receipt-12345678-2.pdf",
+        ]
+        assert zip_file.read("receipt-12345678-1.pdf") == b"%PDF-1"
+        assert zip_file.read("receipt-12345678-2.pdf") == b"%PDF-2"
+    assert fake_tax_container.items["trec_1"]["downloadCount"] == 2
+    assert fake_tax_container.items["trec_2"]["downloadCount"] == 1
+    assert fake_tax_container.items["trec_1"]["lastDownloadSubjectKey"] == "lookup_subject"
+    assert fake_tax_container.items["trec_2"]["lastDownloadSubjectKey"] == "lookup_subject"
+
+
 def test_tax_receipt_download_ticket_allows_subset_of_receipts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

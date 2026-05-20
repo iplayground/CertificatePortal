@@ -304,10 +304,12 @@
               </dl>
 
               <div class="tax-receipt-results-tools">
-                <button class="secondary-action tax-receipt-select-toggle" type="button" id="tax-receipt-results-toggle-selection-action">{{tax_receipt_select_all_action_label}}</button>
+                <span class="tax-receipt-selection-status" id="tax-receipt-selection-status" aria-live="polite"></span>
               </div>
 
               <div class="tax-receipt-list" id="tax-receipt-results-list"></div>
+
+              <div id="tax-receipt-download-feedback" class="feedback tax-receipt-download-feedback" role="status" aria-live="polite" hidden></div>
 
               <div class="form-actions certificate-actions">
                 <button class="secondary-action" type="button" id="tax-receipt-results-back-action">{{certificate_options_back_action_label}}</button>
