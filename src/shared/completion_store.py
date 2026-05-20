@@ -15,13 +15,17 @@ COMPLETION_CERT_REQUEST_NAMESPACE = "io.iplayground.ipg-certificate.completion-c
 
 
 class CompletionContainer(Protocol):
-    def create_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
+    def create_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise NotImplementedError
 
-    def read_item(self, item: str, partition_key: str, **kwargs: Any) -> dict[str, Any]: ...
+    def read_item(self, item: str, partition_key: str, **kwargs: Any) -> dict[str, Any]:
+        raise NotImplementedError
 
-    def replace_item(self, item: str, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
+    def replace_item(self, item: str, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise NotImplementedError
 
-    def upsert_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
+    def upsert_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise NotImplementedError
 
     def query_items(
         self,
@@ -31,7 +35,8 @@ class CompletionContainer(Protocol):
         partition_key: str | None = None,
         enable_cross_partition_query: bool,
         **kwargs: Any,
-    ) -> Any: ...
+    ) -> Any:
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)

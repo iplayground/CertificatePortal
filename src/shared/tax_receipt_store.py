@@ -13,15 +13,20 @@ TAX_RECEIPT_NAMESPACE = "io.iplayground.ipg-certificate.tax-receipts"
 
 
 class TaxReceiptContainer(Protocol):
-    def create_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
+    def create_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise NotImplementedError
 
-    def delete_item(self, item: str, partition_key: str, **kwargs: Any) -> None: ...
+    def delete_item(self, item: str, partition_key: str, **kwargs: Any) -> None:
+        raise NotImplementedError
 
-    def read_item(self, item: str, partition_key: str, **kwargs: Any) -> dict[str, Any]: ...
+    def read_item(self, item: str, partition_key: str, **kwargs: Any) -> dict[str, Any]:
+        raise NotImplementedError
 
-    def replace_item(self, item: str, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
+    def replace_item(self, item: str, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise NotImplementedError
 
-    def upsert_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
+    def upsert_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise NotImplementedError
 
     def query_items(
         self,
@@ -31,7 +36,8 @@ class TaxReceiptContainer(Protocol):
         partition_key: str | None = None,
         enable_cross_partition_query: bool,
         **kwargs: Any,
-    ) -> Any: ...
+    ) -> Any:
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)

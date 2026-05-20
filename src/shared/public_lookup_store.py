@@ -29,9 +29,11 @@ _PUBLIC_LOOKUP_BLOCK_CACHE_LOCK = Lock()
 
 
 class PublicLookupContainer(Protocol):
-    def read_item(self, item: str, partition_key: str, **kwargs: Any) -> dict[str, Any]: ...
+    def read_item(self, item: str, partition_key: str, **kwargs: Any) -> dict[str, Any]:
+        raise NotImplementedError
 
-    def upsert_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
+    def upsert_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)

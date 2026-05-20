@@ -18,18 +18,22 @@ EVENT_IDEMPOTENCY_NAMESPACE = "io.iplayground.ipg-certificate.admin.events"
 
 
 class EventContainer(Protocol):
-    def create_item(self, body: dict[str, Any]) -> dict[str, Any]: ...
+    def create_item(self, body: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError
 
-    def read_item(self, item: str, partition_key: str) -> dict[str, Any]: ...
+    def read_item(self, item: str, partition_key: str) -> dict[str, Any]:
+        raise NotImplementedError
 
-    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]: ...
+    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError
 
     def query_items(
         self,
         query: str,
         *,
         enable_cross_partition_query: bool,
-    ) -> Any: ...
+    ) -> Any:
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)
