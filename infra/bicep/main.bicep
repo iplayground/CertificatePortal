@@ -31,6 +31,14 @@ param portalGoogleRedirectUri string = ''
 @secure()
 param portalGoogleAllowedGroupKeys string = ''
 
+@description('Dedicated HMAC secret for public tax receipt download tickets.')
+@secure()
+param taxReceiptDownloadTicketSecret string = ''
+
+@description('Tax receipt download ticket lifetime in seconds.')
+@minValue(1)
+param taxReceiptDownloadTicketMaxAgeSeconds int = 600
+
 @description('Optional globally unique Azure Cosmos DB account name. Leave empty to derive one from the Function App name.')
 @maxLength(44)
 param cosmosAccountName string = ''
@@ -423,6 +431,14 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'PORTAL_GOOGLE_ALLOWED_GROUP_KEYS'
           value: portalGoogleAllowedGroupKeys
+        }
+        {
+          name: 'TAX_RECEIPT_DOWNLOAD_TICKET_SECRET'
+          value: taxReceiptDownloadTicketSecret
+        }
+        {
+          name: 'TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS'
+          value: string(taxReceiptDownloadTicketMaxAgeSeconds)
         }
       ]
     }

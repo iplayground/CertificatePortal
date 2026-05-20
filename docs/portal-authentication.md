@@ -110,6 +110,15 @@ Function App 目前使用下列 app settings 控制 portal 登入與授權：
 
 上述設定已納入 `infra/bicep/main.bicep` 的參數定義，可在部署時由 Azure CLI 或其他 IaC 流程傳入。
 
+營業稅繳稅證明公開下載 ticket 使用獨立 app settings，不屬於 Google OAuth 設定：
+
+- `TAX_RECEIPT_DOWNLOAD_TICKET_SECRET`
+  - 公開下載 ticket 與下載主體 key 的 HMAC secret
+  - 必須使用專用隨機 secret，不得使用 `PORTAL_GOOGLE_CLIENT_SECRET`
+- `TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS`
+  - 公開下載 ticket 有效秒數
+  - 預設值為 `600`
+
 production 環境目前不要在 Azure Portal 手動輸入這些值，應改用 CLI 或 Key Vault reference：
 
 ```bash
@@ -123,6 +132,21 @@ az functionapp config appsettings set \
     PORTAL_GOOGLE_ALLOWED_GROUP_KEYS=<allowed-group-name-1>,<allowed-group-name-2>
 ```
 
+下載 ticket secret 可另外設定或輪替：
+
+```bash
+TAX_RECEIPT_DOWNLOAD_TICKET_SECRET="$(openssl rand -hex 32)"
+
+az functionapp config appsettings set \
+  --resource-group iplayground \
+  --name ipg-certificate \
+  --settings \
+    TAX_RECEIPT_DOWNLOAD_TICKET_SECRET="${TAX_RECEIPT_DOWNLOAD_TICKET_SECRET}" \
+    TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS=600
+
+unset TAX_RECEIPT_DOWNLOAD_TICKET_SECRET
+```
+
 設定完成後，可用下列指令驗證非機密值：
 
 ```bash
@@ -131,6 +155,16 @@ az functionapp config appsettings list \
   --name ipg-certificate \
   --query "[?starts_with(name, 'PORTAL_') && name!='PORTAL_GOOGLE_CLIENT_SECRET'].{name:name,value:value}" \
   -o table
+```
+
+確認下載 ticket app settings 是否存在時，不要輸出 secret value：
+
+```bash
+az functionapp config appsettings list \
+  --resource-group iplayground \
+  --name ipg-certificate \
+  --query "[?name=='TAX_RECEIPT_DOWNLOAD_TICKET_SECRET' || name=='TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS'].name" \
+  -o tsv
 ```
 
 ## 本機開發
@@ -147,6 +181,8 @@ az functionapp config appsettings list \
 - `PORTAL_GOOGLE_CLIENT_SECRET=<local-google-client-secret>`
 - `PORTAL_GOOGLE_REDIRECT_URI=http://localhost:7075/portal/auth/google/callback`
 - `PORTAL_GOOGLE_ALLOWED_GROUP_KEYS=<allowed-group-name-1>,<allowed-group-name-2>`
+- `TAX_RECEIPT_DOWNLOAD_TICKET_SECRET=<local-tax-receipt-download-ticket-secret>`
+- `TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS=600`
 
 這組本機 OAuth 設定只用於現階段開發驗證；未來本機流程不應依賴它作為長期基線。
 

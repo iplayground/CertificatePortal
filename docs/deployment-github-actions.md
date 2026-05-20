@@ -68,6 +68,23 @@ az functionapp config appsettings set \
     PORTAL_GOOGLE_ALLOWED_GROUP_KEYS=<allowed-group-name-1>,<allowed-group-name-2>
 ```
 
+營業稅繳稅證明公開下載 ticket 必須使用專用 HMAC secret，不得共用 Google OAuth client secret。初次設定或輪替時建議用 CLI 產生隨機值後直接寫入 Function App app settings，避免將 secret 寫入 shell history、文件或 repository：
+
+```bash
+TAX_RECEIPT_DOWNLOAD_TICKET_SECRET="$(openssl rand -hex 32)"
+
+az functionapp config appsettings set \
+  --resource-group <resource-group-name> \
+  --name <function-app-name> \
+  --settings \
+    TAX_RECEIPT_DOWNLOAD_TICKET_SECRET="${TAX_RECEIPT_DOWNLOAD_TICKET_SECRET}" \
+    TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS=600
+
+unset TAX_RECEIPT_DOWNLOAD_TICKET_SECRET
+```
+
+`TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS` 預設為 `600`。若營運上需要延長公開下載 ticket 有效時間，可調整此 app setting；不建議設定過長，避免公開查詢後取得的短效下載資格被長時間重用。
+
 ## Azure Portal 與 GitHub 連線流程
 
 在基礎設施已建立、GitHub OAuth 已可用後，於 Azure Portal 內完成以下設定：
@@ -212,6 +229,7 @@ rollback 會重新 checkout rollback ref，並再次透過 `Azure/functions-acti
 - Cosmos Portal inspection：可透過 `cosmosPortalDataReaderPrincipalIds` 為管理者安全群組授與 account 範圍 Cosmos DB Built-in Data Reader
 - Cosmos app settings：`COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER`、`COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER`、`COSMOS_TAX_RECEIPTS_CONTAINER` 與 `COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER` 由 Bicep 寫入 Function App
 - Blob app settings：`BLOB_DOCUMENT_ASSETS_CONTAINER`、`BLOB_ISSUED_CERT_CONTAINER` 與 `BLOB_TAX_RECEIPTS_CONTAINER` 由 Bicep 寫入 Function App，預設分別指向 `document-assets`、`issued-certs` 與 `tax-receipts`
+- Tax receipt download ticket app settings：`TAX_RECEIPT_DOWNLOAD_TICKET_SECRET` 與 `TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS` 由 Bicep 參數或 CLI 寫入 Function App；secret 應由 Key Vault reference 或安全 CLI 流程提供，不提交到 repository
 - Cosmos containers：`events` 使用 `/id` 作為 partition key，供活動管理資料使用；完訓證明與營業稅繳稅證明 containers 依 [cosmos-data-model.md](cosmos-data-model.md) 使用 `/eventId`
 
 Bicep 只建立 Blob containers 與 Function App app settings，不會上傳不進 git 的固定素材。重新建立環境後，仍需將單位印章圖與首頁證明預覽圖上傳到 `document-assets`：

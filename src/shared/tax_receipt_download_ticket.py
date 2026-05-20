@@ -13,6 +13,22 @@ TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS = 600
 TAX_RECEIPT_DOWNLOAD_TICKET_SCOPE = "taxReceiptDownload"
 
 
+def _get_tax_receipt_download_ticket_max_age_seconds() -> int:
+    configured_max_age = os.getenv("TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS", "").strip()
+    if not configured_max_age:
+        return TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS
+
+    try:
+        parsed_max_age = int(configured_max_age)
+    except ValueError:
+        return TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS
+
+    if parsed_max_age > 0:
+        return parsed_max_age
+
+    return TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS
+
+
 def build_tax_receipt_download_ticket(
     *,
     event_id: str,
@@ -21,7 +37,7 @@ def build_tax_receipt_download_ticket(
 ) -> str:
     payload = {
         "eventId": event_id,
-        "exp": int(time.time()) + TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS,
+        "exp": int(time.time()) + _get_tax_receipt_download_ticket_max_age_seconds(),
         "receiptIds": receipt_ids,
         "scope": TAX_RECEIPT_DOWNLOAD_TICKET_SCOPE,
     }
@@ -81,7 +97,9 @@ def read_tax_receipt_download_ticket_payload(
         hashlib.sha256,
     ).digest()
     actual_signature = _base64url_decode(encoded_signature)
-    if actual_signature is None or not hmac.compare_digest(actual_signature, expected_signature):
+    if actual_signature is None:
+        return None
+    if not hmac.compare_digest(actual_signature, expected_signature):
         return None
 
     payload_bytes = _base64url_decode(encoded_payload)
@@ -124,10 +142,6 @@ def _get_tax_receipt_download_ticket_secret() -> str:
     csrf_secret = os.getenv("PORTAL_CSRF_SECRET", "").strip()
     if csrf_secret:
         return csrf_secret
-
-    google_client_secret = os.getenv("PORTAL_GOOGLE_CLIENT_SECRET", "").strip()
-    if google_client_secret:
-        return google_client_secret
 
     if os.getenv("PORTAL_AUTH_BYPASS_ENABLED", "").strip().lower() == "true":
         return "local-dev-portal-csrf-secret"

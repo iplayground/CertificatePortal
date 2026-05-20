@@ -895,6 +895,7 @@ Response JSON example:
 - 所有呼叫都必須通過同源 `Origin` 或 `Referer` 檢查
 - 管理端呼叫時必須通過管理者 session，並帶 `X-Portal-CSRF-Token` header
 - 未登入首頁呼叫時必須在 POST body 帶公開查詢成功後取得的 `downloadTicket`；ticket 由後端簽發，綁定可下載的 `receiptIds` 集合、`eventId`、下載主體 `subjectKey` 與過期時間，且不放在 URL。下載時的 `receiptIds` 可為 ticket 內可下載集合的非空子集合
+- `downloadTicket` 使用專用 `TAX_RECEIPT_DOWNLOAD_TICKET_SECRET` HMAC 簽章，不得共用 Google OAuth client secret；有效時間由 `TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS` 控制，預設 `600` 秒
 - 後端讀取 Cosmos DB `taxReceipts` metadata 後，依 `sourceBlobName` 從 Blob Storage `tax-receipts` 下載檔案
 - Blob 讀取成功後，後端會依下載來源分開計數：用戶端下載將每筆收據的 `downloadCount` 加 1，更新 `lastDownloadAt` 與 `lastDownloadSubjectKey`；管理端 portal 下載將每筆收據的 `portalDownloadCount` 加 1 並更新 `lastPortalDownloadAt`
 - 未登入首頁下載會以 `subjectKey + receiptId` 逐檔套用短時間重複下載限制；單筆若仍在冷卻期間會回覆 `429 tax_receipt_download_cooldown`，多選時若至少一筆收據未冷卻，會下載使用者選取的完整集合，只有選取收據全數冷卻時才回覆 `429 tax_receipt_download_cooldown`
