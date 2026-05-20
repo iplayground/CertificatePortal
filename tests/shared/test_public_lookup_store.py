@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from src.shared.cosmos_options import PUBLIC_LOOKUP_COSMOS_TIMEOUT_SECONDS
 from src.shared.public_lookup_store import (
-    PUBLIC_LOOKUP_COSMOS_TIMEOUT_SECONDS,
     PublicLookupStoreConfigurationError,
     build_public_lookup_cosmos_timeout_options,
     build_public_lookup_attempt_id,

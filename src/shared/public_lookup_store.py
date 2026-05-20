@@ -8,10 +8,7 @@ from functools import lru_cache
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
-from src.shared.cosmos_options import (
-    PUBLIC_LOOKUP_COSMOS_TIMEOUT_SECONDS,
-    build_public_lookup_cosmos_timeout_options,
-)
+from src.shared.cosmos_options import build_public_lookup_cosmos_timeout_options
 from src.shared.event_store import utc_now_iso
 
 

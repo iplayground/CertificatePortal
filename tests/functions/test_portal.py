@@ -14,7 +14,6 @@ from src.functions.assets import static_asset
 from src.functions.portal import (
     PORTAL_GOOGLE_LOGIN_NOT_AUTHORIZED_ERROR,
     build_portal_csrf_token,
-    build_tax_receipt_download_ticket,
     is_valid_tax_receipt_download_ticket,
     portal_admin_dashboard_welcome_metrics_api,
     portal_admin_completion_certs_import_api,
@@ -40,6 +39,7 @@ from src.functions.portal import (
     resolve_portal_login_alert_dismiss_delay_ms,
 )
 from src.shared.portal_auth import resolve_portal_access
+from src.shared.tax_receipt_download_ticket import build_tax_receipt_download_ticket
 from src.shared.event_store import EventStoreOperationError
 from src.shared.portal_google_group_auth import PortalGoogleGroupAuthorizationError
 from src.shared.public_lookup_store import (

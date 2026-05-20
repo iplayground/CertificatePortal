@@ -111,7 +111,6 @@ from src.shared.tax_receipt_store import (
     upsert_tax_receipt_document,
 )
 from src.shared.tax_receipt_download_ticket import (
-    build_tax_receipt_download_ticket,
     is_valid_tax_receipt_download_ticket,
     read_tax_receipt_download_ticket_payload,
 )
@@ -206,7 +205,7 @@ PORTAL_EVENT_STORE_PREWARM_EXECUTOR = ThreadPoolExecutor(
     max_workers=1,
     thread_name_prefix="portal-event-store-prewarm",
 )
-portal_event_store_prewarm_future: Future[object] | None = None
+PORTAL_EVENT_STORE_PREWARM_FUTURES: list[Future[object]] = []
 
 
 @lru_cache(maxsize=1)
@@ -456,17 +455,15 @@ def build_portal_dashboard_events_context(
 
 
 def schedule_portal_event_store_prewarm() -> None:
-    global portal_event_store_prewarm_future
-
     if (
-        portal_event_store_prewarm_future is not None
-        and not portal_event_store_prewarm_future.done()
+        PORTAL_EVENT_STORE_PREWARM_FUTURES
+        and not PORTAL_EVENT_STORE_PREWARM_FUTURES[-1].done()
     ):
         return
 
-    portal_event_store_prewarm_future = PORTAL_EVENT_STORE_PREWARM_EXECUTOR.submit(
-        get_events_container
-    )
+    PORTAL_EVENT_STORE_PREWARM_FUTURES[:] = [
+        PORTAL_EVENT_STORE_PREWARM_EXECUTOR.submit(get_events_container)
+    ]
 
 
 def build_portal_events_json_payload() -> dict[str, Any]:
