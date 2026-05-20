@@ -582,7 +582,7 @@ def build_portal_welcome_completion_metrics(event: dict[str, Any]) -> dict[str, 
                 metrics=summary,
             )
         except (EventStoreConfigurationError, EventStoreOperationError):
-            pass
+            LOGGER.warning("Unable to refresh cached completion metrics.", exc_info=True)
 
     event_name = str(event.get("name", "")).strip()
     return {
@@ -2925,7 +2925,7 @@ def record_tax_receipt_downloads(
             )
             document.update(updated_document)
     except (TaxReceiptStoreConfigurationError, TaxReceiptStoreOperationError):
-        pass
+        LOGGER.warning("Unable to record tax receipt download metadata.", exc_info=True)
 
 
 def build_tax_receipt_file_http_response(

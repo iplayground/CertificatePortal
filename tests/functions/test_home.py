@@ -1181,9 +1181,10 @@ def test_public_document_lookup_api_returns_all_tax_receipts_for_matched_tax_id(
         )
     )
     payload = json.loads(response.get_body().decode("utf-8"))
+    download_ticket = payload["document"].pop("downloadTicket")
 
     assert response.status_code == 200
-    assert isinstance(payload["document"].pop("downloadTicket"), str)
+    assert isinstance(download_ticket, str)
     assert payload == {
         "document": {
             "status": "found",
