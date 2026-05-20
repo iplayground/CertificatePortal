@@ -261,7 +261,7 @@ class FakeEventsContainer:
 
 @pytest.fixture(autouse=True)
 def use_open_public_event(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("src.functions.home.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr("src.functions.home.get_events_container", FakeEventsContainer)
 
 
 def build_document_lookup_request(
@@ -659,7 +659,7 @@ def test_home_page_renders_static_document_type_when_selected_event_has_one_type
 def test_home_page_ignores_event_store_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("src.functions.home.get_events_container", lambda: object())
+    monkeypatch.setattr("src.functions.home.get_events_container", object)
 
     def raise_event_store_error(**_: object) -> list[dict[str, object]]:
         raise EventStoreOperationError("event store unavailable")
@@ -677,7 +677,7 @@ def test_home_page_ignores_event_store_errors(
 def test_public_events_list_api_allows_anonymous_cross_origin_reads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("src.functions.home.get_events_container", lambda: object())
+    monkeypatch.setattr("src.functions.home.get_events_container", object)
     monkeypatch.setattr(
         "src.functions.home.list_public_event_documents",
         lambda **_: [
@@ -719,7 +719,7 @@ def test_public_events_list_api_allows_anonymous_cross_origin_reads(
 def test_public_events_list_api_returns_json_error_when_event_store_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("src.functions.home.get_events_container", lambda: object())
+    monkeypatch.setattr("src.functions.home.get_events_container", object)
 
     def raise_event_store_error(**_: object) -> list[dict[str, object]]:
         raise EventStoreOperationError("event store unavailable")
@@ -738,7 +738,7 @@ def test_public_events_list_api_returns_json_error_when_event_store_is_unavailab
 def test_public_events_list_api_localizes_error_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("src.functions.home.get_events_container", lambda: object())
+    monkeypatch.setattr("src.functions.home.get_events_container", object)
 
     def raise_event_store_error(**_: object) -> list[dict[str, object]]:
         raise EventStoreOperationError("公開活動資料讀取暫時失敗。")
@@ -770,7 +770,7 @@ def test_public_document_lookup_api_returns_generic_failure_and_records_attempt(
     )
     monkeypatch.setattr(
         "src.functions.home.get_completion_records_container",
-        lambda: FakeCompletionCertsContainer(),
+        FakeCompletionCertsContainer,
     )
 
     response = public_document_lookup_api(
@@ -806,7 +806,7 @@ def test_public_document_lookup_api_skips_attempt_record_without_forwarded_for(
     )
     monkeypatch.setattr(
         "src.functions.home.get_completion_records_container",
-        lambda: FakeCompletionCertsContainer(),
+        FakeCompletionCertsContainer,
     )
 
     response = public_document_lookup_api(
@@ -906,7 +906,7 @@ def test_public_document_lookup_api_blocks_ip_after_tenth_unavailable_lookup(
     )
     monkeypatch.setattr(
         "src.functions.home.get_completion_records_container",
-        lambda: FakeCompletionCertsContainer(),
+        FakeCompletionCertsContainer,
     )
 
     responses = [
@@ -942,7 +942,7 @@ def test_public_document_lookup_api_blocks_ip_after_fifth_failure(
     )
     monkeypatch.setattr(
         "src.functions.home.get_completion_records_container",
-        lambda: FakeCompletionCertsContainer(),
+        FakeCompletionCertsContainer,
     )
 
     responses = [
@@ -1049,11 +1049,11 @@ def test_public_document_lookup_api_does_not_block_on_attempt_store_read_failure
 ) -> None:
     monkeypatch.setattr(
         "src.functions.home.get_public_lookup_attempts_container",
-        lambda: FailingLookupAttemptsContainer(),
+        FailingLookupAttemptsContainer,
     )
     monkeypatch.setattr(
         "src.functions.home.get_completion_records_container",
-        lambda: FakeCompletionCertsContainer(),
+        FakeCompletionCertsContainer,
     )
 
     response = public_document_lookup_api(
@@ -1077,7 +1077,7 @@ def test_public_document_lookup_api_does_not_block_success_on_attempt_store_fail
 ) -> None:
     monkeypatch.setattr(
         "src.functions.home.get_public_lookup_attempts_container",
-        lambda: FailingLookupAttemptsContainer(),
+        FailingLookupAttemptsContainer,
     )
     monkeypatch.setattr(
         "src.functions.home.get_completion_records_container",
@@ -1124,7 +1124,7 @@ def test_public_document_lookup_api_returns_all_tax_receipts_for_matched_tax_id(
 ) -> None:
     monkeypatch.setattr(
         "src.functions.home.get_public_lookup_attempts_container",
-        lambda: FailingLookupAttemptsContainer(),
+        FailingLookupAttemptsContainer,
     )
     monkeypatch.setattr(
         "src.functions.home.get_tax_receipts_container",
@@ -1266,7 +1266,7 @@ def test_public_document_lookup_api_marks_not_generated_completion_cert(
 ) -> None:
     monkeypatch.setattr(
         "src.functions.home.get_public_lookup_attempts_container",
-        lambda: FailingLookupAttemptsContainer(),
+        FailingLookupAttemptsContainer,
     )
     monkeypatch.setattr(
         "src.functions.home.get_completion_records_container",
@@ -1313,7 +1313,7 @@ def test_public_document_lookup_api_marks_completed_change_request_as_not_reques
 ) -> None:
     monkeypatch.setattr(
         "src.functions.home.get_public_lookup_attempts_container",
-        lambda: FailingLookupAttemptsContainer(),
+        FailingLookupAttemptsContainer,
     )
     monkeypatch.setattr(
         "src.functions.home.get_completion_records_container",
@@ -1383,7 +1383,7 @@ def test_public_document_lookup_api_returns_rejected_change_request_review_statu
 ) -> None:
     monkeypatch.setattr(
         "src.functions.home.get_public_lookup_attempts_container",
-        lambda: FailingLookupAttemptsContainer(),
+        FailingLookupAttemptsContainer,
     )
     monkeypatch.setattr(
         "src.functions.home.get_completion_records_container",
@@ -1453,7 +1453,7 @@ def test_public_document_lookup_api_returns_change_requested_cert_status(
 ) -> None:
     monkeypatch.setattr(
         "src.functions.home.get_public_lookup_attempts_container",
-        lambda: FailingLookupAttemptsContainer(),
+        FailingLookupAttemptsContainer,
     )
     monkeypatch.setattr(
         "src.functions.home.get_completion_records_container",

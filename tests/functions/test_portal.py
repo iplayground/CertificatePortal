@@ -564,7 +564,7 @@ def test_portal_admin_events_create_api_rejects_local_display_time(
 def test_portal_admin_events_create_api_returns_json_when_event_store_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr("src.functions.portal.get_events_container", FakeEventsContainer)
 
     def raise_event_store_error(**_: Any) -> tuple[dict[str, Any], bool]:
         raise EventStoreOperationError("Cosmos DB 活動容器不存在。")
@@ -640,7 +640,7 @@ def test_portal_admin_events_update_api_updates_existing_event_without_creating_
 def test_portal_admin_events_list_api_returns_events_without_blocking_page_render(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr("src.functions.portal.get_events_container", FakeEventsContainer)
     monkeypatch.setattr(
         "src.functions.portal.list_event_documents",
         lambda **_: [
@@ -677,7 +677,7 @@ def test_portal_admin_events_list_api_returns_events_without_blocking_page_rende
 def test_portal_admin_events_list_api_includes_unlisted_and_non_completion_events(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr("src.functions.portal.get_events_container", FakeEventsContainer)
     monkeypatch.setattr(
         "src.functions.portal.list_event_documents",
         lambda **_: [
@@ -815,7 +815,7 @@ def test_portal_admin_completion_certs_import_api_allows_empty_optional_csv_valu
 def test_portal_admin_completion_certs_import_api_rejects_unknown_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr("src.functions.portal.get_events_container", FakeEventsContainer)
     request = build_authorized_portal_api_request(
         monkeypatch,
         body=json.dumps(
@@ -3109,7 +3109,7 @@ def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_f
         "createdAt": "2026-05-15T15:00:44Z",
         "updatedAt": "2026-05-15T15:00:44Z",
     }
-    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr("src.functions.portal.get_events_container", FakeEventsContainer)
     monkeypatch.setattr(
         "src.functions.portal.list_event_documents",
         lambda **_: [
@@ -3234,7 +3234,7 @@ def test_portal_admin_dashboard_welcome_metrics_api_uses_latest_open_event_start
         "verificationCount": 42,
         "createdAt": "2026-06-28T06:02:00Z",
     }
-    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr("src.functions.portal.get_events_container", FakeEventsContainer)
     monkeypatch.setattr(
         "src.functions.portal.list_event_documents",
         lambda **_: [
@@ -3290,7 +3290,7 @@ def test_portal_admin_dashboard_welcome_metrics_api_prefers_preaggregated_comple
 ) -> None:
     reset_portal_auth_env(monkeypatch)
     configure_portal_auth_bypass_env(monkeypatch, display_name="系統管理者")
-    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: FakeEventsContainer())
+    monkeypatch.setattr("src.functions.portal.get_events_container", FakeEventsContainer)
     monkeypatch.setattr(
         "src.functions.portal.list_event_documents",
         lambda **_: [
