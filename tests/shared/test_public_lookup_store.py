@@ -32,6 +32,13 @@ class FakeLookupAttemptsContainer:
         return body
 
 
+def test_fake_lookup_attempts_container_read_item_raises_not_used() -> None:
+    container = FakeLookupAttemptsContainer()
+
+    with pytest.raises(AssertionError, match="not used"):
+        container.read_item(item="lookup_id", partition_key="lookup_id")
+
+
 def test_build_public_lookup_attempt_id_uses_stable_uuid_without_raw_ip() -> None:
     attempt_id = build_public_lookup_attempt_id("203.0.113.10")
 
@@ -245,5 +252,10 @@ def test_get_public_lookup_store_config_requires_container_name(
     monkeypatch.setenv("COSMOS_DATABASE_NAME", "ipg-certificate")
     monkeypatch.delenv("COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER", raising=False)
 
-    with pytest.raises(PublicLookupStoreConfigurationError, match="公開查詢限制容器"):
+    with pytest.raises(PublicLookupStoreConfigurationError) as exc_info:
         get_public_lookup_store_config()
+
+    assert str(exc_info.value) == (
+        "Cosmos DB 公開查詢限制容器尚未設定完成。請設定 COSMOS_ENDPOINT、COSMOS_DATABASE_NAME "
+        "與 COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER。"
+    )
