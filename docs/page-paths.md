@@ -443,7 +443,7 @@ Request JSON 範例：
 - 頁面標題不顯示額外的左上角小字
 - 主畫面提供完訓證明資料的清單檢視區
 - 完訓證明資料依活動 `eventId` 從 `GET /api/v1/admin/completion-certs?eventId=<eventId>` 載入
-- CSV 匯入會呼叫 `POST /api/v1/admin/completion-certs/import`，由後端解析 KKTIX CSV、過濾非白名單欄位，並寫入 Cosmos DB `completionCerts`
+- CSV 匯入會先讀取 CSV 第一列作為表頭，讓管理者在上傳視窗配對報名序號、ID、Badge Name、姓名、公司名、Email 與票種欄位；前端會將配對結果送至 `POST /api/v1/admin/completion-certs/import`，後端依配對索引解析 CSV、過濾非白名單欄位，並寫入 Cosmos DB `completionCerts`
 - CSV 匯入後的清單列預設為 `未簽到` 且 `certStatus` 為 `notIssued`；`issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 在會眾申請並完成產生檔案前為 `null`，`downloadCount` 與 `verificationCount` 預設為 `0`，`firstDownloadAt` 與 `lastDownloadAt` 預設為 `null`
 - CSV 匯入完成後會以該活動目前所有 `completionCerts` 文件重算活動文件的 `metrics.completionCert`
 - 同一活動再次匯入 CSV 時，會以穩定的 `eventId + number + kktixId` 產生文件 ID 並 upsert 到同一批 Cosmos DB 資料
@@ -660,7 +660,7 @@ Response example:
 
 ### `POST /api/v1/admin/completion-certs/import`
 
-- 匯入單一活動的 KKTIX CSV，後端只寫入白名單欄位；欄位規則由 [cosmos-data-model.md](cosmos-data-model.md) 定義
+- 匯入單一活動的完訓證明 CSV。管理端會先讀取 CSV 表頭並送出欄位配對；後端依 `fieldMapping` 解析資料，且只寫入白名單欄位。欄位規則由 [cosmos-data-model.md](cosmos-data-model.md) 定義
 - 只接受已登入且通過授權的管理者 session
 - 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
 - 不保留原始 CSV 檔案；匯入後直接 upsert 到 Cosmos DB `completionCerts`
@@ -671,7 +671,16 @@ Request JSON example:
 ```json
 {
   "eventId": "evt_20260425_ipg",
-  "csvText": "報名序號,票種,Email,Id,你是誰，ID 或具有鑑識度的名稱 Name on Badge,服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)\n1,一般票,ming@example.com,KKTIX-001,Ming,iPlayground"
+  "csvText": "序號,信箱,暱稱,姓名,公司,KKTIX代碼,票券\n1,ming@example.com,Ming,王小明,iPlayground,KKTIX-001,一般票",
+  "fieldMapping": {
+    "number": 0,
+    "email": 1,
+    "badgeName": 2,
+    "name": 3,
+    "organization": 4,
+    "kktixId": 5,
+    "ticketName": 6
+  }
 }
 ```
 

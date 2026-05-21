@@ -812,6 +812,57 @@ def test_portal_admin_completion_certs_import_api_allows_empty_optional_csv_valu
     assert completion_cert["organization"] == ""
 
 
+def test_portal_admin_completion_certs_import_api_uses_field_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_1"] = {
+        "id": "evt_1",
+        "name": "iPlayground 2026",
+    }
+    fake_completion_container = FakeCompletionCertsContainer()
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_events_container)
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "csvText": (
+                    "序號,信箱,暱稱,姓名,公司,KKTIX代碼,票券\n"
+                    "8,lin@example.com,Lin Badge,林小美,iPlayground,KKTIX-008,工作坊票"
+                ),
+                "fieldMapping": {
+                    "number": 0,
+                    "email": 1,
+                    "badgeName": 2,
+                    "name": 3,
+                    "organization": 4,
+                    "kktixId": 5,
+                    "ticketName": 6,
+                },
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        url="http://localhost:7075/api/v1/admin/completion-certs/import",
+    )
+
+    response = portal_admin_completion_certs_import_api(request)
+
+    assert response.status_code == 200
+    completion_cert = next(iter(fake_completion_container.items.values()))
+    assert completion_cert["number"] == 8
+    assert completion_cert["email"] == "lin@example.com"
+    assert completion_cert["badgeName"] == "Lin Badge"
+    assert completion_cert["name"] == "林小美"
+    assert completion_cert["organization"] == "iPlayground"
+    assert completion_cert["kktixId"] == "KKTIX-008"
+    assert completion_cert["ticketName"] == "工作坊票"
+
+
 def test_portal_admin_completion_certs_import_api_rejects_unknown_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2570,6 +2621,8 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert 'id="portal-completion-upload-file-name"' in body
     assert 'id="portal-completion-upload-submit"' in body
     assert 'id="portal-completion-upload-event"' in body
+    assert 'id="portal-completion-upload-mapping"' in body
+    assert 'id="portal-completion-upload-mapping-fields"' in body
     assert 'id="portal-completion-upload-event-select"' not in body
     assert 'id="portal-completion-upload-event-trigger"' not in body
     assert 'id="portal-completion-upload-event-options"' not in body
@@ -3454,6 +3507,9 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert 'id="completion-upload-file-name"' in body
     assert 'id="completion-upload-submit"' in body
     assert 'id="completion-upload-event"' in body
+    assert 'id="completion-upload-mapping"' in body
+    assert 'id="completion-upload-mapping-fields"' in body
+    assert "配對 CSV 欄位" in body
     assert 'id="completion-upload-event-select"' not in body
     assert 'id="completion-upload-event-trigger"' not in body
     assert 'id="completion-upload-event-options"' not in body
@@ -4233,6 +4289,8 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "portal-completion-upload-file-name" in body
     assert "portal-completion-upload-submit" in body
     assert "portal-completion-upload-event" in body
+    assert "portal-completion-upload-mapping" in body
+    assert "portal-completion-upload-mapping-fields" in body
     assert "portal-completion-upload-event-trigger" in body
     assert "updateDashboardCompletionUploadFileName" in body
     assert "isDashboardCompletionCsvFile" in body
@@ -4258,7 +4316,10 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "adminCompletionCertsImportApiPath" in body
     assert "完訓證明資料匯入中..." in body
     assert "eventId: getDashboardCompletionUploadEventName()" in body
-    assert "selectedFile.text()" in body
+    assert "prepareDashboardCompletionUploadFieldMapping(selectedFile)" in body
+    assert "file.text()" in body
+    assert "readDashboardCompletionUploadFieldMapping" in body
+    assert "fieldMapping: readDashboardCompletionUploadFieldMapping()" in body
     assert "\"X-Portal-CSRF-Token\": portalCsrfToken" in body
     assert "contentFrame.contentWindow?.postMessage" in body
     assert '.endsWith(".csv")' in body
@@ -4359,7 +4420,7 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "function padDateTimePart" not in body
     assert "function parseDisplayDateTimeValue" not in body
     assert "textInput.type = \"datetime-local\"" not in body
-    assert "document.createElement(\"select\")" not in body
+    assert "select.id = `portal-completion-upload-map-${field.key}`" in body
     assert "installDateTimePicker(dashboardEventCompletionDownloadStartsAtInput)" in body
     assert "installDatePicker(dashboardEventStartDateInput)" in body
     assert "installDatePicker(dashboardEventEndDateInput)" in body
@@ -4377,6 +4438,8 @@ def test_portal_dashboard_js_asset_returns_expected_content_type() -> None:
     assert "contentFrame.contentWindow.location.reload()" not in body
     assert "window.alert(error instanceof Error ? error.message" not in body
     assert "ipg:completion-upload:open" in body
+    assert "readDashboardCompletionUploadFieldMapping" in body
+    assert "fieldMapping: readDashboardCompletionUploadFieldMapping()" in body
     assert "儲存變更" in body
     assert 'pageShell?.setAttribute("inert", "")' in body
     assert 'pageShell?.setAttribute("aria-hidden", "true")' in body
@@ -4409,6 +4472,9 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert 'document.getElementById("completion-upload-file-name")' in body
     assert 'document.getElementById("completion-upload-submit")' in body
     assert 'document.getElementById("completion-upload-event")' in body
+    assert 'document.getElementById("completion-upload-mapping")' in body
+    assert "readCompletionUploadFieldMapping" in body
+    assert "fieldMapping" in body
     assert '"completion-upload-event-trigger"' in body
     assert 'document.getElementById("completion-select-all")' not in body
     assert 'document.getElementById("completion-bulk-downloadable")' in body

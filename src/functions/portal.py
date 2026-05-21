@@ -807,7 +807,12 @@ def parse_completion_csv_payload(
         return None, "CSV 沒有可匯入的資料。", None
 
     _, headers = rows[0]
-    column_indexes = resolve_completion_csv_column_indexes(headers)
+    column_indexes, mapping_error = resolve_completion_csv_column_indexes_from_payload(
+        headers,
+        payload.get("fieldMapping"),
+    )
+    if mapping_error:
+        return None, mapping_error, None
     missing_fields = [
         field_name
         for field_name in sorted(PORTAL_COMPLETION_CSV_REQUIRED_COLUMNS)
@@ -899,6 +904,35 @@ def resolve_completion_csv_column_indexes(headers: list[str]) -> dict[str, int]:
         )
         for field_name, aliases in PORTAL_COMPLETION_CSV_ALIASES.items()
     }
+
+
+def resolve_completion_csv_column_indexes_from_payload(
+    headers: list[str],
+    field_mapping: Any,
+) -> tuple[dict[str, int], str | None]:
+    if field_mapping is None:
+        return resolve_completion_csv_column_indexes(headers), None
+
+    if not isinstance(field_mapping, dict):
+        return {}, "CSV 欄位配對格式不合法。"
+
+    column_indexes: dict[str, int] = {}
+    for field_name in PORTAL_COMPLETION_CSV_ALIASES:
+        raw_index = field_mapping.get(field_name)
+        if isinstance(raw_index, bool):
+            return {}, "CSV 欄位配對格式不合法。"
+        if isinstance(raw_index, int):
+            column_index = raw_index
+        elif isinstance(raw_index, str) and raw_index.strip().isdigit():
+            column_index = int(raw_index.strip())
+        else:
+            column_index = -1
+
+        if column_index >= len(headers):
+            return {}, "CSV 欄位配對超出可用欄位範圍。"
+        column_indexes[field_name] = column_index
+
+    return column_indexes, None
 
 
 def resolve_completion_csv_cell(row: list[str], column_index: int) -> str:

@@ -336,32 +336,31 @@ changeRequested
 
 公開首頁查詢到 `changeRequested` 狀態時仍會進入「選擇證明顯示方式」，但不再顯示「提出修改申請」。頁面會提示修改申請正在處理中，並告知使用者若現在確認產生證書，將視為放棄本次修改申請。
 
-目前 KKTIX CSV 白名單欄位：
+完訓證明 CSV 匯入會將 CSV 第一列視為表頭。管理端會讓使用者配對下列正規化欄位，並把配對結果以 `fieldMapping` 欄位索引送給後端；後端只會寫入這些白名單欄位。若前端未提供 `fieldMapping`，後端仍會以既有 KKTIX 表頭別名自動解析，供舊流程或測試資料相容。
 
-| 正規化欄位 | CSV 表頭 |
-| --- | --- |
-| `number` | `報名序號` |
-| `kktixId` | `Id` |
-| `badgeName` | `你是誰，ID 或具有鑑識度的名稱 Name on Badge` |
-| `name` | `姓名 Full Name` |
-| `organization` | `服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)` |
-| `email` | `Email` 或 `email` |
-| `ticketName` | `票種` |
+| 正規化欄位 | 用途 | 既有自動配對表頭 |
+| --- | --- | --- |
+| `number` | 報名序號 | `報名序號` |
+| `kktixId` | KKTIX 或外部報名 ID | `Id` |
+| `badgeName` | Badge Name | `你是誰，ID 或具有鑑識度的名稱 Name on Badge` |
+| `name` | 證明姓名 | `姓名 Full Name` |
+| `organization` | 公司名或服務單位 | `服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)` |
+| `email` | Email | `Email` 或 `email` |
+| `ticketName` | 票種 | `票種` |
 
-CSV 必要表頭欄位包含：
+CSV 必要配對欄位包含：
 
-- `報名序號`
-- `Id`
-- `你是誰，ID 或具有鑑識度的名稱 Name on Badge`
-- `Email` 或 `email`
-- `票種`
-- `服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)`
+- `number`
+- `kktixId`
+- `badgeName`
+- `name`
+- `organization`
+- `email`
+- `ticketName`
 
-`報名序號` 必須是整數。
+`number` 必須是整數。
 
-`姓名 Full Name` 與
-`服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)`
-欄位必須存在，但每列值可以空白；缺少值時分別以空字串儲存。
+`name` 與 `organization` 欄位必須完成配對，但每列值可以空白；缺少值時分別以空字串儲存。
 
 其他 CSV 欄位不得寫入完訓證明文件，除非後續文件明確擴充白名單。
 

@@ -47,6 +47,15 @@ const dashboardCompletionUploadFileName = document.getElementById(
 const dashboardCompletionUploadErrors = document.getElementById(
   "portal-completion-upload-errors"
 );
+const dashboardCompletionUploadMapping = document.getElementById(
+  "portal-completion-upload-mapping"
+);
+const dashboardCompletionUploadMappingSummary = document.getElementById(
+  "portal-completion-upload-mapping-summary"
+);
+const dashboardCompletionUploadMappingFields = document.getElementById(
+  "portal-completion-upload-mapping-fields"
+);
 const dashboardCompletionUploadDropzone = document.querySelector(
   'label[for="portal-completion-upload-file"]'
 );
@@ -125,6 +134,24 @@ const failedDashboardCompletionUploadFileName = "CSV 檔案讀取失敗";
 const importingDashboardCompletionUploadFileName = "完訓證明資料匯入中...";
 const defaultDashboardCompletionUploadEventName = "";
 const emptyDashboardCompletionUploadEventName = "尚無活動資料";
+const dashboardCompletionCsvFieldAliases = {
+  badgeName: ["你是誰，ID 或具有鑑識度的名稱 Name on Badge"],
+  email: ["Email", "email"],
+  kktixId: ["Id"],
+  name: ["姓名 Full Name"],
+  number: ["報名序號"],
+  organization: ["服務單位（將顯示於 Badge 上）Organization / Company (will appear on Badge)"],
+  ticketName: ["票種"],
+};
+const dashboardCompletionCsvImportFields = [
+  { key: "number", label: "報名序號", required: true },
+  { key: "kktixId", label: "Id", required: true },
+  { key: "badgeName", label: "Badge Name", required: true },
+  { key: "name", label: "姓名 Full Name", required: true },
+  { key: "organization", label: "公司名", required: true },
+  { key: "email", label: "Email", required: true },
+  { key: "ticketName", label: "票種", required: true },
+];
 const defaultDashboardTaxUploadFileName = "尚未選擇 PDF 或圖檔";
 const invalidDashboardTaxUploadFileName = "請選擇 PDF、PNG 或 JPG 檔案";
 const failedDashboardTaxUploadFileName = "檔案讀取失敗";
@@ -147,6 +174,7 @@ let dashboardEventDialogMode = "create";
 let dashboardEventInitialState = "";
 let dashboardEventEditingId = "";
 let dashboardCompletionUploadPreviousFocus = null;
+let dashboardCompletionUploadCsvText = "";
 let dashboardTaxUploadPreviousFocus = null;
 let dashboardTaxUploadDialogMode = "create";
 let dashboardTaxUploadEditingRowId = "";
@@ -947,6 +975,8 @@ function resetDashboardCompletionUploadDialog() {
     dashboardCompletionUploadFileInput.value = "";
   }
 
+  dashboardCompletionUploadCsvText = "";
+  renderDashboardCompletionUploadFieldMapping([]);
   clearDashboardCompletionUploadErrors();
   applyDashboardCompletionUploadEventValue(
     getCompletionEventNameFromFrame() ||
@@ -979,6 +1009,8 @@ function updateDashboardCompletionUploadFileName() {
     !(dashboardCompletionUploadFileInput.files instanceof FileList) ||
     dashboardCompletionUploadFileInput.files.length === 0
   ) {
+    dashboardCompletionUploadCsvText = "";
+    renderDashboardCompletionUploadFieldMapping([]);
     dashboardCompletionUploadFileName.textContent = defaultDashboardCompletionUploadFileName;
     return;
   }
@@ -986,11 +1018,20 @@ function updateDashboardCompletionUploadFileName() {
   const selectedFile = dashboardCompletionUploadFileInput.files[0];
   if (!isDashboardCompletionCsvFile(selectedFile)) {
     dashboardCompletionUploadFileInput.value = "";
+    dashboardCompletionUploadCsvText = "";
+    renderDashboardCompletionUploadFieldMapping([]);
     dashboardCompletionUploadFileName.textContent = invalidDashboardCompletionUploadFileName;
     return;
   }
 
   dashboardCompletionUploadFileName.textContent = selectedFile.name;
+  void prepareDashboardCompletionUploadFieldMapping(selectedFile).catch((error) => {
+    dashboardCompletionUploadCsvText = "";
+    renderDashboardCompletionUploadFieldMapping([]);
+    dashboardCompletionUploadFileName.textContent =
+      error instanceof Error ? error.message : failedDashboardCompletionUploadFileName;
+    showDashboardCompletionUploadError(error);
+  });
 }
 
 function clearDashboardCompletionUploadErrors() {
@@ -1071,6 +1112,150 @@ function assignDashboardCompletionUploadFile(file) {
   updateDashboardCompletionUploadFileName();
 }
 
+function normaliseDashboardCompletionCsvKey(value) {
+  return value.trim().toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+function parseDashboardCompletionCsv(csvText) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < csvText.length; index += 1) {
+    const character = csvText[index];
+
+    if (character === '"') {
+      if (inQuotes && csvText[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (character === "," && !inQuotes) {
+      row.push(field);
+      field = "";
+      continue;
+    }
+
+    if ((character === "\n" || character === "\r") && !inQuotes) {
+      if (character === "\r" && csvText[index + 1] === "\n") {
+        index += 1;
+      }
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      continue;
+    }
+
+    field += character;
+  }
+
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return rows
+    .map((csvRow) => csvRow.map((csvField) => csvField.trim()))
+    .filter((csvRow) => csvRow.some((csvField) => csvField.length > 0));
+}
+
+function findDashboardCompletionCsvColumnIndex(headers, aliases) {
+  const normalizedAliases = aliases.map(normaliseDashboardCompletionCsvKey);
+  return headers.findIndex((header) =>
+    normalizedAliases.includes(normaliseDashboardCompletionCsvKey(header))
+  );
+}
+
+function renderDashboardCompletionUploadFieldMapping(headers) {
+  if (!(dashboardCompletionUploadMapping instanceof HTMLElement)) {
+    return;
+  }
+
+  if (!headers.length || !(dashboardCompletionUploadMappingFields instanceof HTMLElement)) {
+    dashboardCompletionUploadMapping.hidden = true;
+    dashboardCompletionUploadMappingFields?.replaceChildren();
+    if (dashboardCompletionUploadMappingSummary) {
+      dashboardCompletionUploadMappingSummary.textContent = "";
+    }
+    return;
+  }
+
+  const fieldControls = dashboardCompletionCsvImportFields.map((field) => {
+    const label = document.createElement("label");
+    label.className = "field";
+
+    const labelText = document.createElement("span");
+    labelText.className = "field-label";
+    labelText.textContent = `${field.label}${field.required ? " *" : ""}`;
+
+    const select = document.createElement("select");
+    select.id = `portal-completion-upload-map-${field.key}`;
+    select.name = `portalCompletionUploadMap${field.key}`;
+
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "-1";
+    emptyOption.textContent = "不匯入";
+    select.append(emptyOption);
+
+    headers.forEach((header, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = header || `未命名欄位 ${index + 1}`;
+      select.append(option);
+    });
+
+    select.value = String(findDashboardCompletionCsvColumnIndex(
+      headers,
+      dashboardCompletionCsvFieldAliases[field.key] || []
+    ));
+    label.append(labelText, select);
+    return label;
+  });
+
+  dashboardCompletionUploadMappingFields.replaceChildren(...fieldControls);
+  if (dashboardCompletionUploadMappingSummary) {
+    dashboardCompletionUploadMappingSummary.textContent =
+      `已讀取 ${headers.length} 個 CSV 欄位，請確認每個必要欄位的配對。`;
+  }
+  dashboardCompletionUploadMapping.hidden = false;
+}
+
+async function prepareDashboardCompletionUploadFieldMapping(file) {
+  dashboardCompletionUploadCsvText = await file.text();
+  const parsedRows = parseDashboardCompletionCsv(dashboardCompletionUploadCsvText);
+  const headers = parsedRows[0] || [];
+  if (!headers.length) {
+    throw new Error("CSV 沒有可配對的表頭。");
+  }
+  renderDashboardCompletionUploadFieldMapping(headers);
+}
+
+function readDashboardCompletionUploadFieldMapping() {
+  const fieldMapping = {};
+  const missingFields = [];
+
+  dashboardCompletionCsvImportFields.forEach((field) => {
+    const select = document.getElementById(`portal-completion-upload-map-${field.key}`);
+    const columnIndex = select instanceof HTMLSelectElement ? Number(select.value) : -1;
+    fieldMapping[field.key] = Number.isInteger(columnIndex) ? columnIndex : -1;
+    if (field.required && fieldMapping[field.key] < 0) {
+      missingFields.push(field.label);
+    }
+  });
+
+  if (missingFields.length > 0) {
+    throw new Error(`請完成必要欄位配對：${missingFields.join("、")}。`);
+  }
+
+  return fieldMapping;
+}
+
 function handleDashboardCompletionUploadDrag(event) {
   if (dashboardCompletionUploadDialog?.hidden || !hasDraggedDashboardCompletionFiles(event)) {
     return;
@@ -1128,7 +1313,9 @@ async function sendDashboardCompletionUploadFileToFrame() {
   }
 
   try {
-    const csvText = await selectedFile.text();
+    if (!dashboardCompletionUploadCsvText) {
+      await prepareDashboardCompletionUploadFieldMapping(selectedFile);
+    }
     const response = await fetch(adminCompletionCertsImportApiPath, {
       method: "POST",
       headers: {
@@ -1136,8 +1323,9 @@ async function sendDashboardCompletionUploadFileToFrame() {
         "X-Portal-CSRF-Token": portalCsrfToken,
       },
       body: JSON.stringify({
-        csvText,
+        csvText: dashboardCompletionUploadCsvText,
         eventId: getDashboardCompletionUploadEventName(),
+        fieldMapping: readDashboardCompletionUploadFieldMapping(),
       }),
     });
     if (handlePortalUnauthorizedResponse(response)) {
