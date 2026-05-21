@@ -159,9 +159,9 @@ def build_tax_receipt_document(
     receipt_id: str,
     source_blob_name: str,
     tax_id: str,
-    now: str | None = None,
+    timestamp: str | None = None,
 ) -> dict[str, Any]:
-    timestamp = now or utc_now_iso()
+    resolved_timestamp = timestamp or utc_now_iso()
     return {
         "id": receipt_id,
         "eventId": event_id,
@@ -176,9 +176,9 @@ def build_tax_receipt_document(
         "downloadCount": 0,
         "portalDownloadCount": 0,
         "createdBy": actor,
-        "createdAt": timestamp,
+        "createdAt": resolved_timestamp,
         "updatedBy": actor,
-        "updatedAt": timestamp,
+        "updatedAt": resolved_timestamp,
     }
 
 
