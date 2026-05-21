@@ -16,6 +16,27 @@ _TAX_RECEIPT_CONTAINER_NOT_FOUND_MESSAGE = (
     "Cosmos DB 繳稅證明容器不存在。請確認 COSMOS_TAX_RECEIPTS_CONTAINER "
     "是否指向已建立的資源。"
 )
+_TAX_RECEIPT_SELECT_BASE_FIELDS = (
+    "c.id, c.eventId, c.taxId, c.amount, c.generatedAt"
+)
+_TAX_RECEIPT_SELECT_DOWNLOAD_FIELDS = (
+    "c.sourceBlobName, c.fileName, c.contentType, c.fileSize, "
+    "c.fileSequence, c.downloadCount, c.portalDownloadCount, "
+    "c.lastDownloadAt, c.lastPortalDownloadAt, c.createdAt, c.updatedAt"
+)
+_TAX_RECEIPT_SELECT_SUMMARY_FIELDS = (
+    "c.fileName, c.contentType, c.fileSize, c.fileSequence"
+)
+_TAX_RECEIPT_FROM_AND_EVENT_FILTER = "FROM c WHERE c.eventId = @eventId"
+_TAX_RECEIPT_TAX_ID_FILTER = " AND c.taxId = @taxId"
+_LIST_TAX_RECEIPT_DOCUMENTS_QUERY = (
+    f"SELECT {_TAX_RECEIPT_SELECT_BASE_FIELDS}, {_TAX_RECEIPT_SELECT_DOWNLOAD_FIELDS} "
+    f"{_TAX_RECEIPT_FROM_AND_EVENT_FILTER}"
+)
+_LIST_TAX_RECEIPT_DOCUMENTS_BY_TAX_ID_QUERY = (
+    f"SELECT {_TAX_RECEIPT_SELECT_BASE_FIELDS}, {_TAX_RECEIPT_SELECT_SUMMARY_FIELDS} "
+    f"{_TAX_RECEIPT_FROM_AND_EVENT_FILTER}{_TAX_RECEIPT_TAX_ID_FILTER}"
+)
 
 
 @dataclass(frozen=True)
@@ -103,9 +124,16 @@ def build_tax_receipt_id(
     actor: str,
     event_id: str,
 ) -> str:
+    for field_name, field_value in (
+        ("event_id", event_id),
+        ("actor", actor),
+        ("idempotency_key", idempotency_key),
+    ):
+        _require_clean_value(field_name, field_value)
+
     namespace_value = (
         f"{TAX_RECEIPT_NAMESPACE}:"
-        f"{event_id.strip()}:{actor.strip().lower()}:{idempotency_key.strip()}"
+        f"{event_id}:{actor.lower()}:{idempotency_key}"
     )
     return f"trec_{uuid5(NAMESPACE_URL, namespace_value)}"
 
@@ -117,7 +145,9 @@ def build_tax_receipt_blob_name(
     receipt_id: str,
 ) -> str:
     extension = resolve_tax_receipt_file_extension(content_type)
-    return f"{event_id.strip()}/{receipt_id.strip()}{extension}"
+    safe_event_id = _require_clean_path_segment("event_id", event_id)
+    safe_receipt_id = _require_clean_path_segment("receipt_id", receipt_id)
+    return f"{safe_event_id}/{safe_receipt_id}{extension}"
 
 
 def build_tax_receipt_file_name(
@@ -126,10 +156,33 @@ def build_tax_receipt_file_name(
     file_sequence: int,
     tax_id: str,
 ) -> str:
+    safe_tax_id = _require_clean_path_segment("tax_id", tax_id)
     return (
-        f"receipt-{tax_id.strip()}-{file_sequence}"
+        f"receipt-{safe_tax_id}-{file_sequence}"
         f"{resolve_tax_receipt_file_extension(content_type)}"
     )
+
+
+def _require_clean_value(field_name: str, field_value: str) -> str:
+    if not field_value:
+        raise ValueError(f"{field_name} must not be empty.")
+    if field_value != field_value.strip():
+        raise ValueError(
+            f"{field_name} must not contain leading/trailing whitespace."
+        )
+    return field_value
+
+
+def _require_clean_path_segment(field_name: str, field_value: str) -> str:
+    clean_value = _require_clean_value(field_name, field_value)
+    if (
+        "/" in clean_value
+        or "\\" in clean_value
+        or ".." in clean_value
+        or clean_value in {".", ".."}
+    ):
+        raise ValueError(f"{field_name} contains invalid path characters.")
+    return clean_value
 
 
 def resolve_tax_receipt_file_extension(content_type: str) -> str:
@@ -225,13 +278,7 @@ def list_tax_receipt_documents(
     try:
         items = list(
             container.query_items(
-                query=(
-                    "SELECT c.id, c.eventId, c.taxId, c.amount, c.generatedAt, "
-                    "c.sourceBlobName, c.fileName, c.contentType, c.fileSize, "
-                    "c.fileSequence, c.downloadCount, c.portalDownloadCount, "
-                    "c.lastDownloadAt, c.lastPortalDownloadAt, c.createdAt, c.updatedAt FROM c "
-                    "WHERE c.eventId = @eventId"
-                ),
+                query=_LIST_TAX_RECEIPT_DOCUMENTS_QUERY,
                 parameters=[{"name": "@eventId", "value": event_id}],
                 partition_key=event_id,
                 enable_cross_partition_query=False,
@@ -255,11 +302,7 @@ def list_tax_receipt_documents_by_tax_id(
     try:
         items = list(
             container.query_items(
-                query=(
-                    "SELECT c.id, c.eventId, c.taxId, c.amount, c.generatedAt, "
-                    "c.fileName, c.contentType, c.fileSize, c.fileSequence FROM c "
-                    "WHERE c.eventId = @eventId AND c.taxId = @taxId"
-                ),
+                query=_LIST_TAX_RECEIPT_DOCUMENTS_BY_TAX_ID_QUERY,
                 parameters=[
                     {"name": "@eventId", "value": event_id},
                     {"name": "@taxId", "value": tax_id},
