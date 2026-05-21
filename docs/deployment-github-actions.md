@@ -174,16 +174,21 @@ gh variable list -R iplayground/CertificatePortal
 gh workflow list -R iplayground/CertificatePortal
 ```
 
-## GitHub Actions workflow
+## GitHub Actions workflows
 
-目前 workflow 使用 GitHub Actions OIDC + `Azure/functions-action@v1`，只負責既有 Function App 的程式碼部署，不會重跑整份 Bicep。
+目前部署 workflow 使用 GitHub Actions OIDC + `Azure/functions-action@v1`，只負責既有 Function App 的程式碼部署，不會重跑整份 Bicep。
 
-### 觸發條件
+本專案另外提供 PR 檢查 workflow：
+
+- `.github/workflows/pr-checks.yml`：在 PR、push 到 `main` 與手動執行時，使用 Python 3.13 安裝依賴、執行 `compileall`、匯入 `function_app`，並執行 `pytest`。
+- `.github/workflows/dependency-review.yml`：在 PR 中檢查 dependency diff。
+
+### 部署 workflow 觸發條件
 
 - push 到 `main`
 - 手動執行 `workflow_dispatch`
 
-### 執行順序
+### 部署 workflow 執行順序
 
 1. checkout 原始碼
 2. 設定 Python 3.13
