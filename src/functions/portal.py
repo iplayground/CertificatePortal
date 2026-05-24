@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 
 import azure.functions as func
 
+from src.functions.assets import asset_url, build_asset_url_context
 from src.shared.portal_auth import (
     PORTAL_GOOGLE_SESSION_COOKIE_NAME,
     PortalGoogleAuthError,
@@ -348,6 +349,14 @@ def build_portal_login_context(
     *,
     flash_error_code: str = "",
 ) -> dict[str, str]:
+    asset_context = build_asset_url_context(
+        "favicon.png",
+        "logo_b_alpha.png",
+        "page-alert.js",
+        "portal.css",
+        "portal-login.js",
+        "theme.css",
+    )
     login_url = build_portal_login_url(req, PORTAL_ENTRY_PATH)
     home_link_html = build_portal_home_link_html()
     lead_html = ""
@@ -381,6 +390,7 @@ def build_portal_login_context(
             )
             secondary_action_html = home_link_html
             return {
+                **asset_context,
                 "portal_panel_kicker": "管理者登入",
                 "page_alert_html": page_alert_html,
                 "portal_lead_html": lead_html,
@@ -401,6 +411,7 @@ def build_portal_login_context(
                 "</button>"
             )
             return {
+                **asset_context,
                 "portal_panel_kicker": "管理者登入",
                 "page_alert_html": page_alert_html,
                 "portal_lead_html": lead_html,
@@ -413,13 +424,14 @@ def build_portal_login_context(
         primary_action_html = (
             f'<a class="portal-sso-button portal-action-link" href="{escape(login_url)}" '
             'data-loading-label="導向 Google 登入中..." aria-label="使用 Google 帳號登入">'
-            '<img class="portal-sso-button-icon" src="/assets/google-g-icon.svg" alt="" aria-hidden="true">'
+            f'<img class="portal-sso-button-icon" src="{escape(asset_url("google-g-icon.svg"))}" alt="" aria-hidden="true">'
             '<span class="portal-sso-button-copy">'
             '<span class="portal-sso-button-label">使用 Google 繼續</span>'
             "</span>"
             "</a>"
         )
         return {
+            **asset_context,
             "portal_panel_kicker": "管理者登入",
             "page_alert_html": page_alert_html,
             "portal_lead_html": lead_html,
@@ -430,6 +442,7 @@ def build_portal_login_context(
         }
 
     return {
+        **asset_context,
         "portal_panel_kicker": "管理者登入",
         "page_alert_html": page_alert_html,
         "portal_lead_html": lead_html,
@@ -442,6 +455,22 @@ def build_portal_login_context(
 
 def build_portal_dashboard_context(req: func.HttpRequest, access: PortalAccess) -> dict[str, str]:
     return {
+        **build_asset_url_context(
+            "favicon.png",
+            "logo_b_alpha.png",
+            "logo_sq_b.png",
+            "page-alert.js",
+            "portal.css",
+            "portal-dashboard.js",
+            "portal-dashboard-completion-certs.js",
+            "portal-dashboard-completion-reviews.js",
+            "portal-dashboard-events.js",
+            "portal-dashboard-tax-receipts.js",
+            "portal-dashboard-welcome.js",
+            "portal-datetime-picker.js",
+            "portal-event-cache.js",
+            "theme.css",
+        ),
         "portal_entry_path": PORTAL_ENTRY_PATH,
         "portal_logout_url": build_portal_logout_url(req, PORTAL_ENTRY_PATH),
         "portal_csrf_token": build_portal_csrf_token(req, access),

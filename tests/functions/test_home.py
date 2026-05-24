@@ -7,6 +7,7 @@ from typing import Any
 import azure.functions as func
 import pytest
 
+from src.functions import assets
 from src.functions.assets import static_asset
 from src.functions.home import (
     build_document_lookup_blocked_message,
@@ -531,7 +532,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'data-label-key="document_type_tax_receipt"' in body
     assert "本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有" in body
     assert "Azure Functions 線上頁面已啟用" not in body
-    assert 'src="/assets/logo_b_alpha.png"' in body
+    assert 'src="/assets/logo_b_alpha.png?v=' in body
     assert "iPlayground Certify" not in body
     assert 'class="custom-select-trigger"' in body
     assert 'id="event-name-trigger"' not in body
@@ -552,19 +553,19 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'name="twitter:title"' not in body
     assert 'name="twitter:description"' not in body
     assert 'content="http://localhost:7075/"' in body
-    assert 'content="http://localhost:7075/assets/logo_sq_b.png"' in body
+    assert 'content="http://localhost:7075/assets/logo_sq_b.png?v=' in body
     assert 'rel="canonical"' in body
     assert 'rel="icon"' in body
-    assert 'href="/assets/favicon.png"' in body
+    assert 'href="/assets/favicon.png?v=' in body
     assert 'sizes="32x32"' in body
-    assert 'href="/assets/logo_sq_b.png"' in body
-    assert 'href="/assets/theme.css"' in body
-    assert 'href="/assets/home.css"' in body
-    assert 'src="/assets/locale-switcher.js"' in body
-    assert 'src="/assets/portal-datetime-picker.js"' in body
-    assert 'src="/assets/home.js"' in body
-    assert body.index('src="/assets/locale-switcher.js"') < body.index('src="/assets/home.js"')
-    assert body.index('src="/assets/portal-datetime-picker.js"') < body.index('src="/assets/home.js"')
+    assert 'href="/assets/logo_sq_b.png?v=' in body
+    assert 'href="/assets/theme.css?v=' in body
+    assert 'href="/assets/home.css?v=' in body
+    assert 'src="/assets/locale-switcher.js?v=' in body
+    assert 'src="/assets/portal-datetime-picker.js?v=' in body
+    assert 'src="/assets/home.js?v=' in body
+    assert body.index('src="/assets/locale-switcher.js?v=') < body.index('src="/assets/home.js?v=')
+    assert body.index('src="/assets/portal-datetime-picker.js?v=') < body.index('src="/assets/home.js?v=')
 
 
 def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
@@ -634,7 +635,7 @@ def test_home_page_prefers_forwarded_origin_for_head_urls() -> None:
     assert response.status_code == 200
     assert 'rel="canonical" href="https://certify.iplayground.test/"' in body
     assert 'property="og:url" content="https://certify.iplayground.test/"' in body
-    assert 'property="og:image" content="https://certify.iplayground.test/assets/logo_sq_b.png"' in body
+    assert 'property="og:image" content="https://certify.iplayground.test/assets/logo_sq_b.png?v=' in body
 
 
 def test_home_page_renders_open_events_from_event_store(
@@ -1963,6 +1964,7 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert "body.is-locale-menu-open .hero-card > :not(.page-toolbar)" in body
     assert ".locale-trigger" in body
     assert "margin-inline: auto;" in body
+
     assert ".feedback.is-error" in body
     assert ".feedback.is-warning" in body
     assert ".certificate-preview-loading" in body
@@ -2015,6 +2017,63 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert "cursor: not-allowed;" in body
 
 
+def test_versioned_static_asset_uses_long_cache_headers() -> None:
+    version = assets.asset_version("home.css")
+    response = static_asset(
+        build_request(
+            f"http://localhost:7075/assets/home.css?v={version}",
+            params={"v": version},
+            route_params={"asset_name": "home.css"},
+        )
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+    assert response.headers["ETag"] == f'"{version}"'
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_static_asset_returns_not_modified_for_matching_etag() -> None:
+    version = assets.asset_version("home.css")
+    response = static_asset(
+        build_request(
+            f"http://localhost:7075/assets/home.css?v={version}",
+            headers={"If-None-Match": f'"{version}"'},
+            params={"v": version},
+            route_params={"asset_name": "home.css"},
+        )
+    )
+
+    assert response.status_code == 304
+    assert response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+    assert response.headers["ETag"] == f'"{version}"'
+
+
+def test_asset_url_changes_when_asset_content_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    asset_path = tmp_path / "cache-test.js"
+    asset_path.write_text("const value = 1;\n", encoding="utf-8")
+    monkeypatch.setitem(
+        assets.ASSET_DEFINITIONS,
+        "cache-test.js",
+        (asset_path, "application/javascript", True),
+    )
+    assets.load_raw_asset_content.cache_clear()
+    assets.load_asset_content.cache_clear()
+    assets.asset_version.cache_clear()
+
+    first_url = assets.asset_url("cache-test.js")
+
+    asset_path.write_text("const value = 2;\n", encoding="utf-8")
+    assets.load_raw_asset_content.cache_clear()
+    assets.load_asset_content.cache_clear()
+    assets.asset_version.cache_clear()
+
+    assert assets.asset_url("cache-test.js") != first_url
+
+
 def test_theme_css_asset_returns_expected_content_type() -> None:
     response = static_asset(
         build_request(
@@ -2032,7 +2091,7 @@ def test_theme_css_asset_returns_expected_content_type() -> None:
     assert "--theme-primary-gradient" in body
     assert ".locale-trigger" in body
     assert ".locale-menu-option" in body
-    assert 'url("/assets/language_icon.svg")' in body
+    assert 'url("/assets/language_icon.svg?v=' in body
     assert "width: max-content;" in body
     assert "white-space: nowrap;" in body
     assert "linear-gradient(135deg, #5179fe 0%, #7f9aff 100%)" in body

@@ -377,11 +377,11 @@ def test_portal_login_page_shows_google_setup_message_when_not_authenticated(
     assert 'id="form-feedback"' in body
     assert 'id="portal-login-form"' not in body
     assert 'type="password"' not in body
-    assert 'href="/assets/theme.css"' in body
-    assert 'href="/assets/portal.css"' in body
-    assert 'src="/assets/page-alert.js"' in body
-    assert 'src="/assets/portal-login.js"' in body
-    assert 'src="/assets/logo_b_alpha.png"' in body
+    assert 'href="/assets/theme.css?v=' in body
+    assert 'href="/assets/portal.css?v=' in body
+    assert 'src="/assets/page-alert.js?v=' in body
+    assert 'src="/assets/portal-login.js?v=' in body
+    assert 'src="/assets/logo_b_alpha.png?v=' in body
 
 
 def test_portal_login_page_uses_portal_google_auth_entry_when_configured(
@@ -2916,7 +2916,7 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert "適用營業稅繳稅資料" not in body
     assert "參與證明" not in body
     assert "志工服務證明" not in body
-    assert 'src="/assets/logo_sq_b.png"' in body
+    assert 'src="/assets/logo_sq_b.png?v=' in body
     assert 'class="panel admin-workspace"' in body
     assert 'class="sidebar-account-panel"' in body
     assert 'id="admin-account-display">系統管理者<' in body
@@ -2924,17 +2924,17 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert "登出" in body
     assert 'class="admin-content-frame"' in body
     assert 'src="/portal/dashboard/welcome"' in body
-    assert 'href="/assets/theme.css"' in body
-    assert 'href="/assets/portal.css"' in body
-    assert 'href="/assets/favicon.png"' in body
-    assert 'src="/assets/portal-datetime-picker.js"' in body
-    assert 'src="/assets/portal-event-cache.js"' in body
-    assert 'src="/assets/portal-dashboard.js"' in body
-    assert body.index('src="/assets/portal-datetime-picker.js"') < body.index(
-        'src="/assets/portal-event-cache.js"'
+    assert 'href="/assets/theme.css?v=' in body
+    assert 'href="/assets/portal.css?v=' in body
+    assert 'href="/assets/favicon.png?v=' in body
+    assert 'src="/assets/portal-datetime-picker.js?v=' in body
+    assert 'src="/assets/portal-event-cache.js?v=' in body
+    assert 'src="/assets/portal-dashboard.js?v=' in body
+    assert body.index('src="/assets/portal-datetime-picker.js?v=') < body.index(
+        'src="/assets/portal-event-cache.js?v='
     )
-    assert body.index('src="/assets/portal-event-cache.js"') < body.index(
-        'src="/assets/portal-dashboard.js"'
+    assert body.index('src="/assets/portal-event-cache.js?v=') < body.index(
+        'src="/assets/portal-dashboard.js?v='
     )
     assert 'data-portal-account-storage-key="portalSignedInAccount"' not in body
     assert 'id="portal-login-form"' not in body
@@ -3229,7 +3229,7 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert 'class="embedded-page-shell"' in body
     assert 'id="welcome-account-display">系統管理者<' in body
     assert 'id="portal-logout"' not in body
-    assert 'src="/assets/logo_b_alpha.png"' in body
+    assert 'src="/assets/logo_b_alpha.png?v=' in body
     assert "歡迎回來" in body
     assert "你可以在這裡上傳文件申請清單、追蹤批次處理結果" in body
     assert 'class="metric-overview"' in body
@@ -3280,8 +3280,8 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert "目前尚未完成發證或仍需管理者處理的完訓證明案件總數" not in body
     assert "尚待匯入、發證或補件確認的完訓證明案件總數" not in body
     assert "最近一期活動已新增營業稅繳稅證明的金額合計" in body
-    assert 'href="/assets/favicon.png"' in body
-    assert 'src="/assets/portal-dashboard-welcome.js"' in body
+    assert 'href="/assets/favicon.png?v=' in body
+    assert 'src="/assets/portal-dashboard-welcome.js?v=' in body
 
 
 def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_from_cosmos(
@@ -3834,14 +3834,14 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert 'id="completion-upload-dialog"' in body
     assert 'aria-modal="true"' in body
     assert 'id="completion-upload-cancel"' in body
-    assert 'src="/assets/portal-event-cache.js"' in body
-    assert 'src="/assets/page-alert.js"' in body
-    assert 'src="/assets/portal-dashboard-completion-certs.js"' in body
-    assert body.index('src="/assets/portal-event-cache.js"') < body.index(
-        'src="/assets/page-alert.js"'
+    assert 'src="/assets/portal-event-cache.js?v=' in body
+    assert 'src="/assets/page-alert.js?v=' in body
+    assert 'src="/assets/portal-dashboard-completion-certs.js?v=' in body
+    assert body.index('src="/assets/portal-event-cache.js?v=') < body.index(
+        'src="/assets/page-alert.js?v='
     )
-    assert body.index('src="/assets/page-alert.js"') < body.index(
-        'src="/assets/portal-dashboard-completion-certs.js"'
+    assert body.index('src="/assets/page-alert.js?v=') < body.index(
+        'src="/assets/portal-dashboard-completion-certs.js?v='
     )
     assert "document-workspace-grid" not in body
     assert "上傳資料" not in body
@@ -3919,8 +3919,8 @@ def test_portal_dashboard_completion_reviews_page_returns_html_when_user_is_auth
     )
     assert 'class="brand-square-action completion-review-reject-button" id="completion-review-reject"' in body
     assert "通過並更新" in body
-    assert 'src="/assets/page-alert.js"' in body
-    assert 'src="/assets/portal-dashboard-completion-reviews.js"' in body
+    assert 'src="/assets/page-alert.js?v=' in body
+    assert 'src="/assets/portal-dashboard-completion-reviews.js?v=' in body
 
 
 def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized(
@@ -4045,18 +4045,18 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert "可將檔案拖曳到這裡" in body
     assert "還有其他檔案要上傳" in body
     assert "尚未選擇 PDF 或圖檔" in body
-    assert 'src="/assets/portal-datetime-picker.js"' in body
-    assert 'src="/assets/portal-event-cache.js"' in body
-    assert 'src="/assets/page-alert.js"' in body
-    assert 'src="/assets/portal-dashboard-tax-receipts.js"' in body
-    assert body.index('src="/assets/portal-datetime-picker.js"') < body.index(
-        'src="/assets/portal-event-cache.js"'
+    assert 'src="/assets/portal-datetime-picker.js?v=' in body
+    assert 'src="/assets/portal-event-cache.js?v=' in body
+    assert 'src="/assets/page-alert.js?v=' in body
+    assert 'src="/assets/portal-dashboard-tax-receipts.js?v=' in body
+    assert body.index('src="/assets/portal-datetime-picker.js?v=') < body.index(
+        'src="/assets/portal-event-cache.js?v='
     )
-    assert body.index('src="/assets/portal-event-cache.js"') < body.index(
-        'src="/assets/page-alert.js"'
+    assert body.index('src="/assets/portal-event-cache.js?v=') < body.index(
+        'src="/assets/page-alert.js?v='
     )
-    assert body.index('src="/assets/page-alert.js"') < body.index(
-        'src="/assets/portal-dashboard-tax-receipts.js"'
+    assert body.index('src="/assets/page-alert.js?v=') < body.index(
+        'src="/assets/portal-dashboard-tax-receipts.js?v='
     )
     assert "CSV" not in body
     assert "獨立工作頁" not in body
@@ -4165,14 +4165,14 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert 'for="event-completion-download-starts-at"' not in body
     assert 'id="event-completion-download-starts-at"' in body
     assert 'name="completionCertDownloadStartsAt"' in body
-    assert 'src="/assets/portal-datetime-picker.js"' in body
-    assert 'src="/assets/portal-event-cache.js"' in body
-    assert 'src="/assets/portal-dashboard-events.js"' in body
-    assert body.index('src="/assets/portal-datetime-picker.js"') < body.index(
-        'src="/assets/portal-event-cache.js"'
+    assert 'src="/assets/portal-datetime-picker.js?v=' in body
+    assert 'src="/assets/portal-event-cache.js?v=' in body
+    assert 'src="/assets/portal-dashboard-events.js?v=' in body
+    assert body.index('src="/assets/portal-datetime-picker.js?v=') < body.index(
+        'src="/assets/portal-event-cache.js?v='
     )
-    assert body.index('src="/assets/portal-event-cache.js"') < body.index(
-        'src="/assets/portal-dashboard-events.js"'
+    assert body.index('src="/assets/portal-event-cache.js?v=') < body.index(
+        'src="/assets/portal-dashboard-events.js?v='
     )
 
 

@@ -105,12 +105,12 @@ def test_verify_page_defaults_to_traditional_chinese(
     assert 'class="verify-page verify-page--invalid"' in body
     assert 'data-current-locale="zh-TW"' in body
     assert 'class="brand-row"' in body
-    assert 'class="brand-logo" id="brand-logo" src="/assets/logo_b_alpha.png"' in body
+    assert 'class="brand-logo" id="brand-logo" src="/assets/logo_b_alpha.png?v=' in body
     assert 'class="locale-switcher" id="locale-switcher"' in body
     assert 'aria-label="語系"' in body
     assert 'data-locale="zh-TW"' in body
     assert 'data-locale="en-US"' in body
-    assert '<script src="/assets/locale-switcher.js" defer></script>' in body
+    assert '<script src="/assets/locale-switcher.js?v=' in body
     assert '<script id="verify-page-i18n" type="application/json">' in body
     assert '<p class="status-label">驗證狀態</p>' not in body
     assert "證明編號" in body
@@ -235,8 +235,8 @@ def test_verify_page_renders_valid_completion_certificate(
     assert "iPlayground 2026" in body
     assert body.index("證明編號") < body.index("活動") < body.index("證明姓名")
     assert "發證時間" in body
-    assert '<script src="/assets/locale-switcher.js" defer></script>' in body
-    assert '<script src="/assets/verify.js" defer></script>' in body
+    assert '<script src="/assets/locale-switcher.js?v=' in body
+    assert '<script src="/assets/verify.js?v=' in body
     assert 'data-detail-key="status"' in body
     assert 'data-detail-key="issuedAt"' in body
     assert '<time class="local-datetime" datetime="2026-05-01T08:00:00Z">' in body

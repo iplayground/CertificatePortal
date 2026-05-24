@@ -13,12 +13,12 @@
     <meta property="og:title" content="{{page_title}}" id="meta-og-title">
     <meta property="og:description" content="{{page_description}}" id="meta-og-description">
     <title>{{page_title}}</title>
-    <link rel="icon" href="/assets/favicon.png" type="image/png" sizes="32x32">
-    <link rel="apple-touch-icon" href="/assets/logo_sq_b.png">
-    <link rel="stylesheet" href="/assets/theme.css">
-    <link rel="stylesheet" href="/assets/verify.css">
-    <script src="/assets/locale-switcher.js" defer></script>
-    <script src="/assets/verify.js" defer></script>
+    <link rel="icon" href="{{asset_favicon_png_url}}" type="image/png" sizes="32x32">
+    <link rel="apple-touch-icon" href="{{asset_logo_sq_b_png_url}}">
+    <link rel="stylesheet" href="{{asset_theme_css_url}}">
+    <link rel="stylesheet" href="{{asset_verify_css_url}}">
+    <script src="{{asset_locale_switcher_js_url}}" defer></script>
+    <script src="{{asset_verify_js_url}}" defer></script>
   </head>
   <body
     class="verify-page verify-page--{{result_kind}}"
@@ -47,7 +47,7 @@
         </div>
 
         <div class="brand-row">
-          <img class="brand-logo" id="brand-logo" src="/assets/logo_b_alpha.png" alt="{{brand_alt}}">
+          <img class="brand-logo" id="brand-logo" src="{{asset_logo_b_alpha_png_url}}" alt="{{brand_alt}}">
         </div>
         <div class="status-mark" aria-hidden="true"></div>
         {{{top_status_label_html}}}

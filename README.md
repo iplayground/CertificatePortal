@@ -49,7 +49,7 @@ iPlayground 完訓證明系統。
 | `POST` | `/api/v1/document-lookup` | 公開首頁文件查詢 | `application/json` |
 | `GET` | `/portal` | 管理平台登入入口 | `text/html; charset=utf-8` |
 | `GET` | `/api/v1/admin/dashboard/welcome-metrics` | 管理平台歡迎頁最近一期活動統計 | `application/json` |
-| `GET` | `/assets/{assetName}` | 目前頁面所需的靜態樣式、互動腳本與品牌素材 | 依資產而定 |
+| `GET` | `/assets/{assetName}` | 目前頁面所需的靜態樣式、互動腳本與品牌素材；頁面會以 `?v=<content-hash>` 載入版本化資產 | 依資產而定 |
 | `GET` | `/verify/{certId}` | QRCode 入口的公開完訓證明驗證頁面 | `text/html; charset=utf-8` |
 
 完整頁面路徑、共用規則與各頁面內容請參考 [docs/page-paths.md](docs/page-paths.md)。
@@ -137,6 +137,7 @@ PYTHONPATH=. pytest
 - `local.settings.json.example` 是可提交的模板；Azure 資源相關欄位預設留空，需由開發者自行填入。實際使用的 `local.settings.json` 仍維持忽略，不進 git。
 - `local.settings.json` 內已設定 `AzureWebJobsDisableHomepage=true`，避免根目錄顯示 Azure Functions 預設首頁。
 - 目前未接 Azurite 或實體 Storage Account，因此本機啟動時可能看到 `AzureWebJobsStorage` 的 unhealthy 訊息；在 `--skip-azure-storage-check` 下，這不影響目前首頁、靜態資產路由與公開驗證頁面。
+- HTML 頁面會使用內容 hash 產生版本化靜態資產 URL，例如 `/assets/home.css?v=<content-hash>`。版本相符的資產回應 `Cache-Control: public, max-age=31536000, immutable` 與 `ETag`；未帶版本或版本不符的舊資產 URL 仍回 `Cache-Control: no-store`，避免部署切換期間把未版本化內容長期快取。更新資產內容後 hash 會改變，因此新的 HTML 會引用新的 URL。
 - `COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER`、`COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER`、`COSMOS_TAX_RECEIPTS_CONTAINER` 與 `COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER` 是 Cosmos DB 連線設定；目前 IaC 建立 serverless account、database、活動管理用的 `events` container、完訓證明用的 `completionCerts` 與 `completionCertRequests` containers、營業稅繳稅證明用的 `taxReceipts` container，以及公開查詢限制用的 `publicLookupAttempts` container。
 - `BLOB_DOCUMENT_ASSETS_CONTAINER`、`BLOB_ISSUED_CERT_CONTAINER` 與 `BLOB_TAX_RECEIPTS_CONTAINER` 是 Blob Storage container 設定；目前 Azure 環境使用 `document-assets`、`issued-certs` 與 `tax-receipts`。完訓證明 PDF 底圖模板跟隨 git 版控，固定印章圖預設讀取 `document-assets/completion-cert/organization-seal.png`，可用 `COMPLETION_CERT_SEAL_BLOB_NAME` 覆寫；證明預覽 PNG 從 `document-assets/completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png` 讀取；預覽 PDF 備份存放於 `document-assets/completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並使用 Archive tier；產生後 PDF 會寫入 `issued-certs` 並指定為 Cool tier；營業稅繳稅證明原始檔會寫入 `tax-receipts`。若執行環境沒有 `AzureWebJobsStorage__accountName`，可用 `BLOB_STORAGE_ACCOUNT_NAME` 指定 Blob Storage account。
 - 完訓證明 PDF 動態欄位若要跨平台穩定顯示，英文與 ASCII 字元固定使用 PDF 標準 Helvetica 系列字體，中文等非 ASCII 字元應提供可嵌入的 TrueType/TTC 繁中文字體。本機可自行將 regular 與 bold 字體檔放入 `src/shared/pdf_fonts/`，`.gitignore` 會避免誤提交。正式部署由 GitHub Actions 從 private `document-assets` Blob container 的完訓證明字體素材路徑下載字體後放進部署包；若字體由其他路徑提供，需同時設定 `COMPLETION_CERTIFICATE_REGULAR_FONT_PATH` 與 `COMPLETION_CERTIFICATE_BOLD_FONT_PATH`。正式環境缺少可嵌入字體時會拒絕產生 PDF；僅開發時可設定 `COMPLETION_CERTIFICATE_ALLOW_UNEMBEDDED_FONT_FALLBACK=true` 明確允許退回 CID/platform 字體。

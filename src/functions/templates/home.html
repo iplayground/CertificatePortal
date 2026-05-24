@@ -19,10 +19,10 @@
     <meta name="twitter:card" content="summary">
     <title>{{page_title}}</title>
     <link rel="canonical" href="{{canonical_url}}">
-    <link rel="icon" href="/assets/favicon.png" type="image/png" sizes="32x32">
-    <link rel="apple-touch-icon" href="/assets/logo_sq_b.png">
-    <link rel="stylesheet" href="/assets/theme.css">
-    <link rel="stylesheet" href="/assets/home.css">
+    <link rel="icon" href="{{asset_favicon_png_url}}" type="image/png" sizes="32x32">
+    <link rel="apple-touch-icon" href="{{asset_logo_sq_b_png_url}}">
+    <link rel="stylesheet" href="{{asset_theme_css_url}}">
+    <link rel="stylesheet" href="{{asset_home_css_url}}">
   </head>
   <body
     data-current-locale="{{current_locale}}"
@@ -65,7 +65,7 @@
           </div>
 
           <div class="brand-row">
-            <img class="brand-logo" src="/assets/logo_b_alpha.png" alt="iPlayground">
+            <img class="brand-logo" src="{{asset_logo_b_alpha_png_url}}" alt="iPlayground">
           </div>
 
           <div class="hero-copy">
@@ -332,8 +332,8 @@
     </div>
 
     <script id="home-page-i18n" type="application/json">{{{home_page_i18n_json}}}</script>
-    <script src="/assets/locale-switcher.js"></script>
-    <script src="/assets/portal-datetime-picker.js"></script>
-    <script src="/assets/home.js"></script>
+    <script src="{{asset_locale_switcher_js_url}}"></script>
+    <script src="{{asset_portal_datetime_picker_js_url}}"></script>
+    <script src="{{asset_home_js_url}}"></script>
   </body>
 </html>

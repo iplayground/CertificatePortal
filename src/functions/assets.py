@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from hashlib import sha256
 from pathlib import Path
+import re
 
 import azure.functions as func
 
@@ -64,14 +66,59 @@ ASSET_DEFINITIONS: dict[str, tuple[Path, str, bool]] = {
     "verify.css": (STATIC_DIR / "verify.css", "text/css", True),
     "verify.js": (STATIC_DIR / "verify.js", "application/javascript", True),
 }
+ASSET_REFERENCE_PATTERN = re.compile(
+    r"(?P<prefix>['\"])/assets/(?P<asset_name>[^?'\"#)]+)(?P<suffix>['\"])"
+)
+VERSIONED_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+UNVERSIONED_ASSET_CACHE_CONTROL = "no-store"
+
+
+@lru_cache(maxsize=None)
+def load_raw_asset_content(asset_name: str) -> bytes:
+    asset_path, _, is_text = ASSET_DEFINITIONS[asset_name]
+    if is_text:
+        return asset_path.read_text(encoding="utf-8").encode("utf-8")
+    return asset_path.read_bytes()
 
 
 @lru_cache(maxsize=None)
 def load_asset_content(asset_name: str) -> bytes:
     asset_path, _, is_text = ASSET_DEFINITIONS[asset_name]
-    if is_text:
-        return asset_path.read_text(encoding="utf-8").encode("utf-8")
-    return asset_path.read_bytes()
+    if not is_text:
+        return load_raw_asset_content(asset_name)
+
+    content = asset_path.read_text(encoding="utf-8")
+    return rewrite_asset_references(content).encode("utf-8")
+
+
+def rewrite_asset_references(content: str) -> str:
+    def replace_reference(match: re.Match[str]) -> str:
+        asset_name = match.group("asset_name")
+        if asset_name not in ASSET_DEFINITIONS:
+            return match.group(0)
+
+        return f"{match.group('prefix')}{asset_url(asset_name)}{match.group('suffix')}"
+
+    return ASSET_REFERENCE_PATTERN.sub(replace_reference, content)
+
+
+@lru_cache(maxsize=None)
+def asset_version(asset_name: str) -> str:
+    return sha256(load_asset_content(asset_name)).hexdigest()[:16]
+
+
+def asset_url(asset_name: str) -> str:
+    if asset_name not in ASSET_DEFINITIONS:
+        raise KeyError(asset_name)
+
+    return f"/assets/{asset_name}?v={asset_version(asset_name)}"
+
+
+def build_asset_url_context(*asset_names: str) -> dict[str, str]:
+    return {
+        f"asset_{asset_name.replace('-', '_').replace('.', '_')}_url": asset_url(asset_name)
+        for asset_name in asset_names
+    }
 
 
 @blueprint.function_name(name="static_asset")
@@ -93,11 +140,33 @@ def static_asset(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     _, mimetype, is_text = asset_definition
+    content = load_asset_content(asset_name)
+    etag = f'"{asset_version(asset_name)}"'
+    request_version = req.params.get("v", "").strip()
+    cache_control = (
+        VERSIONED_ASSET_CACHE_CONTROL
+        if request_version == asset_version(asset_name)
+        else UNVERSIONED_ASSET_CACHE_CONTROL
+    )
+
+    if req.headers.get("If-None-Match") == etag:
+        return func.HttpResponse(
+            body=b"",
+            status_code=304,
+            headers={
+                "Cache-Control": cache_control,
+                "ETag": etag,
+            },
+        )
 
     return func.HttpResponse(
-        body=load_asset_content(asset_name),
+        body=content,
         status_code=200,
         mimetype=mimetype,
         charset="utf-8" if is_text else None,
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": cache_control,
+            "ETag": etag,
+            "X-Content-Type-Options": "nosniff",
+        },
     )

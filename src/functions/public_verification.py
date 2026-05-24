@@ -9,6 +9,7 @@ from typing import Any
 
 import azure.functions as func
 
+from src.functions.assets import build_asset_url_context
 from src.shared.completion_certificate_pdf import format_completion_certificate_number
 from src.shared.completion_store import (
     CompletionStoreConfigurationError,
@@ -225,6 +226,15 @@ def build_verify_page_context(
 
     return {
         **copy,
+        **build_asset_url_context(
+            "favicon.png",
+            "locale-switcher.js",
+            "logo_b_alpha.png",
+            "logo_sq_b.png",
+            "theme.css",
+            "verify.css",
+            "verify.js",
+        ),
         "current_locale": locale,
         "current_locale_label": load_locale_catalog(locale).locale_option_labels[locale],
         "html_lang": HTML_LANGUAGE_TAG_BY_LOCALE[locale],

@@ -1045,6 +1045,8 @@ Response JSON example:
 
 目前頁面透過下列路徑載入樣式、互動與品牌素材：
 
+HTML 頁面會以 `?v=<content-hash>` 參數引用靜態資產，例如 `/assets/theme.css?v=<content-hash>`。`content-hash` 由回應內容計算；若 CSS 內引用其他 `/assets/...` 圖示，後端會在回應時同步改寫為帶 hash 的版本化 URL。版本參數符合目前內容時，資產回應 `Cache-Control: public, max-age=31536000, immutable` 與 `ETag`，讓瀏覽器可長期快取。未帶版本參數或版本不符的資產 URL 仍回 `Cache-Control: no-store`，避免舊頁面或手動輸入的未版本化路徑被長期快取。部署更新後，只要資產內容改變，新的 HTML 會輸出新的 hash URL，瀏覽器會重新下載新資產。
+
 | Method | Path | 說明 |
 | --- | --- | --- |
 | `GET` | `/assets/portal.css` | 管理平台登入頁與管理中心共用樣式 |

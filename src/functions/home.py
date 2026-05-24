@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import azure.functions as func
 
+from src.functions.assets import asset_url, build_asset_url_context
 from src.shared.blob_store import (
     BlobStoreConfigurationError,
     BlobStoreOperationError,
@@ -127,7 +128,7 @@ def build_home_page_url_context(req: func.HttpRequest) -> dict[str, str]:
         "document_lookup_api_path": "/api/v1/document-lookup",
         "events_api_path": "/api/v1/events",
         "page_url": page_url,
-        "social_image_url": _build_absolute_url(req, "/assets/logo_sq_b.png"),
+        "social_image_url": _build_absolute_url(req, asset_url("logo_sq_b.png")),
         "tax_receipt_download_api_path": "/api/v1/tax-receipts/download",
     }
 
@@ -1481,6 +1482,16 @@ def home_page(req: func.HttpRequest) -> func.HttpResponse:
     home_page_context = get_home_page_context(locale)
     context = {
         **home_page_context,
+        **build_asset_url_context(
+            "favicon.png",
+            "home.css",
+            "home.js",
+            "locale-switcher.js",
+            "logo_b_alpha.png",
+            "logo_sq_b.png",
+            "portal-datetime-picker.js",
+            "theme.css",
+        ),
         **build_home_page_event_context(home_page_context),
         **build_home_page_url_context(req),
     }
