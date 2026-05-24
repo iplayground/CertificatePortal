@@ -922,6 +922,46 @@ form {
   grid-template-columns: minmax(260px, 420px) minmax(180px, 240px);
 }
 
+.completion-review-status-filter {
+  display: inline-flex;
+  width: fit-content;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 8px;
+  background: var(--theme-form-shell-bg);
+}
+
+.completion-review-status-option {
+  min-width: 92px;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--theme-content-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.completion-review-status-option.is-active {
+  background: var(--theme-panel-bg);
+  color: var(--theme-content);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.completion-review-status-option:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.completion-review-status-option:focus-visible {
+  outline: 3px solid rgba(81, 121, 254, 0.26);
+  outline-offset: 2px;
+}
+
 .document-bulk-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -984,6 +1024,14 @@ form {
 
 .completion-review-col-created {
   width: 174px;
+}
+
+.completion-review-col-reviewed {
+  width: 174px;
+}
+
+.completion-review-col-status {
+  width: 96px;
 }
 
 .completion-review-col-number {

@@ -3043,7 +3043,12 @@ def portal_admin_completion_cert_change_requests_list_api(
         return access
 
     status = str(req.params.get("status", "pending")).strip() or "pending"
-    if status not in {"pending", *PORTAL_COMPLETION_CERT_REQUEST_ALLOWED_REVIEW_STATUSES}:
+    if status not in {
+        "pending",
+        "completed",
+        "cancelledByIssue",
+        *PORTAL_COMPLETION_CERT_REQUEST_ALLOWED_REVIEW_STATUSES,
+    }:
         return build_portal_api_error_response(
             400,
             "invalid_completion_cert_request_status",

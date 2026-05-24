@@ -214,17 +214,29 @@ class FakeCompletionCertRequestsContainer:
         enable_cross_partition_query: bool,
         partition_key: str | None = None,
     ) -> list[dict[str, Any]]:
-        assert "WHERE c.status = @status" in query
         assert enable_cross_partition_query
-        status = next(
+        if "WHERE c.status = @status" in query:
+            status = next(
+                parameter["value"]
+                for parameter in parameters or []
+                if parameter["name"] == "@status"
+            )
+            return [
+                item
+                for item in self.items.values()
+                if item["status"] == status
+            ]
+        assert "c.status = @approvedStatus OR c.status = @rejectedStatus" in query
+        completed_statuses = {
             parameter["value"]
             for parameter in parameters or []
-            if parameter["name"] == "@status"
-        )
+            if parameter["name"]
+            in {"@approvedStatus", "@rejectedStatus", "@cancelledByIssueStatus"}
+        }
         return [
             item
             for item in self.items.values()
-            if item["status"] == status
+            if item["status"] in completed_statuses
         ]
 
 
@@ -2064,6 +2076,117 @@ def test_portal_admin_completion_cert_change_requests_list_api_returns_pending_r
     assert '"certStatus":"changeRequested"' in body
 
 
+def test_portal_admin_completion_cert_change_requests_list_api_returns_completed_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Ming",
+        "ticketName": "一般票",
+        "name": "王小明",
+        "organization": "新公司",
+        "email": "ming@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "notIssued",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    fake_requests_container = FakeCompletionCertRequestsContainer()
+    fake_requests_container.items["ccreq_1"] = {
+        "id": "ccreq_1",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "approved",
+        "requesterEmail": "ming@example.com",
+        "requesterNote": "公司名需要調整",
+        "reviewedBy": "admin@iplayground.io",
+        "reviewedAt": "2026-04-30T08:30:00Z",
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": "已修正",
+        "createdAt": "2026-04-30T08:00:00Z",
+        "updatedAt": "2026-04-30T08:30:00Z",
+    }
+    fake_requests_container.items["ccreq_2"] = {
+        "id": "ccreq_2",
+        "completionCertId": "ccert_missing",
+        "eventId": "evt_1",
+        "status": "rejected",
+        "requesterEmail": "lee@example.com",
+        "requesterNote": "姓名需要調整",
+        "reviewedBy": "admin@iplayground.io",
+        "reviewedAt": "2026-04-30T09:30:00Z",
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": "資料不符",
+        "createdAt": "2026-04-30T09:00:00Z",
+        "updatedAt": "2026-04-30T09:30:00Z",
+    }
+    fake_requests_container.items["ccreq_3"] = {
+        "id": "ccreq_3",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "pending",
+        "requesterEmail": "pending@example.com",
+        "requesterNote": "待審核",
+        "reviewedBy": None,
+        "reviewedAt": None,
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": None,
+        "createdAt": "2026-04-30T10:00:00Z",
+        "updatedAt": "2026-04-30T10:00:00Z",
+    }
+    fake_requests_container.items["ccreq_4"] = {
+        "id": "ccreq_4",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "cancelledByIssue",
+        "requesterEmail": "cancelled@example.com",
+        "requesterNote": "發證前修改",
+        "reviewedBy": "system:public-issue",
+        "reviewedAt": "2026-04-30T11:30:00Z",
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": "用戶已於修改審核完成前完成發證，系統自動取消本次修改申請。",
+        "createdAt": "2026-04-30T11:00:00Z",
+        "updatedAt": "2026-04-30T11:30:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        lambda: fake_requests_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        method="GET",
+        url="http://localhost:7075/api/v1/admin/completion-cert-change-requests",
+        params={"status": "completed"},
+    )
+
+    response = portal_admin_completion_cert_change_requests_list_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"id":"ccreq_1"' in body
+    assert '"status":"approved"' in body
+    assert '"reviewedAt":"2026-04-30T08:30:00Z"' in body
+    assert '"reviewedBy":"admin@iplayground.io"' in body
+    assert '"reviewNote":"已修正"' in body
+    assert '"id":"ccreq_2"' in body
+    assert '"status":"rejected"' in body
+    assert '"id":"ccreq_3"' not in body
+    assert '"id":"ccreq_4"' in body
+    assert '"status":"cancelledByIssue"' in body
+    assert '"reviewedBy":"system:public-issue"' in body
+    assert '"completionCert"' in body
+
+
 def test_portal_admin_completion_cert_change_requests_review_api_approves_and_updates_cert(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3570,10 +3693,18 @@ def test_portal_dashboard_completion_reviews_page_returns_html_when_user_is_auth
     assert "完訓證明修改申請清單" in body
     assert "修改申請載入中..." in body
     assert 'id="completion-review-refresh"' in body
+    assert 'id="completion-review-status-pending"' in body
+    assert 'data-status="pending" aria-pressed="true"' in body
+    assert 'id="completion-review-status-completed"' in body
+    assert 'data-status="completed" aria-pressed="false"' in body
+    assert "待審核" in body
+    assert "已完成" in body
     assert 'class="document-list-table completion-review-table"' in body
     assert 'id="completion-review-table-body"' in body
     assert 'id="completion-review-row-template"' in body
     assert '<th scope="col">申請時間</th>' in body
+    assert '<th scope="col">審核時間</th>' in body
+    assert '<th scope="col">狀態</th>' in body
     assert '<th scope="col">報名序號</th>' in body
     assert '<th scope="col">目前姓名</th>' in body
     assert '<th scope="col">Email</th>' in body
@@ -3592,6 +3723,8 @@ def test_portal_dashboard_completion_reviews_page_returns_html_when_user_is_auth
     assert 'id="completion-review-note"' in body
     assert 'class="form-textarea-shell completion-review-note-field"' in body
     assert 'class="form-textarea"' in body
+    assert 'id="completion-review-completed-summary"' in body
+    assert 'id="completion-review-completed-status"' in body
     assert "駁回" in body
     assert "退回" not in body
     assert 'class="event-form-actions completion-review-form-actions"' in body
@@ -4594,9 +4727,19 @@ def test_portal_dashboard_completion_reviews_js_asset_returns_expected_content_t
     assert response.status_code == 200
     assert response.mimetype == "application/javascript"
     assert 'document.getElementById("completion-review-refresh")' in body
+    assert 'document.querySelectorAll(".completion-review-status-option")' in body
     assert 'document.getElementById("completion-review-table-body")' in body
     assert 'document.getElementById("completion-review-dialog")' in body
+    assert 'document.getElementById("completion-review-completed-summary")' in body
     assert '"/api/v1/admin/completion-cert-change-requests"' in body
+    assert "selectedCompletionReviewStatus = \"pending\"" in body
+    assert "status=${encodeURIComponent(status)}" in body
+    assert "目前沒有已完成審核的修改申請。" in body
+    assert "cancelledByIssue: \"已取消\"" in body
+    assert "setDisabledInput(completionReviewEmail, !isPendingReview)" in body
+    assert "setDisabledInput(completionReviewNote, !isPendingReview)" in body
+    assert 'completionReviewCancelButton.textContent = isPendingReview ? "取消" : "關閉"' in body
+    assert "rowData.status === \"pending\" ? \"審核\" : \"查看\"" in body
     assert "loadCompletionReviews" in body
     assert "openCompletionReviewDialog" in body
     assert "submitCompletionReview" in body

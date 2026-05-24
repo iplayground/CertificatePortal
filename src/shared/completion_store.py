@@ -321,19 +321,74 @@ def list_completion_cert_request_documents(
     container: CompletionContainer,
     status: str = "pending",
 ) -> list[dict[str, Any]]:
+    if status == "completed":
+        query = (
+            "SELECT c.id, c.completionCertId, c.eventId, c.status, "
+            "c.requesterEmail, c.requesterNote, c.reviewedBy, c.reviewedAt, "
+            "c.reviewCompletedNotifiedAt, c.reviewNote, c.createdAt, c.updatedAt "
+            "FROM c WHERE c.status = @approvedStatus OR c.status = @rejectedStatus "
+            "OR c.status = @cancelledByIssueStatus "
+            "ORDER BY c.reviewedAt DESC"
+        )
+        parameters = [
+            {"name": "@approvedStatus", "value": "approved"},
+            {"name": "@rejectedStatus", "value": "rejected"},
+            {"name": "@cancelledByIssueStatus", "value": "cancelledByIssue"},
+        ]
+    else:
+        query = (
+            "SELECT c.id, c.completionCertId, c.eventId, c.status, "
+            "c.requesterEmail, c.requesterNote, c.reviewedBy, c.reviewedAt, "
+            "c.reviewCompletedNotifiedAt, c.reviewNote, c.createdAt, c.updatedAt "
+            "FROM c WHERE c.status = @status ORDER BY c.createdAt DESC"
+        )
+        parameters = [{"name": "@status", "value": status}]
+
     try:
         return list(
             container.query_items(
-                query=(
-                    "SELECT c.id, c.completionCertId, c.eventId, c.status, "
-                    "c.requesterEmail, c.requesterNote, c.reviewedBy, c.reviewedAt, "
-                    "c.reviewCompletedNotifiedAt, c.reviewNote, c.createdAt, c.updatedAt "
-                    "FROM c WHERE c.status = @status ORDER BY c.createdAt DESC"
-                ),
-                parameters=[{"name": "@status", "value": status}],
+                query=query,
+                parameters=parameters,
                 enable_cross_partition_query=True,
             )
         )
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise CompletionStoreOperationError(
+                "Cosmos DB 完訓證明修改申請容器不存在。請確認 "
+                "COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER 是否指向已建立的資源。"
+            ) from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise CompletionStoreOperationError(
+                "目前身分沒有 Cosmos DB 完訓證明修改申請容器讀取權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Reader 或 Data Contributor 權限。"
+            ) from exc
+        raise CompletionStoreOperationError("完訓證明修改申請查詢暫時失敗。") from exc
+
+
+def read_pending_completion_cert_request_document(
+    *,
+    container: CompletionContainer,
+    completion_cert_id: str,
+) -> dict[str, Any] | None:
+    try:
+        documents = list(
+            container.query_items(
+                query=(
+                    "SELECT TOP 1 c.id, c.completionCertId, c.eventId, c.status, "
+                    "c.requesterEmail, c.requesterNote, c.reviewedBy, c.reviewedAt, "
+                    "c.reviewCompletedNotifiedAt, c.reviewNote, c.createdAt, c.updatedAt "
+                    "FROM c WHERE c.completionCertId = @completionCertId "
+                    "AND c.status = @pendingStatus ORDER BY c.createdAt DESC"
+                ),
+                parameters=[
+                    {"name": "@completionCertId", "value": completion_cert_id},
+                    {"name": "@pendingStatus", "value": "pending"},
+                ],
+                enable_cross_partition_query=True,
+            )
+        )
+        return documents[0] if documents else None
     except Exception as exc:
         if _is_cosmos_not_found_error(exc):
             raise CompletionStoreOperationError(

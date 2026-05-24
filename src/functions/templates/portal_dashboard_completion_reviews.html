@@ -23,10 +23,21 @@
           </button>
         </div>
 
+        <div class="completion-review-status-filter" role="group" aria-label="修改申請狀態篩選">
+          <button class="completion-review-status-option is-active" id="completion-review-status-pending" type="button" data-status="pending" aria-pressed="true">
+            待審核
+          </button>
+          <button class="completion-review-status-option" id="completion-review-status-completed" type="button" data-status="completed" aria-pressed="false">
+            已完成
+          </button>
+        </div>
+
         <div class="document-table-wrap">
           <table class="document-list-table completion-review-table" aria-label="完訓證明修改申請清單">
             <colgroup>
               <col class="completion-review-col-created">
+              <col class="completion-review-col-reviewed">
+              <col class="completion-review-col-status">
               <col class="completion-review-col-number">
               <col class="completion-review-col-name">
               <col class="completion-review-col-email">
@@ -36,6 +47,8 @@
             <thead>
               <tr>
                 <th scope="col">申請時間</th>
+                <th scope="col">審核時間</th>
+                <th scope="col">狀態</th>
                 <th scope="col">報名序號</th>
                 <th scope="col">目前姓名</th>
                 <th scope="col">Email</th>
@@ -45,13 +58,15 @@
             </thead>
             <tbody id="completion-review-table-body">
               <tr class="document-empty-row" id="completion-review-empty-row">
-                <td colspan="6">修改申請載入中...</td>
+                <td colspan="8">修改申請載入中...</td>
               </tr>
             </tbody>
           </table>
           <template id="completion-review-row-template">
             <tr class="completion-review-row">
               <td data-field="createdAt"></td>
+              <td data-field="reviewedAt"></td>
+              <td data-field="status"></td>
               <td data-field="number"></td>
               <td data-field="name"></td>
               <td data-field="email"></td>
@@ -126,6 +141,11 @@
                   ></textarea>
                 </div>
               </label>
+
+              <div class="field completion-review-completed-summary" id="completion-review-completed-summary" hidden>
+                <span class="field-label">審核結果</span>
+                <div class="field-static-value" id="completion-review-completed-status">-</div>
+              </div>
 
               <div class="form-feedback is-error" id="completion-review-feedback" role="status" aria-live="polite" hidden></div>
 

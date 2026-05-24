@@ -1,8 +1,12 @@
 const completionReviewRefreshButton = document.getElementById("completion-review-refresh");
+const completionReviewStatusButtons = Array.from(
+  document.querySelectorAll(".completion-review-status-option")
+);
 const completionReviewTableBody = document.getElementById("completion-review-table-body");
 const completionReviewEmptyRow = document.getElementById("completion-review-empty-row");
 const completionReviewRowTemplate = document.getElementById("completion-review-row-template");
 const completionReviewDialog = document.getElementById("completion-review-dialog");
+const completionReviewDialogTitle = document.getElementById("completion-review-dialog-title");
 const completionReviewCancelButton = document.getElementById("completion-review-cancel");
 const completionReviewApproveButton = document.getElementById("completion-review-approve");
 const completionReviewRejectButton = document.getElementById("completion-review-reject");
@@ -14,16 +18,28 @@ const completionReviewName = document.getElementById("completion-review-name");
 const completionReviewOrganization = document.getElementById("completion-review-organization");
 const completionReviewEmail = document.getElementById("completion-review-email");
 const completionReviewNote = document.getElementById("completion-review-note");
+const completionReviewCompletedSummary = document.getElementById("completion-review-completed-summary");
+const completionReviewCompletedStatus = document.getElementById("completion-review-completed-status");
 const completionReviewFeedback = document.getElementById("completion-review-feedback");
 const adminCompletionChangeRequestsApiPath = "/api/v1/admin/completion-cert-change-requests";
 const portalCsrfToken = document.body?.dataset.portalCsrfToken || "";
 const loadingCompletionReviewsMessage = "修改申請載入中...";
-const emptyCompletionReviewsMessage = "目前沒有待審核的修改申請。";
+const emptyCompletionReviewsMessages = {
+  completed: "目前沒有已完成審核的修改申請。",
+  pending: "目前沒有待審核的修改申請。",
+};
 const portalEntryPath = "/portal";
 const portalSessionStartedAtKey = "ipg:portal:session-started-at:v1";
 const portalSessionMaxAgeMs = 8 * 60 * 60 * 1000;
+const completionReviewStatusLabels = {
+  approved: "已通過",
+  cancelledByIssue: "已取消",
+  pending: "待審核",
+  rejected: "已駁回",
+};
 
 let completionReviewRows = [];
+let selectedCompletionReviewStatus = "pending";
 let selectedCompletionReviewId = "";
 let completionReviewPreviousFocus = null;
 let isLoadingCompletionReviews = true;
@@ -109,6 +125,9 @@ function normalizeCompletionReview(rowData) {
       typeof rowData?.requesterEmail === "string" ? rowData.requesterEmail : "",
     requesterNote:
       typeof rowData?.requesterNote === "string" ? rowData.requesterNote : "",
+    reviewedAt: typeof rowData?.reviewedAt === "string" ? rowData.reviewedAt : "",
+    reviewedBy: typeof rowData?.reviewedBy === "string" ? rowData.reviewedBy : "",
+    reviewNote: typeof rowData?.reviewNote === "string" ? rowData.reviewNote : "",
     status: typeof rowData?.status === "string" ? rowData.status : "pending",
   };
 }
@@ -139,6 +158,23 @@ function setCompletionReviewEmptyMessage(message) {
   }
 }
 
+function getCompletionReviewStatusLabel(status) {
+  return completionReviewStatusLabels[status] || status || "-";
+}
+
+function renderCompletionReviewStatusFilter() {
+  completionReviewStatusButtons.forEach((button) => {
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    const isActive = button.dataset.status === selectedCompletionReviewStatus;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    button.disabled = isLoadingCompletionReviews || isSubmittingCompletionReview;
+  });
+}
+
 function renderCompletionReviewRows() {
   if (
     !completionReviewTableBody ||
@@ -156,9 +192,11 @@ function renderCompletionReviewRows() {
     setCompletionReviewEmptyMessage(
       isLoadingCompletionReviews
         ? loadingCompletionReviewsMessage
-        : emptyCompletionReviewsMessage
+        : emptyCompletionReviewsMessages[selectedCompletionReviewStatus] ||
+            emptyCompletionReviewsMessages.pending
     );
   }
+  renderCompletionReviewStatusFilter();
 
   completionReviewRows.forEach((rowData) => {
     const rowFragment = completionReviewRowTemplate.content.cloneNode(true);
@@ -169,6 +207,8 @@ function renderCompletionReviewRows() {
 
     rowElement.dataset.rowId = rowData.id;
     setTextContent(rowElement, '[data-field="createdAt"]', formatDisplayDateTime(rowData.createdAt));
+    setTextContent(rowElement, '[data-field="reviewedAt"]', formatDisplayDateTime(rowData.reviewedAt));
+    setTextContent(rowElement, '[data-field="status"]', getCompletionReviewStatusLabel(rowData.status));
     setTextContent(rowElement, '[data-field="number"]', rowData.completionCert.number);
     setTextContent(rowElement, '[data-field="name"]', rowData.completionCert.name);
     setTextContent(
@@ -181,6 +221,7 @@ function renderCompletionReviewRows() {
     const reviewButton = rowElement.querySelector(".document-edit-button");
     if (reviewButton instanceof HTMLButtonElement) {
       reviewButton.disabled = isSubmittingCompletionReview;
+      reviewButton.textContent = rowData.status === "pending" ? "審核" : "查看";
       reviewButton.addEventListener("click", () => {
         void openCompletionReviewDialog(rowData);
       });
@@ -202,13 +243,17 @@ function showCompletionReviewPageAlert({ dismissDelay = 6000, message, title, to
 async function loadCompletionReviews() {
   isLoadingCompletionReviews = true;
   renderCompletionReviewRows();
+  const status = selectedCompletionReviewStatus;
 
   try {
-    const response = await fetch(`${adminCompletionChangeRequestsApiPath}?status=pending`, {
-      headers: {
-        Accept: "application/json",
-      },
-    });
+    const response = await fetch(
+      `${adminCompletionChangeRequestsApiPath}?status=${encodeURIComponent(status)}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+      }
+    );
     if (handlePortalUnauthorizedResponse(response)) {
       return;
     }
@@ -218,11 +263,15 @@ async function loadCompletionReviews() {
       throw new Error(responsePayload?.error?.message || "修改申請載入失敗。");
     }
 
-    completionReviewRows = Array.isArray(responsePayload.changeRequests)
-      ? responsePayload.changeRequests.map((row) => normalizeCompletionReview(row))
-      : [];
+    if (status === selectedCompletionReviewStatus) {
+      completionReviewRows = Array.isArray(responsePayload.changeRequests)
+        ? responsePayload.changeRequests.map((row) => normalizeCompletionReview(row))
+        : [];
+    }
   } catch (error) {
-    completionReviewRows = [];
+    if (status === selectedCompletionReviewStatus) {
+      completionReviewRows = [];
+    }
     showCompletionReviewPageAlert({
       message: error instanceof Error ? error.message : "修改申請載入失敗。",
       title: "載入失敗",
@@ -262,6 +311,12 @@ function setInputValue(element, value) {
   }
 }
 
+function setDisabledInput(element, isDisabled) {
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    element.disabled = isDisabled;
+  }
+}
+
 function getInputValue(element) {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     return element.value.trim();
@@ -286,8 +341,10 @@ async function openCompletionReviewDialog(rowData) {
   }
 
   selectedCompletionReviewId = rowData.id;
+  const isPendingReview = rowData.status === "pending";
   completionReviewPreviousFocus = document.activeElement;
   clearCompletionReviewFeedback();
+  setStaticValue(completionReviewDialogTitle, isPendingReview ? "審核修改申請" : "查看審核結果");
   setStaticValue(completionReviewNumber, rowData.completionCert.number);
   setStaticValue(completionReviewKktixId, rowData.completionCert.kktixId);
   setStaticValue(completionReviewTicketName, rowData.completionCert.ticketName);
@@ -295,11 +352,38 @@ async function openCompletionReviewDialog(rowData) {
   setInputValue(completionReviewName, rowData.completionCert.name);
   setInputValue(completionReviewOrganization, rowData.completionCert.organization);
   setInputValue(completionReviewEmail, rowData.completionCert.email || rowData.requesterEmail);
-  setInputValue(completionReviewNote, "");
+  setInputValue(completionReviewNote, isPendingReview ? "" : rowData.reviewNote);
+  setDisabledInput(completionReviewName, !isPendingReview);
+  setDisabledInput(completionReviewOrganization, !isPendingReview);
+  setDisabledInput(completionReviewEmail, !isPendingReview);
+  setDisabledInput(completionReviewNote, !isPendingReview);
+  [completionReviewApproveButton, completionReviewRejectButton].forEach((button) => {
+    if (button instanceof HTMLButtonElement) {
+      button.hidden = !isPendingReview;
+    }
+  });
+  if (completionReviewCompletedSummary instanceof HTMLElement) {
+    completionReviewCompletedSummary.hidden = isPendingReview;
+  }
+  if (completionReviewCancelButton instanceof HTMLButtonElement) {
+    completionReviewCancelButton.textContent = isPendingReview ? "取消" : "關閉";
+  }
+  setStaticValue(
+    completionReviewCompletedStatus,
+    [
+      getCompletionReviewStatusLabel(rowData.status),
+      rowData.reviewedAt ? formatDisplayDateTime(rowData.reviewedAt) : "",
+      rowData.reviewedBy || "",
+    ].filter(Boolean).join(" / ")
+  );
 
   completionReviewDialog.hidden = false;
   document.body.classList.add("has-event-dialog");
-  completionReviewName?.focus();
+  if (isPendingReview) {
+    completionReviewName?.focus();
+  } else {
+    completionReviewCancelButton?.focus();
+  }
 }
 
 function closeCompletionReviewDialog() {
@@ -310,6 +394,18 @@ function closeCompletionReviewDialog() {
   completionReviewDialog.hidden = true;
   selectedCompletionReviewId = "";
   clearCompletionReviewFeedback();
+  if (completionReviewCancelButton instanceof HTMLButtonElement) {
+    completionReviewCancelButton.textContent = "取消";
+  }
+  setDisabledInput(completionReviewName, false);
+  setDisabledInput(completionReviewOrganization, false);
+  setDisabledInput(completionReviewEmail, false);
+  setDisabledInput(completionReviewNote, false);
+  [completionReviewApproveButton, completionReviewRejectButton].forEach((button) => {
+    if (button instanceof HTMLButtonElement) {
+      button.hidden = false;
+    }
+  });
   document.body.classList.remove("has-event-dialog");
 
   if (completionReviewPreviousFocus instanceof HTMLElement) {
@@ -326,6 +422,7 @@ function setCompletionReviewSubmitting(isSubmitting) {
       }
     }
   );
+  renderCompletionReviewStatusFilter();
   renderCompletionReviewRows();
 }
 
@@ -388,6 +485,23 @@ async function submitCompletionReview(status) {
 
 completionReviewRefreshButton?.addEventListener("click", () => {
   void loadCompletionReviews();
+});
+
+completionReviewStatusButtons.forEach((button) => {
+  if (!(button instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  button.addEventListener("click", () => {
+    const nextStatus = button.dataset.status || "pending";
+    if (nextStatus === selectedCompletionReviewStatus || isLoadingCompletionReviews) {
+      return;
+    }
+
+    selectedCompletionReviewStatus = nextStatus;
+    completionReviewRows = [];
+    void loadCompletionReviews();
+  });
 });
 
 completionReviewCancelButton?.addEventListener("click", closeCompletionReviewDialog);

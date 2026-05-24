@@ -40,7 +40,9 @@ from src.shared.completion_store import (
     list_completion_cert_documents,
     read_completed_completion_cert_request_document,
     read_completion_cert_document,
+    read_pending_completion_cert_request_document,
     replace_completion_cert_document,
+    replace_completion_cert_request_document,
     upsert_completion_cert_request_document,
 )
 from src.shared.completion_metrics import (
@@ -573,6 +575,15 @@ def issue_completion_cert_pdf(payload: dict[str, Any], req: func.HttpRequest) ->
         )
         return pdf_bytes, build_completion_cert_download_filename(cert_document)
 
+    requests_container = None
+    pending_request_document = None
+    if cert_status == "changeRequested":
+        requests_container = get_completion_cert_requests_container()
+        pending_request_document = read_pending_completion_cert_request_document(
+            container=requests_container,
+            completion_cert_id=completion_cert_id,
+        )
+
     event_document = read_public_event_document(
         container=get_events_container(),
         event_id=payload["eventId"],
@@ -618,6 +629,12 @@ def issue_completion_cert_pdf(payload: dict[str, Any], req: func.HttpRequest) ->
         data=pdf_bytes,
     )
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    if requests_container is not None and pending_request_document is not None:
+        cancel_completion_cert_change_request_for_issue(
+            container=requests_container,
+            request_document=pending_request_document,
+            now=now,
+        )
     cert_document["certStatus"] = "issued"
     cert_document["issuedAt"] = now
     cert_document["issuedPdfBlobName"] = blob_name
@@ -641,6 +658,26 @@ def issue_completion_cert_pdf(payload: dict[str, Any], req: func.HttpRequest) ->
         },
     )
     return pdf_bytes, build_completion_cert_download_filename(cert_document)
+
+
+def cancel_completion_cert_change_request_for_issue(
+    *,
+    container: Any,
+    request_document: dict[str, Any],
+    now: str,
+) -> None:
+    updated_request_document = {
+        **request_document,
+        "status": "cancelledByIssue",
+        "reviewedBy": "system:public-issue",
+        "reviewedAt": now,
+        "reviewNote": "用戶已於修改審核完成前完成發證，系統自動取消本次修改申請。",
+        "updatedAt": now,
+    }
+    replace_completion_cert_request_document(
+        container=container,
+        document=updated_request_document,
+    )
 
 
 def record_existing_completion_cert_download(

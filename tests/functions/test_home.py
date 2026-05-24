@@ -156,6 +156,14 @@ class FakeCompletionCertRequestsContainer:
         self.items[body["id"]] = body.copy()
         return self.items[body["id"]]
 
+    def replace_item(self, item: str, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        if item not in self.items:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        self.items[item] = body.copy()
+        return self.items[item]
+
     def query_items(
         self,
         query: str,
@@ -168,6 +176,18 @@ class FakeCompletionCertRequestsContainer:
         completion_cert_id = parameter_values.get("@completionCertId")
         if completion_cert_id is None:
             return list(self.items.values())
+
+        if "@pendingStatus" in parameter_values:
+            return [
+                item.copy()
+                for item in sorted(
+                    self.items.values(),
+                    key=lambda candidate: str(candidate.get("createdAt", "")),
+                    reverse=True,
+                )
+                if item.get("completionCertId") == completion_cert_id
+                and item.get("status") == parameter_values["@pendingStatus"]
+            ][:1]
 
         completed_statuses = {
             parameter_values.get("@approvedStatus"),
@@ -2384,6 +2404,104 @@ def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
         "verificationCount": 0,
         "pendingCount": 0,
     }
+
+
+def test_public_completion_cert_issue_api_cancels_pending_change_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events_container = FakeEventsContainer()
+    records_container = FakeCompletionCertsContainer(
+        [
+            {
+                "id": "ccert_1",
+                "eventId": "evt_1",
+                "number": 12,
+                "kktixId": "KKTIX-987",
+                "badgeName": "Ming",
+                "ticketName": "一般票",
+                "name": "王小明",
+                "organization": "iPlayground",
+                "email": "ming@example.com",
+                "attendanceStatus": "checkedIn",
+                "certStatus": "changeRequested",
+                "issuedPdfBlobName": None,
+                "verificationTokenHash": None,
+                "verificationCount": 0,
+                "issuedAt": None,
+                "createdAt": "2026-04-01T00:00:00Z",
+            }
+        ]
+    )
+    requests_container = FakeCompletionCertRequestsContainer(
+        {
+            "ccreq_1": {
+                "id": "ccreq_1",
+                "completionCertId": "ccert_1",
+                "eventId": "evt_1",
+                "status": "pending",
+                "requesterEmail": "ming@example.com",
+                "requesterNote": "公司名需要調整",
+                "reviewedBy": None,
+                "reviewedAt": None,
+                "reviewCompletedNotifiedAt": None,
+                "reviewNote": None,
+                "createdAt": "2026-04-30T08:00:00Z",
+                "updatedAt": "2026-04-30T08:00:00Z",
+            }
+        }
+    )
+    monkeypatch.setattr("src.functions.home.get_events_container", lambda: events_container)
+    monkeypatch.setattr("src.functions.home.get_completion_records_container", lambda: records_container)
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_cert_requests_container",
+        lambda: requests_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.generate_completion_cert_verification_token",
+        lambda: "1234567890abcdef1234567890abcdef",
+    )
+    monkeypatch.setenv("BLOB_DOCUMENT_ASSETS_CONTAINER", "document-assets")
+    monkeypatch.setenv("BLOB_ISSUED_CERT_CONTAINER", "issued-certs")
+
+    def fake_download_blob_to_path(*, container_name: str, blob_name: str, output_path) -> object:
+        output_path.write_bytes(b"seal")
+        return output_path
+
+    def fake_render_completion_certificate_pdf(data, output_path, **_: Any) -> object:
+        output_path.write_bytes(b"%PDF-1.4\nissued")
+        return output_path
+
+    monkeypatch.setattr("src.functions.home.download_blob_to_path", fake_download_blob_to_path)
+    monkeypatch.setattr("src.functions.home.render_completion_certificate_pdf", fake_render_completion_certificate_pdf)
+    monkeypatch.setattr(
+        "src.functions.home.upload_pdf_blob",
+        lambda *, container_name, blob_name, data, standard_blob_tier="Cool": blob_name,
+    )
+
+    response = public_completion_cert_issue_api(
+        build_completion_cert_issue_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "12",
+                "email": "ming@example.com",
+                "locale": "zh-TW",
+                "nameDisplay": "name",
+                "showOrganization": False,
+            },
+            headers={"Origin": "http://localhost:7075"},
+        )
+    )
+
+    assert response.status_code == 200
+    assert records_container.items[0]["certStatus"] == "issued"
+    assert requests_container.items["ccreq_1"]["status"] == "cancelledByIssue"
+    assert requests_container.items["ccreq_1"]["reviewedBy"] == "system:public-issue"
+    assert requests_container.items["ccreq_1"]["reviewedAt"].endswith("Z")
+    assert requests_container.items["ccreq_1"]["updatedAt"].endswith("Z")
+    assert requests_container.items["ccreq_1"]["reviewNote"] == (
+        "用戶已於修改審核完成前完成發證，系統自動取消本次修改申請。"
+    )
 
 
 def test_public_completion_cert_issue_api_downloads_existing_issued_pdf(

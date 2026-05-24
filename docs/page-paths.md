@@ -471,11 +471,14 @@ Request JSON 範例：
 
 - 作為 dashboard 右側 iframe 的完訓證明修改申請審核頁
 - 頁面載入後呼叫 `GET /api/v1/admin/completion-cert-change-requests?status=pending` 查詢待審核申請
-- 清單欄位包含申請時間、報名序號、目前姓名、Email、申請內容與操作
-- 每列操作欄提供 `審核` 按鈕，開啟中央審核視窗
+- 頁面提供 `待審核` 與 `已完成` 篩選；切到已完成時呼叫 `GET /api/v1/admin/completion-cert-change-requests?status=completed`，列出已通過、已駁回與因用戶發證而取消的案例
+- 清單欄位包含申請時間、審核時間、狀態、報名序號、目前姓名、Email、申請內容與操作
+- 待審核每列操作欄提供 `審核` 按鈕，已完成每列操作欄提供 `查看` 按鈕，開啟中央視窗
 - 審核視窗顯示報名序號、KKTIX ID、票種、Email 與使用者填寫的申請內容；Email 位於申請內容上方且不可編輯
+- 已完成案例的中央視窗欄位會以 disabled 樣式顯示，顯示審核狀態、審核時間、審核者與審核備註，不提供再次通過或駁回；因用戶發證而取消的狀態顯示為 `已取消`，右下角按鈕文字顯示為 `關閉`
 - 管理者審核通過時可直接修改姓名與公司名，送出後呼叫 `PUT /api/v1/admin/completion-cert-change-requests/{requestid}`，將申請狀態改為 `approved`，並把對應完訓證明資料更新後恢復為 `notIssued`
 - 管理者駁回時會將申請狀態改為 `rejected`，並把對應完訓證明恢復為 `notIssued`
+- 若用戶在審核完成前進行發證，發證流程會將同張證明的 pending 修改申請改為 `cancelledByIssue`，寫入系統審核者與取消備註，並繼續完成發證
 - 審核完成後該筆資料會從待審核清單移除，並顯示共用 page alert 成功提示
 
 ### `/portal/dashboard/tax-receipts`
@@ -914,7 +917,8 @@ Response JSON example:
 
 ### `GET /api/v1/admin/completion-cert-change-requests`
 
-- 查詢完訓證明修改申請，預設查詢 `pending` 狀態
+- 查詢完訓證明修改申請，預設查詢 `pending` 狀態；`status=completed` 會回傳 `approved`、`rejected` 與 `cancelledByIssue` 終態案例，依 `reviewedAt` 由新到舊排序
+- `status` 也可指定單一狀態 `pending`、`approved`、`rejected` 或 `cancelledByIssue`
 - 只接受已登入且通過授權的管理者 session，並檢查同源 `Origin` 或 `Referer`
 - 讀取 Cosmos DB `completionCertRequests` container，並依申請內的 `completionCertId` 與 `eventId` 讀取對應 `completionCerts` 權威資料
 
