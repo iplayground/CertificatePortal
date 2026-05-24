@@ -217,7 +217,25 @@ form.is-certificate-options-active .field-static-value {
   column-gap: 18px;
 }
 
+.certificate-options-view > .certificate-actions {
+  flex-wrap: nowrap;
+  gap: 12px;
+}
+
+.certificate-options-view > .certificate-actions .secondary-action,
+.certificate-options-view > .certificate-actions .primary-action,
+.certificate-options-view > .certificate-actions .brand-square-action {
+  flex: 0 0 auto;
+  padding-right: 18px;
+  padding-left: 18px;
+}
+
+.certificate-options-view > .certificate-actions .certificate-change-request-action {
+  margin-left: 0;
+}
+
 .certificate-generate-warning {
+  flex: 1 1 auto;
   max-width: 14rem;
   margin: 0;
   color: var(--theme-content-muted);
@@ -225,6 +243,7 @@ form.is-certificate-options-active .field-static-value {
   font-weight: 700;
   line-height: 1.35;
   text-align: left;
+  white-space: nowrap;
 }
 
 .certificate-change-request-action {
@@ -704,6 +723,23 @@ form.is-certificate-options-active .field-static-value {
     margin-top: 24px;
     padding: 24px;
   }
+
+  .certificate-options-view > .certificate-actions {
+    gap: 10px;
+  }
+
+  .certificate-options-view > .certificate-actions .secondary-action,
+  .certificate-options-view > .certificate-actions .primary-action,
+  .certificate-options-view > .certificate-actions .brand-square-action {
+    padding-right: 14px;
+    padding-left: 14px;
+    font-size: 0.9rem;
+  }
+
+  .certificate-generate-warning {
+    max-width: none;
+    font-size: 0.78rem;
+  }
 }
 
 @media (max-width: 640px) {
@@ -772,6 +808,18 @@ form.is-certificate-options-active .field-static-value {
   .form-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .certificate-options-view > .certificate-actions {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+
+  .certificate-options-view > .certificate-actions .secondary-action,
+  .certificate-options-view > .certificate-actions .primary-action,
+  .certificate-options-view > .certificate-actions .brand-square-action {
+    padding-right: 24px;
+    padding-left: 24px;
   }
 
   .primary-action {

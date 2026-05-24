@@ -601,16 +601,16 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert "Choose Certificate Display" in body
     assert "Confirm the information you want shown on the completion certificate." in body
     assert "Confirm the information you want shown on the completion certificate; once confirmed, it cannot be changed." in body
-    assert "Cannot be changed after confirmation." in body
+    assert "Final after confirmation." in body
     assert "Name display" in body
     assert "Show company name: {organization}" in body
     assert "Certificate Preview" in body
     assert "Review the certificate layout and display options." in body
-    assert "Confirm Generate Certificate" in body
+    assert "Generate Certificate" in body
     assert "Download Certificate" in body
     assert "Preparing certificate download. Please wait." in body
     assert "Generating certificate. Please wait." in body
-    assert "Back to Search" in body
+    assert "Back" in body
     assert "Make sure the information matches the registration record." not in body
     assert "Taipei Elite Software Developer Association (77212283)" in body
     assert "If no record is found" not in body
