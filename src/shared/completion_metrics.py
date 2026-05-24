@@ -4,10 +4,10 @@ from typing import Any
 
 
 COMPLETION_METRIC_FIELDS = (
+    "totalCount",
     "downloadableCount",
     "downloadCount",
     "verificationCount",
-    "pendingCount",
 )
 
 
@@ -19,6 +19,7 @@ def summarize_completion_cert_documents(
     documents: list[dict[str, Any]],
 ) -> dict[str, int]:
     return {
+        "totalCount": len(documents),
         "downloadableCount": sum(
             1 for document in documents if is_completion_cert_downloadable(document)
         ),
@@ -29,9 +30,6 @@ def summarize_completion_cert_documents(
                 ("verificationCount",),
             )
             for document in documents
-        ),
-        "pendingCount": sum(
-            1 for document in documents if is_completion_cert_pending(document)
         ),
     }
 
@@ -59,11 +57,6 @@ def has_completion_cert_download_record(document: dict[str, Any]) -> bool:
         str(document.get(field_name) or "").strip()
         for field_name in ("firstDownloadAt", "lastDownloadAt")
     )
-
-
-def is_completion_cert_pending(document: dict[str, Any]) -> bool:
-    cert_status = str(document.get("certStatus", "")).strip() or "notIssued"
-    return cert_status != "issued"
 
 
 def read_non_negative_int_field(

@@ -488,6 +488,7 @@ def build_portal_dashboard_welcome_context(
 def build_portal_welcome_completion_metrics_placeholder_context() -> dict[str, str]:
     return {
         "completion_metrics_event_name": "尚無活動資料",
+        "completion_total_count": "--",
         "completion_downloadable_count": "--",
         "completion_downloaded_member_count": "--",
         "completion_verification_count": "--",
@@ -502,6 +503,7 @@ def build_portal_welcome_completion_metrics_placeholder_context() -> dict[str, s
 def build_portal_welcome_metrics_payload() -> dict[str, Any]:
     default_metrics = {
         "eventName": "尚無活動資料",
+        "totalCount": 0,
         "downloadableCount": 0,
         "downloadCount": 0,
         "verificationCount": 0,
@@ -559,6 +561,7 @@ def build_portal_welcome_completion_metrics(event: dict[str, Any]) -> dict[str, 
     if not event_id:
         return {
             "eventName": "尚無活動資料",
+            "totalCount": 0,
             "downloadableCount": 0,
             "downloadCount": 0,
             "verificationCount": 0,
@@ -584,11 +587,21 @@ def build_portal_welcome_completion_metrics(event: dict[str, Any]) -> dict[str, 
     event_name = str(event.get("name", "")).strip()
     return {
         "eventName": event_name or event_id,
+        "totalCount": max(0, int(summary["totalCount"])),
         "downloadableCount": max(0, int(summary["downloadableCount"])),
         "downloadCount": max(0, int(summary["downloadCount"])),
         "verificationCount": max(0, int(summary["verificationCount"])),
-        "pendingCount": max(0, int(summary["pendingCount"])),
+        "pendingCount": count_pending_completion_cert_change_requests(),
     }
+
+
+def count_pending_completion_cert_change_requests() -> int:
+    return len(
+        list_completion_cert_request_documents(
+            container=get_completion_cert_requests_container(),
+            status="pending",
+        )
+    )
 
 
 def build_portal_welcome_tax_receipt_metrics(event: dict[str, Any]) -> dict[str, Any]:

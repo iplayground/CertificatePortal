@@ -654,7 +654,6 @@ def issue_completion_cert_pdf(payload: dict[str, Any], req: func.HttpRequest) ->
         deltas={
             "downloadableCount": 1,
             "downloadCount": 1,
-            "pendingCount": -1,
         },
     )
     return pdf_bytes, build_completion_cert_download_filename(cert_document)

@@ -3141,7 +3141,7 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert "資料來源：--" in body
     assert 'id="welcome-metric-overview"' in body
     assert 'aria-busy="true"' in body
-    assert 'data-metric-field="completion.downloadableCount"' in body
+    assert 'data-metric-field="completion.totalCount"' in body
     assert 'data-metric-field="completion.downloadCount"' in body
     assert 'data-metric-field="completion.verificationCount"' in body
     assert 'data-metric-field="completion.pendingCount"' in body
@@ -3149,13 +3149,15 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert 'data-metric-field="taxReceipt.queriedCompanyCount"' in body
     assert 'data-metric-field="taxReceipt.downloadCount"' in body
     assert 'data-metric-field="taxReceipt.totalAmount"' in body
-    assert "<strong class=\"metric-value is-loading\" data-metric-field=\"completion.downloadableCount\">--</strong>" in body
+    assert "<strong class=\"metric-value is-loading\" data-metric-field=\"completion.totalCount\">--</strong>" in body
     assert "<strong class=\"metric-value is-loading\" data-metric-field=\"taxReceipt.totalAmount\">--</strong>" in body
     assert "載入中" not in body
-    assert "系統可下載數" in body
+    assert "完訓總人數" in body
+    assert "系統可下載數" not in body
     assert "下載人次" in body
     assert "驗證次數" in body
-    assert "待處理案件數量" in body
+    assert "待審核修改申請" in body
+    assert "待處理案件數量" not in body
     assert "收據張數" in body
     assert "已查詢公司數" in body
     assert "已建檔公司數" not in body
@@ -3166,8 +3168,9 @@ def test_portal_dashboard_welcome_page_returns_html_with_authenticated_user_name
     assert "上傳檔案數" not in body
     assert "尚未下載公司數" not in body
     assert "待確認筆數" not in body
-    assert "目前已完成完訓證明檔案建立" in body
-    assert "目前尚未完成發證或仍需管理者處理的完訓證明案件總數" in body
+    assert "最近一期活動完訓名單總人數，包含尚未申請完訓證明的人數" in body
+    assert "修改審核頁中目前尚未處理的完訓證明修改申請數量" in body
+    assert "目前尚未完成發證或仍需管理者處理的完訓證明案件總數" not in body
     assert "尚待匯入、發證或補件確認的完訓證明案件總數" not in body
     assert "最近一期活動已新增營業稅繳稅證明的金額合計" in body
     assert 'href="/assets/favicon.png"' in body
@@ -3285,6 +3288,49 @@ def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_f
         "createdAt": "2026-05-15T15:00:44Z",
         "updatedAt": "2026-05-15T15:00:44Z",
     }
+    fake_requests_container = FakeCompletionCertRequestsContainer()
+    fake_requests_container.items["ccreq_1"] = {
+        "id": "ccreq_1",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "pending",
+        "requesterEmail": "ming@example.com",
+        "requesterNote": "姓名需修正",
+        "reviewedBy": None,
+        "reviewedAt": None,
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": None,
+        "createdAt": "2026-04-29T06:00:00Z",
+        "updatedAt": "2026-04-29T06:00:00Z",
+    }
+    fake_requests_container.items["ccreq_2"] = {
+        "id": "ccreq_2",
+        "completionCertId": "ccert_other_event",
+        "eventId": "evt_other",
+        "status": "pending",
+        "requesterEmail": "other@example.com",
+        "requesterNote": "公司需修正",
+        "reviewedBy": None,
+        "reviewedAt": None,
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": None,
+        "createdAt": "2026-04-29T07:00:00Z",
+        "updatedAt": "2026-04-29T07:00:00Z",
+    }
+    fake_requests_container.items["ccreq_done"] = {
+        "id": "ccreq_done",
+        "completionCertId": "ccert_2",
+        "eventId": "evt_1",
+        "status": "approved",
+        "requesterEmail": "hua@example.com",
+        "requesterNote": "已處理",
+        "reviewedBy": "admin@iplayground.io",
+        "reviewedAt": "2026-04-30T06:00:00Z",
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": "已修正",
+        "createdAt": "2026-04-29T08:00:00Z",
+        "updatedAt": "2026-04-30T06:00:00Z",
+    }
     monkeypatch.setattr("src.functions.portal.get_events_container", FakeEventsContainer)
     monkeypatch.setattr(
         "src.functions.portal.list_event_documents",
@@ -3317,6 +3363,10 @@ def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_f
         "src.functions.portal.get_tax_receipts_container",
         lambda: fake_tax_container,
     )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        lambda: fake_requests_container,
+    )
 
     response = portal_admin_dashboard_welcome_metrics_api(
         build_authorized_portal_api_request(
@@ -3331,10 +3381,11 @@ def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_f
     assert response.mimetype == "application/json"
     assert '"completionCertMetrics"' in body
     assert '"eventName":"iPlayground 2026"' in body
+    assert '"totalCount":3' in body
     assert '"downloadableCount":2' in body
     assert '"downloadCount":3' in body
     assert '"verificationCount":15' in body
-    assert '"pendingCount":1' in body
+    assert '"pendingCount":2' in body
     assert '"taxReceiptMetrics"' in body
     assert '"eventName":"營業稅活動"' in body
     assert '"receiptCount":3' in body
@@ -3444,6 +3495,10 @@ def test_portal_admin_dashboard_welcome_metrics_api_uses_latest_open_event_start
         "src.functions.portal.get_completion_records_container",
         lambda: fake_completion_container,
     )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        FakeCompletionCertRequestsContainer,
+    )
 
     response = portal_admin_dashboard_welcome_metrics_api(
         build_authorized_portal_api_request(
@@ -3467,6 +3522,26 @@ def test_portal_admin_dashboard_welcome_metrics_api_prefers_preaggregated_comple
     reset_portal_auth_env(monkeypatch)
     configure_portal_auth_bypass_env(monkeypatch, display_name="系統管理者")
     monkeypatch.setattr("src.functions.portal.get_events_container", FakeEventsContainer)
+    fake_requests_container = FakeCompletionCertRequestsContainer()
+    for index in range(3):
+        fake_requests_container.items[f"ccreq_{index}"] = {
+            "id": f"ccreq_{index}",
+            "completionCertId": f"ccert_{index}",
+            "eventId": "evt_1",
+            "status": "pending",
+            "requesterEmail": f"user{index}@example.com",
+            "requesterNote": "請協助修正",
+            "reviewedBy": None,
+            "reviewedAt": None,
+            "reviewCompletedNotifiedAt": None,
+            "reviewNote": None,
+            "createdAt": "2026-04-29T06:00:00Z",
+            "updatedAt": "2026-04-29T06:00:00Z",
+        }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        lambda: fake_requests_container,
+    )
     monkeypatch.setattr(
         "src.functions.portal.list_event_documents",
         lambda **_: [
@@ -3479,10 +3554,10 @@ def test_portal_admin_dashboard_welcome_metrics_api_prefers_preaggregated_comple
                 "eventEndDate": "2026-05-04",
                 "metrics": {
                     "completionCert": {
+                        "totalCount": 14,
                         "downloadableCount": 12,
                         "downloadCount": 1,
                         "verificationCount": 5,
-                        "pendingCount": 2,
                     }
                 },
             }
@@ -3507,10 +3582,11 @@ def test_portal_admin_dashboard_welcome_metrics_api_prefers_preaggregated_comple
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
+    assert '"totalCount":14' in body
     assert '"downloadableCount":12' in body
     assert '"downloadCount":1' in body
     assert '"verificationCount":5' in body
-    assert '"pendingCount":2' in body
+    assert '"pendingCount":3' in body
 
 
 def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_authorized(

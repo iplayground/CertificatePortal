@@ -2399,10 +2399,10 @@ def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
     assert records_container.items[0]["firstDownloadAt"].endswith("Z")
     assert records_container.items[0]["lastDownloadAt"].endswith("Z")
     assert events_container.items["evt_1"]["metrics"]["completionCert"] == {
+        "totalCount": 1,
         "downloadableCount": 1,
         "downloadCount": 1,
         "verificationCount": 0,
-        "pendingCount": 0,
     }
 
 
@@ -2520,10 +2520,10 @@ def test_public_completion_cert_issue_api_downloads_existing_issued_pdf(
                 "completionCertDownloadStartsAt": None,
                 "metrics": {
                     "completionCert": {
+                        "totalCount": 1,
                         "downloadableCount": 1,
                         "downloadCount": 1,
                         "verificationCount": 0,
-                        "pendingCount": 0,
                     }
                 },
             }
@@ -2583,10 +2583,10 @@ def test_public_completion_cert_issue_api_downloads_existing_issued_pdf(
     assert records_container.items[0]["lastDownloadAt"].endswith("Z")
     assert records_container.items[0]["lastDownloadAt"] != "2026-05-01T00:02:00Z"
     assert events_container.items["evt_1"]["metrics"]["completionCert"] == {
+        "totalCount": 1,
         "downloadableCount": 1,
         "downloadCount": 2,
         "verificationCount": 0,
-        "pendingCount": 0,
     }
 
 

@@ -116,7 +116,7 @@ async function loadWelcomeMetrics() {
     }
 
     const completionMetrics = payload?.completionCertMetrics ?? {};
-    updateMetricValue("completion.downloadableCount", completionMetrics.downloadableCount);
+    updateMetricValue("completion.totalCount", completionMetrics.totalCount);
     updateMetricValue("completion.downloadCount", completionMetrics.downloadCount);
     updateMetricValue("completion.verificationCount", completionMetrics.verificationCount);
     updateMetricValue("completion.pendingCount", completionMetrics.pendingCount);

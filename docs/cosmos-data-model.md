@@ -45,10 +45,10 @@ partition key: /id
 | `eventEndDate` | string | 活動結束日期，純日期，格式 `yyyy-MM-dd` |
 | `completionHours` | int | 完訓總時數，單位小時，由管理者填入，不由系統計算 |
 | `completionCertDownloadStartsAt` | string \| null | 完訓證明開放下載時間，UTC ISO 8601；未開放完訓證明時為 null |
+| `metrics.completionCert.totalCount` | int | 此活動完訓名單總人數，包含尚未申請完訓證明的人數 |
 | `metrics.completionCert.downloadableCount` | int | 此活動已可下載的完訓證明數量 |
 | `metrics.completionCert.downloadCount` | int | 此活動完訓證明累計下載人次；同一位重複下載會重複計次 |
 | `metrics.completionCert.verificationCount` | int | 此活動完訓證明公開驗證成功次數 |
-| `metrics.completionCert.pendingCount` | int | 此活動尚未發行的完訓證明數量 |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
 | `createdBy` | string | 建立者識別 |
 | `updatedAt` | string | 最後更新時間，UTC ISO 8601 |
@@ -112,10 +112,10 @@ def build_event_id(idempotency_key: str, *, actor: str) -> str:
   "completionCertDownloadStartsAt": "2026-04-25T03:30:00Z",
   "metrics": {
     "completionCert": {
+      "totalCount": 0,
       "downloadableCount": 0,
       "downloadCount": 0,
-      "verificationCount": 0,
-      "pendingCount": 0
+      "verificationCount": 0
     }
   },
   "createdAt": "2026-04-25T03:30:00Z",
@@ -137,7 +137,7 @@ FROM c
 ORDER BY c.createdAt DESC
 ```
 
-活動清單只投影管理端 UI 需要的欄位，並依建立時間由新到舊排序。管理端歡迎頁的 HTML 首屏不查詢 Cosmos DB；畫面先以 `--` 指標顯示，再由 `GET /api/v1/admin/dashboard/welcome-metrics` 讀取狀態為 `open`、含對應文件類型且活動開始日期最新的活動。歡迎頁標題下方會顯示統計資料來源活動；若完訓證明與營業稅繳稅證明來源不同，會分別列出各文件類型的來源活動。完訓證明統計優先使用活動文件上的 `metrics.completionCert` 預聚合資料，避免每次載入歡迎頁都掃描該活動全部完訓證明文件。
+活動清單只投影管理端 UI 需要的欄位，並依建立時間由新到舊排序。管理端歡迎頁的 HTML 首屏不查詢 Cosmos DB；畫面先以 `--` 指標顯示，再由 `GET /api/v1/admin/dashboard/welcome-metrics` 讀取狀態為 `open`、含對應文件類型且活動開始日期最新的活動。歡迎頁標題下方會顯示統計資料來源活動；若完訓證明與營業稅繳稅證明來源不同，會分別列出各文件類型的來源活動。完訓證明總數、下載人次與驗證次數優先使用活動文件上的 `metrics.completionCert` 預聚合資料，避免每次載入歡迎頁都掃描該活動全部完訓證明文件；歡迎頁待審核修改申請則讀取 `completionCertRequests` 中 `status = pending` 的申請數，與修改審核頁待審核清單保持一致。
 
 公開首頁活動清單：
 
@@ -167,15 +167,15 @@ partition key = <event-id>
 
 活動文件的 `metrics.completionCert` 是管理端歡迎頁的權威統計快取。欄位語意如下：
 
+- `totalCount`：該活動完訓名單總人數，也就是 `completionCerts` 文件總數，包含尚未申請完訓證明的人數。
 - `downloadableCount`：該活動目前已發行且有 `issuedPdfBlobName` 的完訓證明數量。
 - `downloadCount`：該活動完訓證明累計下載人次。首次產生證書並下載時計 1 次；已發行證書再次下載時，每次下載都再加 1。同一位重複下載會重複計次。
 - `verificationCount`：公開驗證頁成功驗證該活動完訓證明的累計次數。
-- `pendingCount`：該活動 `certStatus` 不是 `issued` 的完訓證明數量。
 
 下列流程會更新 `metrics.completionCert`：
 
 - CSV 匯入完成後，以該活動全部 `completionCerts` 文件重算並覆寫。
-- 首次產生完訓證明 PDF 並下載後，增加 `downloadableCount` 與 `downloadCount`，並減少 `pendingCount`。
+- 首次產生完訓證明 PDF 並下載後，增加 `downloadableCount` 與 `downloadCount`。
 - 已發行證書再次下載後，增加 `downloadCount`。
 - 公開驗證頁成功驗證後，增加 `verificationCount`。
 

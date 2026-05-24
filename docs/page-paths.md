@@ -399,11 +399,13 @@ Request JSON 範例：
 - 統計區使用單一 `最近一期活動資料` 標題，避免在各文件類型區段重複顯示
 - `最近一期活動資料` 標題下方會顯示資料來源；若完訓證明與營業稅繳稅證明使用同一場活動，只顯示單一活動名稱，若來源不同則分別列出各文件類型對應活動
 - 文件類型統計區段使用類似完訓證明頁工作區的大外框樣式包覆，內部為四格指標
-- `完訓證明` 區段顯示最近一期開放完訓證明活動的 `系統可下載數`、`下載人次`、`驗證次數`、`待處理案件數量`
+- `完訓證明` 區段顯示最近一期開放完訓證明活動的 `完訓總人數`、`下載人次`、`驗證次數`、`待審核修改申請`
 - 最近一期活動以活動清單中 `status = open`、含對應文件類型且 `eventStartDate` 最新的活動為準，不使用建立時間排序決定；完訓證明與營業稅繳稅證明會各自選擇最近一期對應活動
 - 完訓證明統計優先讀取活動文件的 `metrics.completionCert` 預聚合資料；若活動文件缺少目前欄位，後端會以該活動的 `completionCerts` 文件重算並寫回活動文件
+- `完訓總人數` 讀取 `metrics.completionCert.totalCount`，口徑為最近一期活動完訓名單總人數，包含尚未申請完訓證明的人數
 - `下載人次` 讀取 `metrics.completionCert.downloadCount`；公開首頁第一次產生證書並下載時計 1 次，已產生證書再次下載時每次都加 1，同一位重複下載會重複計次
 - `驗證次數` 讀取 `metrics.completionCert.verificationCount`；公開驗證頁成功驗證一次就加 1
+- `待審核修改申請` 讀取 `completionCertRequests` 中 `status = pending` 的完訓證明修改申請數，口徑應與修改審核頁的待審核清單一致
 - CSV 匯入、首次下載、再次下載與公開驗證流程都會更新活動文件的 `metrics.completionCert`，避免歡迎頁每次載入時掃描該活動全部完訓證明文件
 - `營業稅繳稅證明` 區段顯示最近一期開放營業稅繳稅證明活動的 `收據張數`、`已查詢公司數`、`已下載次數`、`收據總金額`
 - `收據張數` 為該活動 `taxReceipts` 文件數，`已下載次數` 為各收據用戶端 `downloadCount` 合計，`收據總金額` 為各收據 `amount` 合計
@@ -422,6 +424,7 @@ Request JSON 範例：
 {
   "completionCertMetrics": {
     "eventName": "iPlayground 2026",
+    "totalCount": 3,
     "downloadableCount": 2,
     "downloadCount": 3,
     "verificationCount": 15,
@@ -726,10 +729,10 @@ Response JSON example:
 {
   "metrics": {
     "completionCert": {
+      "totalCount": 1,
       "downloadableCount": 0,
       "downloadCount": 0,
-      "verificationCount": 0,
-      "pendingCount": 1
+      "verificationCount": 0
     }
   }
 }

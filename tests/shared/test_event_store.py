@@ -156,10 +156,10 @@ def test_build_event_document_uses_utc_timestamps_and_actor() -> None:
         "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
         "metrics": {
             "completionCert": {
+                "totalCount": 0,
                 "downloadableCount": 0,
                 "downloadCount": 0,
                 "verificationCount": 0,
-                "pendingCount": 0,
             }
         },
         "createdAt": "2026-04-27T12:00:00Z",
@@ -173,19 +173,19 @@ def test_normalize_event_completion_metrics_requires_current_metric_shape() -> N
     event = {
         "metrics": {
             "completionCert": {
+                "totalCount": 5,
                 "downloadableCount": 1,
                 "downloadCount": 2,
                 "verificationCount": 3,
-                "pendingCount": 4,
             }
         }
     }
 
     assert normalize_event_completion_metrics(event) == {
+        "totalCount": 5,
         "downloadableCount": 1,
         "downloadCount": 2,
         "verificationCount": 3,
-        "pendingCount": 4,
     }
 
 
@@ -193,7 +193,23 @@ def test_normalize_event_completion_metrics_rejects_missing_current_metric_field
     event = {
         "metrics": {
             "completionCert": {
+                "totalCount": 5,
                 "downloadableCount": 1,
+                "verificationCount": 3,
+            }
+        }
+    }
+
+    assert normalize_event_completion_metrics(event) is None
+
+
+def test_normalize_event_completion_metrics_rejects_extra_legacy_metric_field() -> None:
+    event = {
+        "metrics": {
+            "completionCert": {
+                "totalCount": 5,
+                "downloadableCount": 1,
+                "downloadCount": 2,
                 "verificationCount": 3,
                 "pendingCount": 4,
             }

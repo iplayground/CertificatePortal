@@ -177,6 +177,9 @@ def normalize_event_completion_metrics(event: dict[str, Any]) -> dict[str, int] 
     if any(field_name not in completion_metrics for field_name in COMPLETION_METRIC_FIELDS):
         return None
 
+    if any(field_name not in COMPLETION_METRIC_FIELDS for field_name in completion_metrics):
+        return None
+
     return {
         field_name: read_non_negative_counter(completion_metrics.get(field_name))
         for field_name in COMPLETION_METRIC_FIELDS

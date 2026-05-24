@@ -186,10 +186,10 @@ def test_verify_page_renders_valid_completion_certificate(
                 "name": "iPlayground 2026",
                 "metrics": {
                     "completionCert": {
+                        "totalCount": 1,
                         "downloadableCount": 1,
                         "downloadCount": 1,
                         "verificationCount": 2,
-                        "pendingCount": 0,
                     }
                 },
             }
@@ -245,10 +245,10 @@ def test_verify_page_renders_valid_completion_certificate(
     assert records_container.documents[0]["verificationCount"] == 3
     assert records_container.documents[0]["updatedAt"].endswith("Z")
     assert events_container.documents["evt_1"]["metrics"]["completionCert"] == {
+        "totalCount": 1,
         "downloadableCount": 1,
         "downloadCount": 1,
         "verificationCount": 3,
-        "pendingCount": 0,
     }
 
 
