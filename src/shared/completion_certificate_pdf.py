@@ -34,6 +34,9 @@ PDF_BUNDLED_REGULAR_FONT_PATH: Final[Path] = PDF_FONT_DIR / "STHeiti-Light.ttc"
 PDF_BUNDLED_BOLD_FONT_PATH: Final[Path] = PDF_FONT_DIR / "STHeiti-Medium.ttc"
 PDF_REGULAR_FONT_PATH_ENV: Final[str] = "COMPLETION_CERTIFICATE_REGULAR_FONT_PATH"
 PDF_BOLD_FONT_PATH_ENV: Final[str] = "COMPLETION_CERTIFICATE_BOLD_FONT_PATH"
+PDF_ALLOW_UNEMBEDDED_FONT_FALLBACK_ENV: Final[str] = (
+    "COMPLETION_CERTIFICATE_ALLOW_UNEMBEDDED_FONT_FALLBACK"
+)
 PDF_CJK_FONT_NAME: Final[str] = "STSong-Light"
 PDF_CJK_BOLD_FONT_NAME: Final[str] = "IPG-HeitiTC-Medium"
 PDF_CJK_BOLD_FALLBACK_FONT_NAME: Final[str] = "HYGothic-Medium"
@@ -289,9 +292,18 @@ def register_completion_certificate_fonts(
         register_truetype_font(PDF_BUNDLED_BOLD_FONT_NAME, bold_font_path)
         return CompletionCertificateFontSet(
             regular_font_name=PDF_BUNDLED_REGULAR_FONT_NAME,
-            latin_font_name=PDF_BUNDLED_REGULAR_FONT_NAME,
+            latin_font_name=PDF_LATIN_FONT_NAME,
             title_font_name=PDF_BUNDLED_BOLD_FONT_NAME,
-            title_latin_font_name=PDF_BUNDLED_BOLD_FONT_NAME,
+            title_latin_font_name=PDF_LATIN_BOLD_FONT_NAME,
+        )
+
+    if not should_allow_unembedded_font_fallback():
+        raise FileNotFoundError(
+            "Completion certificate PDF generation requires embedded regular "
+            "and bold CJK font files in production. Provide "
+            f"{PDF_REGULAR_FONT_PATH_ENV} and {PDF_BOLD_FONT_PATH_ENV}, or bundle "
+            f"{PDF_BUNDLED_REGULAR_FONT_PATH.name} and "
+            f"{PDF_BUNDLED_BOLD_FONT_PATH.name}."
         )
 
     pdfmetrics.registerFont(UnicodeCIDFont(PDF_CJK_FONT_NAME))
@@ -332,6 +344,17 @@ def resolve_completion_certificate_font_path(
         return bundled_path
 
     return None
+
+
+def should_allow_unembedded_font_fallback() -> bool:
+    if os.environ.get("AZURE_FUNCTIONS_ENVIRONMENT", "").lower() == "production":
+        return False
+
+    configured = os.environ.get(PDF_ALLOW_UNEMBEDDED_FONT_FALLBACK_ENV, "").strip()
+    if configured:
+        return configured.lower() in {"1", "true", "yes", "on"}
+
+    return True
 
 
 def register_truetype_font(font_name: str, font_path: Path) -> None:

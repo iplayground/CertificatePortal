@@ -238,7 +238,7 @@ rollback 會重新 checkout rollback ref，並再次透過 `Azure/functions-acti
 - Cosmos Portal inspection：可透過 `cosmosPortalDataReaderPrincipalIds` 為管理者安全群組授與 account 範圍 Cosmos DB Built-in Data Reader
 - Cosmos app settings：`COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER`、`COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER`、`COSMOS_TAX_RECEIPTS_CONTAINER` 與 `COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER` 由 Bicep 寫入 Function App
 - Blob app settings：`BLOB_DOCUMENT_ASSETS_CONTAINER`、`BLOB_ISSUED_CERT_CONTAINER` 與 `BLOB_TAX_RECEIPTS_CONTAINER` 由 Bicep 寫入 Function App，預設分別指向 `document-assets`、`issued-certs` 與 `tax-receipts`
-- Completion certificate PDF font settings：正式部署不提交字體到 git；deploy workflow 只在 `main` 部署時從 private `document-assets` 下載完訓證明 regular 與 bold 字體素材到 `src/shared/pdf_fonts/`，再打包進 Function App。若需改用其他 runtime 可讀路徑，可同時設定 `COMPLETION_CERTIFICATE_REGULAR_FONT_PATH` 與 `COMPLETION_CERTIFICATE_BOLD_FONT_PATH`
+- Completion certificate PDF font settings：正式部署不提交字體到 git；deploy workflow 只在 `main` 部署時從 private `document-assets` 下載完訓證明 regular 與 bold 字體素材到 `src/shared/pdf_fonts/`，再打包進 Function App。若需改用其他 runtime 可讀路徑，可同時設定 `COMPLETION_CERTIFICATE_REGULAR_FONT_PATH` 與 `COMPLETION_CERTIFICATE_BOLD_FONT_PATH`。英文與 ASCII 字元固定使用 PDF 標準 Helvetica 系列；中文等非 ASCII 字元必須使用可嵌入字體。正式環境缺少 regular/bold 嵌入字體時會拒絕產生 PDF，避免產出跨平台顯示不穩定的 CID/platform fallback PDF
 - Tax receipt download ticket app settings：`TAX_RECEIPT_DOWNLOAD_TICKET_SECRET` 與 `TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS` 由 Bicep 參數或 CLI 寫入 Function App；secret 應由 Key Vault reference 或安全 CLI 流程提供，不提交到 repository
 - Cosmos containers：`events` 使用 `/id` 作為 partition key，供活動管理資料使用；完訓證明與營業稅繳稅證明 containers 依 [cosmos-data-model.md](cosmos-data-model.md) 使用 `/eventId`
 

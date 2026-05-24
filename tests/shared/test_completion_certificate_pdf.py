@@ -6,7 +6,12 @@ from pypdf import PdfReader
 from src.shared.completion_certificate_pdf import (
     CompletionCertificatePdfData,
     DEFAULT_COMPLETION_CERTIFICATE_TEMPLATE,
+    PDF_ALLOW_UNEMBEDDED_FONT_FALLBACK_ENV,
     PDF_BOLD_FONT_PATH_ENV,
+    PDF_BUNDLED_BOLD_FONT_NAME,
+    PDF_BUNDLED_REGULAR_FONT_NAME,
+    PDF_LATIN_BOLD_FONT_NAME,
+    PDF_LATIN_FONT_NAME,
     PDF_REGULAR_FONT_PATH_ENV,
     format_completion_certificate_number,
     register_completion_certificate_fonts,
@@ -99,6 +104,81 @@ def test_register_completion_certificate_fonts_rejects_missing_configured_font(
         assert PDF_REGULAR_FONT_PATH_ENV in str(exc)
     else:
         raise AssertionError("missing configured font path should fail")
+
+
+def test_register_completion_certificate_fonts_keeps_latin_on_helvetica(
+    monkeypatch,
+) -> None:
+    registered_paths: list[Path] = []
+
+    monkeypatch.setattr(
+        "src.shared.completion_certificate_pdf.resolve_completion_certificate_font_path",
+        lambda *_: Path("/tmp/font.ttc"),
+    )
+    monkeypatch.setattr(
+        "src.shared.completion_certificate_pdf.register_truetype_font",
+        lambda _name, path: registered_paths.append(path),
+    )
+
+    font_set = register_completion_certificate_fonts()
+
+    assert registered_paths == [Path("/tmp/font.ttc"), Path("/tmp/font.ttc")]
+    assert font_set.regular_font_name == PDF_BUNDLED_REGULAR_FONT_NAME
+    assert font_set.title_font_name == PDF_BUNDLED_BOLD_FONT_NAME
+    assert font_set.latin_font_name == PDF_LATIN_FONT_NAME
+    assert font_set.title_latin_font_name == PDF_LATIN_BOLD_FONT_NAME
+
+
+def test_register_completion_certificate_fonts_rejects_unembedded_production_fallback(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AZURE_FUNCTIONS_ENVIRONMENT", "Production")
+    monkeypatch.delenv(PDF_ALLOW_UNEMBEDDED_FONT_FALLBACK_ENV, raising=False)
+    monkeypatch.setattr(
+        "src.shared.completion_certificate_pdf.resolve_completion_certificate_font_path",
+        lambda *_: None,
+    )
+
+    try:
+        register_completion_certificate_fonts()
+    except FileNotFoundError as exc:
+        assert "requires embedded regular and bold CJK font files" in str(exc)
+    else:
+        raise AssertionError("production fallback without embedded fonts should fail")
+
+
+def test_register_completion_certificate_fonts_rejects_production_fallback_override(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AZURE_FUNCTIONS_ENVIRONMENT", "Production")
+    monkeypatch.setenv(PDF_ALLOW_UNEMBEDDED_FONT_FALLBACK_ENV, "true")
+    monkeypatch.setattr(
+        "src.shared.completion_certificate_pdf.resolve_completion_certificate_font_path",
+        lambda *_: None,
+    )
+
+    try:
+        register_completion_certificate_fonts()
+    except FileNotFoundError as exc:
+        assert "requires embedded regular and bold CJK font files" in str(exc)
+    else:
+        raise AssertionError("production fallback override should still fail")
+
+
+def test_register_completion_certificate_fonts_allows_explicit_development_fallback(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AZURE_FUNCTIONS_ENVIRONMENT", "Development")
+    monkeypatch.setenv(PDF_ALLOW_UNEMBEDDED_FONT_FALLBACK_ENV, "true")
+    monkeypatch.setattr(
+        "src.shared.completion_certificate_pdf.resolve_completion_certificate_font_path",
+        lambda *_: None,
+    )
+
+    font_set = register_completion_certificate_fonts()
+
+    assert font_set.latin_font_name == PDF_LATIN_FONT_NAME
+    assert font_set.title_latin_font_name == PDF_LATIN_BOLD_FONT_NAME
 
 
 def test_render_completion_certificate_pdf_accepts_runtime_seal_image(
