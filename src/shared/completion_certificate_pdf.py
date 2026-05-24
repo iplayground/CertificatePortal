@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import os
 from pathlib import Path
 from typing import Final
 
@@ -22,10 +23,17 @@ from src.shared.i18n import (
 )
 
 PDF_TEMPLATE_DIR: Final[Path] = Path(__file__).resolve().parent / "pdf_templates"
+PDF_FONT_DIR: Final[Path] = Path(__file__).resolve().parent / "pdf_fonts"
 DEFAULT_COMPLETION_CERTIFICATE_TEMPLATE: Final[Path] = (
     PDF_TEMPLATE_DIR / "completion_certificate_template_20260503.pdf"
 )
 
+PDF_BUNDLED_REGULAR_FONT_NAME: Final[str] = "IPG-Certificate-Regular"
+PDF_BUNDLED_BOLD_FONT_NAME: Final[str] = "IPG-Certificate-Bold"
+PDF_BUNDLED_REGULAR_FONT_PATH: Final[Path] = PDF_FONT_DIR / "STHeiti-Light.ttc"
+PDF_BUNDLED_BOLD_FONT_PATH: Final[Path] = PDF_FONT_DIR / "STHeiti-Medium.ttc"
+PDF_REGULAR_FONT_PATH_ENV: Final[str] = "COMPLETION_CERTIFICATE_REGULAR_FONT_PATH"
+PDF_BOLD_FONT_PATH_ENV: Final[str] = "COMPLETION_CERTIFICATE_BOLD_FONT_PATH"
 PDF_CJK_FONT_NAME: Final[str] = "STSong-Light"
 PDF_CJK_BOLD_FONT_NAME: Final[str] = "IPG-HeitiTC-Medium"
 PDF_CJK_BOLD_FALLBACK_FONT_NAME: Final[str] = "HYGothic-Medium"
@@ -89,11 +97,26 @@ class CompletionCertificatePdfData:
     seal_image_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class CompletionCertificateFontSet:
+    regular_font_name: str
+    latin_font_name: str
+    title_font_name: str
+    title_latin_font_name: str
+
+
+@dataclass(frozen=True)
+class CompletionCertificateFontPaths:
+    regular_font_path: Path
+    bold_font_path: Path
+
+
 def render_completion_certificate_pdf(
     data: CompletionCertificatePdfData,
     output_path: Path,
     *,
     template_path: Path = DEFAULT_COMPLETION_CERTIFICATE_TEMPLATE,
+    font_paths: CompletionCertificateFontPaths | None = None,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with pikepdf.open(template_path) as template_pdf:
@@ -105,7 +128,12 @@ def render_completion_certificate_pdf(
         page = template_pdf.pages[0]
         page_width = float(page.mediabox[2]) - float(page.mediabox[0])
         page_height = float(page.mediabox[3]) - float(page.mediabox[1])
-        overlay_pdf = build_completion_certificate_overlay(data, page_width, page_height)
+        overlay_pdf = build_completion_certificate_overlay(
+            data,
+            page_width,
+            page_height,
+            font_paths=font_paths,
+        )
         with pikepdf.open(overlay_pdf) as overlay:
             page.add_overlay(overlay.pages[0], push_stack=True, shrink=False, expand=False)
 
@@ -129,18 +157,19 @@ def build_completion_certificate_overlay(
     data: CompletionCertificatePdfData,
     page_width: float,
     page_height: float,
+    *,
+    font_paths: CompletionCertificateFontPaths | None = None,
 ) -> BytesIO:
-    cjk_bold_font_name = register_completion_certificate_fonts()
+    font_set = register_completion_certificate_fonts(font_paths=font_paths)
 
     buffer = BytesIO()
     overlay = canvas.Canvas(buffer, pagesize=(page_width, page_height))
     set_fill_color(overlay, PDF_TEXT_COLOR)
     copy = resolve_completion_certificate_copy(data.locale)
-    font_name = copy["font_name"]
-    latin_font_name = copy["latin_font_name"]
-    title_font_name = (
-        cjk_bold_font_name if copy["title_font_name"] == PDF_CJK_BOLD_FONT_NAME else copy["title_font_name"]
-    )
+    font_name = font_set.regular_font_name
+    latin_font_name = font_set.latin_font_name
+    title_font_name = font_set.title_font_name
+    title_latin_font_name = font_set.title_latin_font_name
 
     draw_text(
         overlay,
@@ -148,7 +177,7 @@ def build_completion_certificate_overlay(
         FIELD_POSITIONS["certificate_title"],
         int(copy["title_font_size"]),
         title_font_name,
-        copy["title_latin_font_name"],
+        title_latin_font_name,
     )
     draw_text(
         overlay,
@@ -186,6 +215,8 @@ def build_completion_certificate_overlay(
         17,
         font_name,
         latin_font_name,
+        title_font_name,
+        title_latin_font_name,
     )
     if data.event_period_text.strip():
         set_fill_color(overlay, PDF_ACCENT_TEXT_COLOR)
@@ -231,7 +262,38 @@ def build_completion_certificate_overlay(
     return buffer
 
 
-def register_completion_certificate_fonts() -> str:
+def register_completion_certificate_fonts(
+    *,
+    font_paths: CompletionCertificateFontPaths | None = None,
+) -> CompletionCertificateFontSet:
+    if font_paths is None:
+        regular_font_path = resolve_completion_certificate_font_path(
+            PDF_REGULAR_FONT_PATH_ENV,
+            PDF_BUNDLED_REGULAR_FONT_PATH,
+        )
+        bold_font_path = resolve_completion_certificate_font_path(
+            PDF_BOLD_FONT_PATH_ENV,
+            PDF_BUNDLED_BOLD_FONT_PATH,
+        )
+    else:
+        regular_font_path = font_paths.regular_font_path
+        bold_font_path = font_paths.bold_font_path
+
+    if (regular_font_path is None) != (bold_font_path is None):
+        raise FileNotFoundError(
+            "Completion certificate PDF font configuration requires both regular "
+            "and bold font files."
+        )
+    if regular_font_path is not None and bold_font_path is not None:
+        register_truetype_font(PDF_BUNDLED_REGULAR_FONT_NAME, regular_font_path)
+        register_truetype_font(PDF_BUNDLED_BOLD_FONT_NAME, bold_font_path)
+        return CompletionCertificateFontSet(
+            regular_font_name=PDF_BUNDLED_REGULAR_FONT_NAME,
+            latin_font_name=PDF_BUNDLED_REGULAR_FONT_NAME,
+            title_font_name=PDF_BUNDLED_BOLD_FONT_NAME,
+            title_latin_font_name=PDF_BUNDLED_BOLD_FONT_NAME,
+        )
+
     pdfmetrics.registerFont(UnicodeCIDFont(PDF_CJK_FONT_NAME))
 
     if PDF_CJK_BOLD_FONT_PATH.exists():
@@ -242,10 +304,42 @@ def register_completion_certificate_fonts() -> str:
                 subfontIndex=0,
             )
         )
-        return PDF_CJK_BOLD_FONT_NAME
+        cjk_bold_font_name = PDF_CJK_BOLD_FONT_NAME
+    else:
+        pdfmetrics.registerFont(UnicodeCIDFont(PDF_CJK_BOLD_FALLBACK_FONT_NAME))
+        cjk_bold_font_name = PDF_CJK_BOLD_FALLBACK_FONT_NAME
 
-    pdfmetrics.registerFont(UnicodeCIDFont(PDF_CJK_BOLD_FALLBACK_FONT_NAME))
-    return PDF_CJK_BOLD_FALLBACK_FONT_NAME
+    return CompletionCertificateFontSet(
+        regular_font_name=PDF_CJK_FONT_NAME,
+        latin_font_name=PDF_LATIN_FONT_NAME,
+        title_font_name=cjk_bold_font_name,
+        title_latin_font_name=PDF_LATIN_BOLD_FONT_NAME,
+    )
+
+
+def resolve_completion_certificate_font_path(
+    env_name: str,
+    bundled_path: Path,
+) -> Path | None:
+    configured_path = os.environ.get(env_name, "").strip()
+    if configured_path:
+        path = Path(configured_path)
+        if not path.exists():
+            raise FileNotFoundError(f"{env_name} points to a missing font file: {path}")
+        return path
+
+    if bundled_path.exists():
+        return bundled_path
+
+    return None
+
+
+def register_truetype_font(font_name: str, font_path: Path) -> None:
+    if font_path.suffix.lower() == ".ttc":
+        pdfmetrics.registerFont(TTFont(font_name, str(font_path), subfontIndex=0))
+        return
+
+    pdfmetrics.registerFont(TTFont(font_name, str(font_path)))
 
 
 def resolve_completion_certificate_copy(locale: str) -> dict[str, str]:
@@ -311,14 +405,16 @@ def draw_centered_completion_statement(
     font_size: int,
     font_name: str,
     latin_font_name: str,
+    event_font_name: str,
+    event_latin_font_name: str,
 ) -> None:
     event_font_size = font_size + 5
     segments = [
         (prefix, font_name, latin_font_name, font_size, PDF_TEXT_COLOR),
         (
             event_name,
-            font_name,
-            latin_font_name,
+            event_font_name,
+            event_latin_font_name,
             event_font_size,
             PDF_ACCENT_TEXT_COLOR,
         ),

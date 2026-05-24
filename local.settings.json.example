@@ -17,6 +17,8 @@
     "BLOB_TAX_RECEIPTS_CONTAINER": "",
     "BLOB_STORAGE_ACCOUNT_NAME": "",
     "COMPLETION_CERT_SEAL_BLOB_NAME": "completion-cert/organization-seal.png",
+    "COMPLETION_CERTIFICATE_REGULAR_FONT_PATH": "",
+    "COMPLETION_CERTIFICATE_BOLD_FONT_PATH": "",
     "PORTAL_GOOGLE_CLIENT_ID": "",
     "PORTAL_GOOGLE_CLIENT_SECRET": "",
     "PORTAL_GOOGLE_REDIRECT_URI": "http://localhost:7075/portal/auth/google/callback",

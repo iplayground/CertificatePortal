@@ -15,4 +15,8 @@ infra/bicep/*.local.bicepparam
 
 dist/
 build/
+tmp/
 *.egg-info/
+
+src/shared/pdf_fonts/*
+!src/shared/pdf_fonts/README.md

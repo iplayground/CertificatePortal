@@ -99,6 +99,35 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Download PDF fonts
+        shell: bash
+        env:
+          STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
+          DOCUMENT_ASSETS_CONTAINER: ${{ vars.AZURE_DOCUMENT_ASSETS_CONTAINER || 'document-assets' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${STORAGE_ACCOUNT_NAME}" ]]; then
+            echo "AZURE_STORAGE_ACCOUNT_NAME repository variable is required." >&2
+            exit 1
+          fi
+
+          mkdir -p src/shared/pdf_fonts
+          az storage blob download \
+            --account-name "${STORAGE_ACCOUNT_NAME}" \
+            --container-name "${DOCUMENT_ASSETS_CONTAINER}" \
+            --name completion-cert/fonts/STHeiti-Light.ttc \
+            --file src/shared/pdf_fonts/STHeiti-Light.ttc \
+            --auth-mode login \
+            --overwrite true
+          az storage blob download \
+            --account-name "${STORAGE_ACCOUNT_NAME}" \
+            --container-name "${DOCUMENT_ASSETS_CONTAINER}" \
+            --name completion-cert/fonts/STHeiti-Medium.ttc \
+            --file src/shared/pdf_fonts/STHeiti-Medium.ttc \
+            --auth-mode login \
+            --overwrite true
+
       - name: Deploy function code with remote build
         id: deploy-code
         uses: Azure/functions-action@v1
@@ -205,6 +234,36 @@ jobs:
         run: |
           set -euo pipefail
           printf '{"commit":"%s"}\n' "${{ steps.rollback-ref.outputs.rollback_ref }}" > build-info.json
+
+      - name: Download rollback PDF fonts
+        if: failure() && (steps.deploy-code.outcome == 'failure' || steps.health.outcome == 'failure') && steps.rollback-ref.outputs.rollback_ref != ''
+        shell: bash
+        env:
+          STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
+          DOCUMENT_ASSETS_CONTAINER: ${{ vars.AZURE_DOCUMENT_ASSETS_CONTAINER || 'document-assets' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${STORAGE_ACCOUNT_NAME}" ]]; then
+            echo "AZURE_STORAGE_ACCOUNT_NAME repository variable is required." >&2
+            exit 1
+          fi
+
+          mkdir -p src/shared/pdf_fonts
+          az storage blob download \
+            --account-name "${STORAGE_ACCOUNT_NAME}" \
+            --container-name "${DOCUMENT_ASSETS_CONTAINER}" \
+            --name completion-cert/fonts/STHeiti-Light.ttc \
+            --file src/shared/pdf_fonts/STHeiti-Light.ttc \
+            --auth-mode login \
+            --overwrite true
+          az storage blob download \
+            --account-name "${STORAGE_ACCOUNT_NAME}" \
+            --container-name "${DOCUMENT_ASSETS_CONTAINER}" \
+            --name completion-cert/fonts/STHeiti-Medium.ttc \
+            --file src/shared/pdf_fonts/STHeiti-Medium.ttc \
+            --auth-mode login \
+            --overwrite true
 
       - name: Roll back function code with remote build
         if: failure() && (steps.deploy-code.outcome == 'failure' || steps.health.outcome == 'failure') && steps.rollback-ref.outputs.rollback_ref != ''

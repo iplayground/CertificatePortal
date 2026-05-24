@@ -101,6 +101,7 @@ var tags = {
 }
 var roleDefinitionIds = {
   storageBlobDataOwner: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
+  storageBlobDataReader: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
   storageQueueDataContributor: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
   storageTableDataContributor: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
   websiteContributor: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772')
@@ -502,6 +503,16 @@ resource githubWebsiteContributorRoleAssignment 'Microsoft.Authorization/roleAss
     principalId: githubDeploymentIdentity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: roleDefinitionIds.websiteContributor
+  }
+}
+
+resource githubStorageBlobReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, githubDeploymentIdentity.id, roleDefinitionIds.storageBlobDataReader)
+  scope: storageAccount
+  properties: {
+    principalId: githubDeploymentIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: roleDefinitionIds.storageBlobDataReader
   }
 }
 

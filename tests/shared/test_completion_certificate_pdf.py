@@ -6,7 +6,10 @@ from pypdf import PdfReader
 from src.shared.completion_certificate_pdf import (
     CompletionCertificatePdfData,
     DEFAULT_COMPLETION_CERTIFICATE_TEMPLATE,
+    PDF_BOLD_FONT_PATH_ENV,
+    PDF_REGULAR_FONT_PATH_ENV,
     format_completion_certificate_number,
+    register_completion_certificate_fonts,
     render_completion_certificate_pdf,
     resolve_completion_certificate_copy,
 )
@@ -79,6 +82,23 @@ def test_resolve_completion_certificate_copy_uses_locale_catalog() -> None:
 
     assert copy["title"] == "Certificate of Completion"
     assert copy["font_name"] == "Helvetica"
+
+
+def test_register_completion_certificate_fonts_rejects_missing_configured_font(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        PDF_REGULAR_FONT_PATH_ENV,
+        "/missing/ipg-certificate-regular.ttf",
+    )
+    monkeypatch.delenv(PDF_BOLD_FONT_PATH_ENV, raising=False)
+
+    try:
+        register_completion_certificate_fonts()
+    except FileNotFoundError as exc:
+        assert PDF_REGULAR_FONT_PATH_ENV in str(exc)
+    else:
+        raise AssertionError("missing configured font path should fail")
 
 
 def test_render_completion_certificate_pdf_accepts_runtime_seal_image(

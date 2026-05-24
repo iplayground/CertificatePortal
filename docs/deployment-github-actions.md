@@ -147,6 +147,10 @@ Blob container 用途：
 
 - `AZURE_FUNCTIONAPP_NAME`
   說明：部署使用的 Function App 名稱
+- `AZURE_STORAGE_ACCOUNT_NAME`
+  說明：Bicep output `storageAccountName`；部署 workflow 會使用 OIDC 與 Storage Blob Data Reader 權限，從 private `document-assets` container 下載完訓證明 PDF 字體檔並放入部署包
+- `AZURE_DOCUMENT_ASSETS_CONTAINER`
+  說明：固定素材 Blob container 名稱；若未設定，workflow 預設使用 `document-assets`
 
 若希望把部署基本資訊一併保留在 GitHub repository variables，也可另外保存：
 
@@ -234,14 +238,16 @@ rollback 會重新 checkout rollback ref，並再次透過 `Azure/functions-acti
 - Cosmos Portal inspection：可透過 `cosmosPortalDataReaderPrincipalIds` 為管理者安全群組授與 account 範圍 Cosmos DB Built-in Data Reader
 - Cosmos app settings：`COSMOS_ENDPOINT`、`COSMOS_DATABASE_NAME`、`COSMOS_EVENTS_CONTAINER`、`COSMOS_COMPLETION_CERTS_CONTAINER`、`COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER`、`COSMOS_TAX_RECEIPTS_CONTAINER` 與 `COSMOS_PUBLIC_LOOKUP_ATTEMPTS_CONTAINER` 由 Bicep 寫入 Function App
 - Blob app settings：`BLOB_DOCUMENT_ASSETS_CONTAINER`、`BLOB_ISSUED_CERT_CONTAINER` 與 `BLOB_TAX_RECEIPTS_CONTAINER` 由 Bicep 寫入 Function App，預設分別指向 `document-assets`、`issued-certs` 與 `tax-receipts`
+- Completion certificate PDF font settings：正式部署不提交字體到 git；deploy workflow 只在 `main` 部署時從 private `document-assets` 下載完訓證明 regular 與 bold 字體素材到 `src/shared/pdf_fonts/`，再打包進 Function App。若需改用其他 runtime 可讀路徑，可同時設定 `COMPLETION_CERTIFICATE_REGULAR_FONT_PATH` 與 `COMPLETION_CERTIFICATE_BOLD_FONT_PATH`
 - Tax receipt download ticket app settings：`TAX_RECEIPT_DOWNLOAD_TICKET_SECRET` 與 `TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS` 由 Bicep 參數或 CLI 寫入 Function App；secret 應由 Key Vault reference 或安全 CLI 流程提供，不提交到 repository
 - Cosmos containers：`events` 使用 `/id` 作為 partition key，供活動管理資料使用；完訓證明與營業稅繳稅證明 containers 依 [cosmos-data-model.md](cosmos-data-model.md) 使用 `/eventId`
 
-Bicep 只建立 Blob containers 與 Function App app settings，不會上傳不進 git 的固定素材。重新建立環境後，仍需將單位印章圖與首頁證明預覽圖上傳到 `document-assets`：
+Bicep 只建立 Blob containers、Function App app settings 與 GitHub Actions 讀取部署素材所需的 Storage Blob Data Reader 權限，不會上傳不進 git 的固定素材。重新建立環境後，仍需將單位印章圖、首頁證明預覽圖與完訓證明 PDF regular/bold 字體檔上傳到 `document-assets`：
 
 - `completion-cert/organization-seal.png`
 - `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`
 - `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf`，上傳後應設定為 Archive tier
+- 完訓證明 PDF regular/bold 字體素材，需與部署 workflow 使用的 Blob 名稱一致
 
 ## 資料回填與維護腳本
 
