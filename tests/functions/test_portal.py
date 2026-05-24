@@ -1117,6 +1117,113 @@ def test_portal_admin_completion_certs_update_api_updates_mutable_fields(
     assert fake_completion_container.items["ccert_2"]["ticketName"] == "一般票"
 
 
+def test_portal_admin_completion_certs_update_api_rejects_data_edit_when_issued(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Old Badge",
+        "ticketName": "一般票",
+        "name": "王小華",
+        "organization": "舊公司",
+        "email": "hua@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "issued",
+        "issuedPdfBlobName": "issued/ccert_2.pdf",
+        "verificationTokenHash": "hash-2",
+        "issuedAt": "2026-04-28T06:02:00Z",
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "name": "新姓名",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"certid": "ccert_2"},
+        url="http://localhost:7075/api/v1/admin/completion-certs/ccert_2",
+    )
+
+    response = portal_admin_completion_certs_update_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 409
+    assert "已發行的完訓證明不可修改資料" in body
+    assert fake_completion_container.items["ccert_2"]["name"] == "王小華"
+    assert fake_completion_container.items["ccert_2"]["certStatus"] == "issued"
+
+
+def test_portal_admin_completion_certs_update_api_revokes_issued_cert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Old Badge",
+        "ticketName": "一般票",
+        "name": "王小華",
+        "organization": "舊公司",
+        "email": "hua@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "issued",
+        "issuedPdfBlobName": "issued/ccert_2.pdf",
+        "verificationTokenHash": "hash-2",
+        "issuedAt": "2026-04-28T06:02:00Z",
+        "certificateDisplayName": "王小華",
+        "certificateDisplayOrganization": "舊公司",
+        "certificateNameDisplay": "fullName",
+        "certificateLocale": "zh-TW",
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "certStatus": "notIssued",
+                "eventId": "evt_1",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"certid": "ccert_2"},
+        url="http://localhost:7075/api/v1/admin/completion-certs/ccert_2",
+    )
+
+    response = portal_admin_completion_certs_update_api(request)
+    body = response.get_body().decode("utf-8")
+    revoked_cert = fake_completion_container.items["ccert_2"]
+
+    assert response.status_code == 200
+    assert '"certStatus":"notIssued"' in body
+    assert revoked_cert["certStatus"] == "notIssued"
+    assert revoked_cert["issuedPdfBlobName"] is None
+    assert revoked_cert["verificationTokenHash"] is None
+    assert revoked_cert["issuedAt"] is None
+    assert revoked_cert["certificateDisplayName"] is None
+    assert revoked_cert["certificateDisplayOrganization"] is None
+    assert revoked_cert["certificateNameDisplay"] is None
+    assert revoked_cert["certificateLocale"] is None
+
+
 def test_portal_admin_completion_certs_update_api_rejects_invalid_attendance_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4174,6 +4281,10 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".completion-cert-table.is-bulk-updating .completion-cert-row" in body
     assert ".event-status-switch-input:disabled + .event-status-switch-track" in body
     assert ".document-delete-button" in body
+    assert ".document-revoke-button" in body
+    assert "background: var(--theme-danger);" in body
+    assert "background: #8f1c13;" in body
+    assert ".document-revoke-button:disabled" in body
     assert ".document-upload-continue-option" in body
     assert ".form-checkbox-option.document-upload-continue-option" in body
     assert "-webkit-user-select: none;" in body
@@ -4747,6 +4858,11 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert "\"aria-busy\"" in body
     assert "openCompletionEditDialog" in body
     assert "submitCompletionEditDialog" in body
+    assert "revokeIssuedCompletionCert" in body
+    assert 'certStatus: "notIssued"' in body
+    assert 'editButton.textContent = isIssued ? "撤銷" : "修改"' in body
+    assert 'editButton.classList.toggle("document-revoke-button", isIssued)' in body
+    assert "完訓證明已撤銷，狀態已退回未發行。" in body
     assert 'document.getElementById("completion-edit-dialog")' in body
     assert 'document.getElementById("completion-edit-submit")' in body
     assert "setCompletionEditStaticValue" in body

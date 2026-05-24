@@ -162,7 +162,7 @@ PORTAL_COMPLETION_CSV_FIELD_LABELS = {
     "ticketName": "票種",
 }
 PORTAL_COMPLETION_CERT_MUTABLE_FIELDS = frozenset(
-    {"attendanceStatus", "email", "name", "organization"}
+    {"attendanceStatus", "certStatus", "email", "name", "organization"}
 )
 PORTAL_COMPLETION_CERT_REQUIRED_MUTABLE_FIELDS = frozenset(
     {"email"}
@@ -170,6 +170,8 @@ PORTAL_COMPLETION_CERT_REQUIRED_MUTABLE_FIELDS = frozenset(
 PORTAL_COMPLETION_CERT_ALLOWED_ATTENDANCE_STATUSES = frozenset(
     {"checkedIn", "notCheckedIn"}
 )
+PORTAL_COMPLETION_CERT_REVOKE_FIELDS = frozenset({"certStatus"})
+PORTAL_COMPLETION_CERT_DATA_FIELDS = frozenset({"email", "name", "organization"})
 PORTAL_COMPLETION_CERT_REQUEST_ALLOWED_REVIEW_STATUSES = frozenset(
     {"approved", "rejected"}
 )
@@ -1015,6 +1017,13 @@ def parse_completion_cert_update_payload(
         and attendance_status not in PORTAL_COMPLETION_CERT_ALLOWED_ATTENDANCE_STATUSES
     ):
         return None, "簽到狀態不合法。"
+
+    cert_status = updates.get("certStatus")
+    if cert_status is not None and cert_status != "notIssued":
+        return None, "完訓證明狀態不合法。"
+
+    if cert_status == "notIssued" and set(updates) != PORTAL_COMPLETION_CERT_REVOKE_FIELDS:
+        return None, "撤銷發行請求不可同時修改其他完訓證明資料。"
 
     return {"eventId": event_id, "updates": updates}, None
 
@@ -2249,7 +2258,36 @@ def portal_admin_completion_certs_update_api(req: func.HttpRequest) -> func.Http
                 "找不到指定完訓證明資料。",
             )
 
-        updated_document = {**document, **update_payload["updates"]}
+        updates = update_payload["updates"]
+        current_cert_status = str(document.get("certStatus", "")).strip() or "notIssued"
+        if current_cert_status == "issued" and PORTAL_COMPLETION_CERT_DATA_FIELDS.intersection(
+            updates
+        ):
+            return build_portal_api_error_response(
+                409,
+                "completion_cert_already_issued",
+                "已發行的完訓證明不可修改資料，請先撤銷發行狀態。",
+            )
+
+        if (
+            updates.get("certStatus") == "notIssued"
+            and current_cert_status not in {"issued", "notIssued"}
+        ):
+            return build_portal_api_error_response(
+                409,
+                "completion_cert_revoke_not_allowed",
+                "只有已發行的完訓證明可撤銷發行狀態。",
+            )
+
+        updated_document = {**document, **updates}
+        if updates.get("certStatus") == "notIssued":
+            updated_document["issuedPdfBlobName"] = None
+            updated_document["verificationTokenHash"] = None
+            updated_document["issuedAt"] = None
+            updated_document["certificateDisplayName"] = None
+            updated_document["certificateDisplayOrganization"] = None
+            updated_document["certificateNameDisplay"] = None
+            updated_document["certificateLocale"] = None
         saved_document = replace_completion_cert_document(
             container=container,
             document=updated_document,

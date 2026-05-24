@@ -1248,6 +1248,24 @@ form {
   color: #b42318;
 }
 
+.document-revoke-button {
+  background: var(--theme-danger);
+  color: #fff;
+  box-shadow: 0 10px 18px rgba(180, 35, 24, 0.18);
+}
+
+.document-revoke-button:hover,
+.document-revoke-button:focus-visible {
+  background: #8f1c13;
+  box-shadow: 0 12px 22px rgba(180, 35, 24, 0.24);
+}
+
+.document-revoke-button:disabled {
+  background: rgba(180, 35, 24, 0.36);
+  color: rgba(255, 255, 255, 0.8);
+  box-shadow: none;
+}
+
 .document-upload-continue-option[hidden] {
   display: none;
 }

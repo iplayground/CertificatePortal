@@ -451,7 +451,7 @@ Request JSON 範例：
 - CSV 匯入完成後會以該活動目前所有 `completionCerts` 文件重算活動文件的 `metrics.completionCert`
 - 同一活動再次匯入 CSV 時，會以穩定的 `eventId + number + kktixId` 產生文件 ID 並 upsert 到同一批 Cosmos DB 資料
 - 清單欄位包含報名序號、ID、Badge Name、姓名、公司名、Email、票種、簽到狀態與操作
-- 每列在操作欄提供 `下載` 與 `修改` 按鈕；`下載` 按鈕是否可用依 `certStatus` 判斷，只有 `issued` 可下載，不能用 `attendanceStatus` 或簽到狀態判斷
+- 每列在操作欄提供 `下載` 與狀態相依的資料動作；`certStatus` 非 `issued` 時顯示 `修改`，`issued` 時改顯示 `撤銷`，不提供修改資料入口；`撤銷` 按鈕以紅底白字呈現，讓管理者一眼辨識為危險操作；`下載` 按鈕是否可用依 `certStatus` 判斷，只有 `issued` 可下載，不能用 `attendanceStatus` 或簽到狀態判斷
 - 修改視窗可更新姓名、公司名與 Email；報名序號、KKTIX ID、Badge Name 與票種不直接修改
 - 修改視窗將報名序號、ID 與票種放在同一排，且 Badge Name 與票種為唯讀顯示
 - 修改成功後顯示共用 page alert 成功提示；共用 alert 預設 6 秒後自動關閉
@@ -743,8 +743,9 @@ Response JSON example:
 - 修改單筆完訓證明清單資料
 - 只接受已登入且通過授權的管理者 session
 - 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
-- 目前可修改欄位為 `name`、`organization`、`email`、`attendanceStatus`
+- 目前可修改欄位為 `name`、`organization`、`email`、`attendanceStatus`；已發行資料不可修改 `name`、`organization` 或 `email`
 - `attendanceStatus` 只接受 `checkedIn` 或 `notCheckedIn`
+- 已發行資料可送出 `{"eventId":"...","certStatus":"notIssued"}` 撤銷發行狀態；後端會將 `certStatus` 退回 `notIssued`，並清空 `issuedPdfBlobName`、`verificationTokenHash`、`issuedAt` 與證書顯示設定
 - `number`、`kktixId`、`badgeName` 與 `ticketName` 不在此端點直接修改
 
 Request JSON example:

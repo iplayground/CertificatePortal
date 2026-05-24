@@ -1053,6 +1053,70 @@ async function submitCompletionEditDialog() {
   }
 }
 
+async function revokeIssuedCompletionCert(rowData) {
+  if (isUpdatingCompletionBulkAttendance) {
+    return;
+  }
+
+  if (!(await verifyPortalSession())) {
+    return;
+  }
+
+  const rowLabel = rowData.name || rowData.number || "此筆完訓證明";
+  if (!window.confirm(`確定要撤銷 ${rowLabel} 的完訓證明發行狀態？`)) {
+    return;
+  }
+
+  const rowElement = completionCertTableBody?.querySelector(`[data-row-id="${rowData.id}"]`);
+  const revokeButton = rowElement?.querySelector(".document-edit-button");
+  if (revokeButton instanceof HTMLButtonElement) {
+    revokeButton.disabled = true;
+  }
+
+  try {
+    const response = await fetch(
+      `${adminCompletionCertsApiPath}/${encodeURIComponent(rowData.id)}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Portal-CSRF-Token": portalCsrfToken,
+        },
+        body: JSON.stringify({
+          certStatus: "notIssued",
+          eventId: rowData.eventId,
+        }),
+      }
+    );
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
+    const responsePayload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(responsePayload?.error?.message || "完訓證明撤銷失敗。");
+    }
+
+    updateCompletionCertRow(responsePayload.completionCert);
+    renderCompletionCertRows();
+    showCompletionPageAlert({
+      message: "完訓證明已撤銷，狀態已退回未發行。",
+      title: "撤銷成功",
+      tone: "success",
+    });
+  } catch (error) {
+    showCompletionPageAlert({
+      message: error instanceof Error ? error.message : "完訓證明撤銷失敗。",
+      title: "撤銷失敗",
+      tone: "error",
+    });
+  } finally {
+    if (revokeButton instanceof HTMLButtonElement) {
+      revokeButton.disabled = false;
+    }
+  }
+}
+
 function applyCompletionRowDownloadState(rowElement, rowData) {
   const switchInput = rowElement.querySelector('[data-action="toggle-downloadable"]');
   const downloadButton = rowElement.querySelector(".document-download-button");
@@ -1071,6 +1135,13 @@ function applyCompletionRowDownloadState(rowElement, rowData) {
   }
 
   if (editButton instanceof HTMLButtonElement) {
+    const isIssued = rowData.certStatus === "issued";
+    editButton.textContent = isIssued ? "撤銷" : "修改";
+    editButton.classList.toggle("document-revoke-button", isIssued);
+    editButton.setAttribute(
+      "aria-label",
+      isIssued ? "撤銷完訓證明發行狀態" : "修改完訓證明資料"
+    );
     editButton.disabled = isUpdatingCompletionBulkAttendance;
   }
 }
@@ -1264,6 +1335,11 @@ function renderCompletionCertRows() {
     const editButton = rowElement.querySelector(".document-edit-button");
     if (editButton instanceof HTMLButtonElement) {
       editButton.addEventListener("click", () => {
+        if (rowData.certStatus === "issued") {
+          void revokeIssuedCompletionCert(rowData);
+          return;
+        }
+
         void openCompletionEditDialog(rowData);
       });
     }
