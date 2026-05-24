@@ -12,6 +12,9 @@ from src.shared.event_store import utc_now_iso
 
 
 TAX_RECEIPT_NAMESPACE = "io.iplayground.tax-receipts"
+TAX_RECEIPT_PUBLIC_LOOKUP_NAMESPACE = "io.iplayground.tax-receipt-public-lookups"
+TAX_RECEIPT_ID_PREFIX = "trec_"
+TAX_RECEIPT_PUBLIC_LOOKUP_ID_PREFIX = "trlkp_"
 _TAX_RECEIPT_CONTAINER_NOT_FOUND_MESSAGE = (
     "Cosmos DB 繳稅證明容器不存在。請確認 COSMOS_TAX_RECEIPTS_CONTAINER "
     "是否指向已建立的資源。"
@@ -28,14 +31,20 @@ _TAX_RECEIPT_SELECT_SUMMARY_FIELDS = (
     "c.fileName, c.contentType, c.fileSize, c.fileSequence"
 )
 _TAX_RECEIPT_FROM_AND_EVENT_FILTER = "FROM c WHERE c.eventId = @eventId"
+_TAX_RECEIPT_RECEIPT_FILTER = f" AND STARTSWITH(c.id, '{TAX_RECEIPT_ID_PREFIX}')"
 _TAX_RECEIPT_TAX_ID_FILTER = " AND c.taxId = @taxId"
 _LIST_TAX_RECEIPT_DOCUMENTS_QUERY = (
     f"SELECT {_TAX_RECEIPT_SELECT_BASE_FIELDS}, {_TAX_RECEIPT_SELECT_DOWNLOAD_FIELDS} "
-    f"{_TAX_RECEIPT_FROM_AND_EVENT_FILTER}"
+    f"{_TAX_RECEIPT_FROM_AND_EVENT_FILTER}{_TAX_RECEIPT_RECEIPT_FILTER}"
 )
 _LIST_TAX_RECEIPT_DOCUMENTS_BY_TAX_ID_QUERY = (
     f"SELECT {_TAX_RECEIPT_SELECT_BASE_FIELDS}, {_TAX_RECEIPT_SELECT_SUMMARY_FIELDS} "
-    f"{_TAX_RECEIPT_FROM_AND_EVENT_FILTER}{_TAX_RECEIPT_TAX_ID_FILTER}"
+    f"{_TAX_RECEIPT_FROM_AND_EVENT_FILTER}{_TAX_RECEIPT_RECEIPT_FILTER}{_TAX_RECEIPT_TAX_ID_FILTER}"
+)
+_COUNT_TAX_RECEIPT_QUERIED_COMPANIES_QUERY = (
+    "SELECT VALUE COUNT(1) FROM c "
+    "WHERE c.eventId = @eventId "
+    f"AND STARTSWITH(c.id, '{TAX_RECEIPT_PUBLIC_LOOKUP_ID_PREFIX}')"
 )
 
 
@@ -136,6 +145,21 @@ def build_tax_receipt_id(
         f"{event_id}:{actor.lower()}:{idempotency_key}"
     )
     return f"trec_{uuid5(NAMESPACE_URL, namespace_value)}"
+
+
+def build_tax_receipt_public_lookup_id(
+    *,
+    event_id: str,
+    tax_id: str,
+) -> str:
+    for field_name, field_value in (
+        ("event_id", event_id),
+        ("tax_id", tax_id),
+    ):
+        _require_clean_value(field_name, field_value)
+
+    namespace_value = f"{TAX_RECEIPT_PUBLIC_LOOKUP_NAMESPACE}:{event_id}:{tax_id}"
+    return f"{TAX_RECEIPT_PUBLIC_LOOKUP_ID_PREFIX}{uuid5(NAMESPACE_URL, namespace_value)}"
 
 
 def build_tax_receipt_blob_name(
@@ -320,6 +344,34 @@ def list_tax_receipt_documents_by_tax_id(
         )
 
 
+def count_tax_receipt_queried_companies(
+    *,
+    container: ContainerProxy,
+    event_id: str,
+) -> int:
+    try:
+        items = list(
+            container.query_items(
+                query=_COUNT_TAX_RECEIPT_QUERIED_COMPANIES_QUERY,
+                parameters=[{"name": "@eventId", "value": event_id}],
+                partition_key=event_id,
+                enable_cross_partition_query=False,
+            )
+        )
+        if not items:
+            return 0
+        value = items[0]
+        if isinstance(value, int) and not isinstance(value, bool):
+            return max(0, value)
+        return 0
+    except Exception as exc:
+        _raise_tax_receipt_store_operation_error(
+            exc,
+            default_message="繳稅證明公開查詢統計讀取暫時失敗。",
+            forbidden_message="目前身分沒有 Cosmos DB 繳稅證明容器讀取權限。",
+        )
+
+
 def read_tax_receipt_document(
     *,
     container: ContainerProxy,
@@ -334,6 +386,61 @@ def read_tax_receipt_document(
             default_message="繳稅證明資料讀取暫時失敗。",
             forbidden_message="目前身分沒有 Cosmos DB 繳稅證明容器讀取權限。",
             not_found_message="找不到指定繳稅證明資料。",
+        )
+
+
+def record_tax_receipt_public_lookup(
+    *,
+    container: ContainerProxy,
+    event_id: str,
+    tax_id: str,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
+    lookup_id = build_tax_receipt_public_lookup_id(event_id=event_id, tax_id=tax_id)
+    resolved_timestamp = timestamp or utc_now_iso()
+    try:
+        existing_document = container.read_item(item=lookup_id, partition_key=event_id)
+    except Exception as exc:
+        if not _is_cosmos_not_found_error(exc):
+            _raise_tax_receipt_store_operation_error(
+                exc,
+                default_message="繳稅證明公開查詢統計讀取暫時失敗。",
+                forbidden_message="目前身分沒有 Cosmos DB 繳稅證明容器讀取權限。",
+                not_found_message="繳稅證明公開查詢統計讀取暫時失敗。",
+            )
+        existing_document = {}
+
+    if existing_document:
+        first_queried_at = str(existing_document.get("firstQueriedAt") or resolved_timestamp)
+        raw_lookup_count = existing_document.get("lookupCount")
+        lookup_count = raw_lookup_count if isinstance(raw_lookup_count, int) else 0
+        document = {
+            **existing_document,
+            "lookupCount": max(0, lookup_count) + 1,
+            "firstQueriedAt": first_queried_at,
+            "lastQueriedAt": resolved_timestamp,
+            "updatedAt": resolved_timestamp,
+        }
+    else:
+        document = {
+            "id": lookup_id,
+            "eventId": event_id,
+            "taxId": tax_id,
+            "kind": "taxReceiptPublicLookup",
+            "lookupCount": 1,
+            "firstQueriedAt": resolved_timestamp,
+            "lastQueriedAt": resolved_timestamp,
+            "createdAt": resolved_timestamp,
+            "updatedAt": resolved_timestamp,
+        }
+
+    try:
+        return container.upsert_item(body=document)
+    except Exception as exc:
+        _raise_tax_receipt_store_operation_error(
+            exc,
+            default_message="繳稅證明公開查詢統計寫入暫時失敗。",
+            forbidden_message="目前身分沒有 Cosmos DB 繳稅證明容器寫入權限。",
         )
 
 

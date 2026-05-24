@@ -290,11 +290,26 @@ class FakeTaxReceiptsContainer:
             if parameter["name"] == "@eventId"
         )
         assert partition_key == event_id
+        if "SELECT VALUE COUNT(1)" in query:
+            assert "STARTSWITH(c.id, 'trlkp_')" in query
+            return [
+                len(
+                    [
+                        item
+                        for item in self.items.values()
+                        if item["eventId"] == event_id
+                        and str(item["id"]).startswith("trlkp_")
+                    ]
+                )
+            ]
+
+        assert "STARTSWITH(c.id, 'trec_')" in query
         return sorted(
             [
                 item
                 for item in self.items.values()
                 if item["eventId"] == event_id
+                and str(item["id"]).startswith("trec_")
             ],
             key=lambda item: item["generatedAt"],
             reverse=True,
@@ -3395,6 +3410,24 @@ def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_f
         "createdAt": "2026-05-15T15:00:44Z",
         "updatedAt": "2026-05-15T15:00:44Z",
     }
+    fake_tax_container.items["trlkp_1"] = {
+        "id": "trlkp_1",
+        "eventId": "evt_tax",
+        "taxId": "12345678",
+        "kind": "taxReceiptPublicLookup",
+        "lookupCount": 3,
+        "firstQueriedAt": "2026-05-16T00:00:00Z",
+        "lastQueriedAt": "2026-05-17T00:00:00Z",
+    }
+    fake_tax_container.items["trlkp_2"] = {
+        "id": "trlkp_2",
+        "eventId": "evt_tax",
+        "taxId": "87654321",
+        "kind": "taxReceiptPublicLookup",
+        "lookupCount": 1,
+        "firstQueriedAt": "2026-05-18T00:00:00Z",
+        "lastQueriedAt": "2026-05-18T00:00:00Z",
+    }
     fake_requests_container = FakeCompletionCertRequestsContainer()
     fake_requests_container.items["ccreq_1"] = {
         "id": "ccreq_1",
@@ -3496,7 +3529,7 @@ def test_portal_admin_dashboard_welcome_metrics_api_returns_completion_metrics_f
     assert '"taxReceiptMetrics"' in body
     assert '"eventName":"營業稅活動"' in body
     assert '"receiptCount":3' in body
-    assert '"queriedCompanyCount":null' in body
+    assert '"queriedCompanyCount":2' in body
     assert '"downloadCount":7' in body
     assert '"downloadCount":264' not in body
     assert '"totalAmount":191000' in body

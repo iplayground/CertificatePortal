@@ -83,6 +83,7 @@ from src.shared.tax_receipt_store import (
     TaxReceiptStoreOperationError,
     get_tax_receipts_container,
     list_tax_receipt_documents_by_tax_id,
+    record_tax_receipt_public_lookup,
 )
 from src.shared.tax_receipt_download_ticket import (
     build_tax_receipt_download_subject_key,
@@ -386,13 +387,23 @@ def lookup_public_document(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def lookup_public_tax_receipts(payload: dict[str, Any]) -> dict[str, Any] | None:
+    container = get_tax_receipts_container()
     documents = list_tax_receipt_documents_by_tax_id(
-        container=get_tax_receipts_container(),
+        container=container,
         event_id=payload["eventId"],
         tax_id=payload["businessTaxId"],
     )
     if not any(document.get("generatedAt") == payload["generatedAt"] for document in documents):
         return None
+
+    try:
+        record_tax_receipt_public_lookup(
+            container=container,
+            event_id=payload["eventId"],
+            tax_id=payload["businessTaxId"],
+        )
+    except TaxReceiptStoreOperationError:
+        LOGGER.warning("Tax receipt public lookup metrics update failed.", exc_info=True)
 
     return {
         "documentType": "taxReceipt",

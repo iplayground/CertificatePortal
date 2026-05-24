@@ -408,9 +408,9 @@ Request JSON 範例：
 - `待審核修改申請` 讀取 `completionCertRequests` 中 `status = pending` 的完訓證明修改申請數，口徑應與修改審核頁的待審核清單一致
 - CSV 匯入、首次下載、再次下載與公開驗證流程都會更新活動文件的 `metrics.completionCert`，避免歡迎頁每次載入時掃描該活動全部完訓證明文件
 - `營業稅繳稅證明` 區段顯示最近一期開放營業稅繳稅證明活動的 `收據張數`、`已查詢公司數`、`已下載次數`、`收據總金額`
-- `收據張數` 為該活動 `taxReceipts` 文件數，`已下載次數` 為各收據用戶端 `downloadCount` 合計，`收據總金額` 為各收據 `amount` 合計
+- `收據張數` 為該活動 `taxReceipts` 正式收據文件數，`已下載次數` 為各收據用戶端 `downloadCount` 合計，`收據總金額` 為各收據 `amount` 合計
 - 管理端 portal 下載應另外寫入 `portalDownloadCount` 與 `lastPortalDownloadAt` 作為 DB 留底，不納入歡迎頁 `已下載次數`
-- `已查詢公司數` 目前尚未有公開查詢流程的權威事件來源，因此 API 回傳 `queriedCompanyCount: null`，前端維持顯示 `--`；不得以收據張數或建檔統編數替代
+- `已查詢公司數` 讀取同活動下公開查詢公司 marker 數量；同一活動同一統編重複查詢只算 1 家公司
 - `營業稅繳稅證明` 的 `收據總金額` 使用 `$` 與完整金額格式，例如 `$186,000`，不使用 `NT$` 或 `K` 縮寫
 
 ### `GET /api/v1/admin/dashboard/welcome-metrics`
@@ -433,7 +433,7 @@ Request JSON 範例：
   "taxReceiptMetrics": {
     "eventName": "iPlayground 2026",
     "receiptCount": 24,
-    "queriedCompanyCount": null,
+    "queriedCompanyCount": 8,
     "downloadCount": 31,
     "totalAmount": 186000
   }

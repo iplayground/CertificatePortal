@@ -224,7 +224,9 @@ class FakeTaxReceiptsContainer:
         enable_cross_partition_query: bool,
         **_: Any,
     ) -> list[dict[str, Any]]:
-        assert "WHERE c.eventId = @eventId AND c.taxId = @taxId" in query
+        assert "WHERE c.eventId = @eventId" in query
+        assert "STARTSWITH(c.id, 'trec_')" in query
+        assert "AND c.taxId = @taxId" in query
         assert not enable_cross_partition_query
         parameter_values = {
             parameter["name"]: parameter["value"]
@@ -239,7 +241,26 @@ class FakeTaxReceiptsContainer:
             )
             if item["eventId"] == parameter_values["@eventId"]
             and item["taxId"] == parameter_values["@taxId"]
+            and str(item["id"]).startswith("trec_")
         ]
+
+    def read_item(self, item: str, partition_key: str, **_: Any) -> dict[str, Any]:
+        for document in self.items:
+            if document["id"] == item and document["eventId"] == partition_key:
+                return document.copy()
+
+        error = RuntimeError("not found")
+        setattr(error, "status_code", 404)
+        raise error
+
+    def upsert_item(self, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        for index, document in enumerate(self.items):
+            if document["id"] == body["id"] and document["eventId"] == body["eventId"]:
+                self.items[index] = body
+                return body
+
+        self.items.append(body)
+        return body
 
 
 class FakeEventsContainer:
@@ -1143,52 +1164,53 @@ def test_public_document_lookup_api_does_not_block_success_on_attempt_store_fail
 def test_public_document_lookup_api_returns_all_tax_receipts_for_matched_tax_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    tax_receipts_container = FakeTaxReceiptsContainer(
+        [
+            {
+                "id": "trec_1",
+                "eventId": "evt_1",
+                "taxId": "12345678",
+                "amount": 1200,
+                "generatedAt": "2026-05-01T02:00:00Z",
+                "fileName": "receipt-12345678-1.pdf",
+                "fileSequence": 1,
+                "contentType": "application/pdf",
+                "fileSize": 4096,
+                "sourceBlobName": "evt_1/trec_1.pdf",
+            },
+            {
+                "id": "trec_2",
+                "eventId": "evt_1",
+                "taxId": "12345678",
+                "amount": 800,
+                "generatedAt": "2026-05-03T02:00:00Z",
+                "fileName": "receipt-12345678-2.png",
+                "fileSequence": 2,
+                "contentType": "image/png",
+                "fileSize": 8192,
+                "sourceBlobName": "evt_1/trec_2.png",
+            },
+            {
+                "id": "trec_other",
+                "eventId": "evt_1",
+                "taxId": "87654321",
+                "amount": 999,
+                "generatedAt": "2026-05-01T02:00:00Z",
+                "fileName": "receipt-87654321-1.pdf",
+                "fileSequence": 1,
+                "contentType": "application/pdf",
+                "fileSize": 1024,
+                "sourceBlobName": "evt_1/trec_other.pdf",
+            },
+        ]
+    )
     monkeypatch.setattr(
         "src.functions.home.get_public_lookup_attempts_container",
         FailingLookupAttemptsContainer,
     )
     monkeypatch.setattr(
         "src.functions.home.get_tax_receipts_container",
-        lambda: FakeTaxReceiptsContainer(
-            [
-                {
-                    "id": "trec_1",
-                    "eventId": "evt_1",
-                    "taxId": "12345678",
-                    "amount": 1200,
-                    "generatedAt": "2026-05-01T02:00:00Z",
-                    "fileName": "receipt-12345678-1.pdf",
-                    "fileSequence": 1,
-                    "contentType": "application/pdf",
-                    "fileSize": 4096,
-                    "sourceBlobName": "evt_1/trec_1.pdf",
-                },
-                {
-                    "id": "trec_2",
-                    "eventId": "evt_1",
-                    "taxId": "12345678",
-                    "amount": 800,
-                    "generatedAt": "2026-05-03T02:00:00Z",
-                    "fileName": "receipt-12345678-2.png",
-                    "fileSequence": 2,
-                    "contentType": "image/png",
-                    "fileSize": 8192,
-                    "sourceBlobName": "evt_1/trec_2.png",
-                },
-                {
-                    "id": "trec_other",
-                    "eventId": "evt_1",
-                    "taxId": "87654321",
-                    "amount": 999,
-                    "generatedAt": "2026-05-01T02:00:00Z",
-                    "fileName": "receipt-87654321-1.pdf",
-                    "fileSequence": 1,
-                    "contentType": "application/pdf",
-                    "fileSize": 1024,
-                    "sourceBlobName": "evt_1/trec_other.pdf",
-                },
-            ]
-        ),
+        lambda: tax_receipts_container,
     )
 
     response = public_document_lookup_api(
@@ -1236,6 +1258,15 @@ def test_public_document_lookup_api_returns_all_tax_receipts_for_matched_tax_id(
         }
     }
     assert "sourceBlobName" not in response.get_body().decode("utf-8")
+    lookup_documents = [
+        document
+        for document in tax_receipts_container.items
+        if str(document["id"]).startswith("trlkp_")
+    ]
+    assert len(lookup_documents) == 1
+    assert lookup_documents[0]["eventId"] == "evt_1"
+    assert lookup_documents[0]["taxId"] == "12345678"
+    assert lookup_documents[0]["lookupCount"] == 1
 
 
 def test_public_document_lookup_api_requires_matching_tax_receipt_generated_at(

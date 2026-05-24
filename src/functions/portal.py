@@ -104,6 +104,7 @@ from src.shared.tax_receipt_store import (
     build_tax_receipt_document,
     build_tax_receipt_file_name,
     build_tax_receipt_id,
+    count_tax_receipt_queried_companies,
     delete_tax_receipt_document,
     get_tax_receipts_container,
     list_tax_receipt_documents,
@@ -641,20 +642,24 @@ def build_portal_welcome_tax_receipt_metrics(event: dict[str, Any]) -> dict[str,
         return {
             "eventName": "尚無活動資料",
             "receiptCount": 0,
-            "queriedCompanyCount": None,
+            "queriedCompanyCount": 0,
             "downloadCount": 0,
             "totalAmount": 0,
         }
 
+    container = get_tax_receipts_container()
     documents = list_tax_receipt_documents(
-        container=get_tax_receipts_container(),
+        container=container,
         event_id=event_id,
     )
     event_name = str(event.get("name", "")).strip()
     return {
         "eventName": event_name or event_id,
         "receiptCount": len(documents),
-        "queriedCompanyCount": None,
+        "queriedCompanyCount": count_tax_receipt_queried_companies(
+            container=container,
+            event_id=event_id,
+        ),
         "downloadCount": sum(
             read_non_negative_int_field(document, ("downloadCount",))
             for document in documents
