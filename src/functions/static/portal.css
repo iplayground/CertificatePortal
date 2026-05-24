@@ -1108,6 +1108,71 @@ form {
   text-align: center;
 }
 
+.completion-ticket-filter-heading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.completion-ticket-filter-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.completion-ticket-filter-trigger {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theme-content-muted);
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.completion-ticket-filter-trigger:hover,
+.completion-ticket-filter-trigger:focus-visible,
+.completion-ticket-filter-trigger.is-filtered {
+  border-color: rgba(81, 121, 254, 0.22);
+  background: rgba(81, 121, 254, 0.1);
+  color: var(--theme-accent-deep);
+}
+
+.completion-ticket-filter-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--theme-focus-ring);
+}
+
+.completion-ticket-filter-control.is-single-option .completion-ticket-filter-trigger {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.completion-ticket-filter-icon {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+
+.completion-ticket-filter-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  min-width: 180px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.completion-ticket-filter-menu .custom-select-option {
+  border-radius: 6px;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
 .document-list-table th:last-child,
 .document-list-table td:last-child {
   text-align: center;

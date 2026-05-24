@@ -3780,7 +3780,7 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert body.index("<th scope=\"col\">姓名</th>") < body.index("<th scope=\"col\">公司名</th>")
     assert "票種" in body
     assert body.index("<th scope=\"col\">公司名</th>") < body.index("<th scope=\"col\">Email</th>")
-    assert body.index("<th scope=\"col\">Email</th>") < body.index("<th scope=\"col\">票種</th>")
+    assert body.index("<th scope=\"col\">Email</th>") < body.index("completion-ticket-filter-heading")
     assert body.index('data-field="organization"') < body.index('data-field="email"')
     assert body.index('data-field="email"') < body.index('data-field="ticketName"')
     assert "操作" in body
@@ -3825,6 +3825,7 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert 'id="completion-edit-badge-name" name="badgeName"' not in body
     assert 'id="completion-edit-ticket-name" name="ticketName"' not in body
     assert 'class="document-filter-form"' in body
+    assert 'completion-cert-filter-form' not in body
     assert 'aria-label="完訓證明資料篩選"' in body
     assert '<th scope="col">活動</th>' not in body
     assert 'data-field="eventName"' not in body
@@ -3835,6 +3836,12 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert 'role="listbox"' not in body
     assert 'role="option"' not in body
     assert 'id="completion-event-filter"' in body
+    assert 'class="completion-ticket-filter-heading"' in body
+    assert body.index('class="completion-ticket-filter-heading"') < body.index('id="completion-ticket-filter"')
+    assert 'id="completion-ticket-filter"' in body
+    assert 'name="ticketName"' in body
+    assert 'id="completion-ticket-filter-value" hidden' in body
+    assert "全部票種" in body
     assert 'type="hidden"' in body
     assert 'name="eventName"' in body
     assert 'aria-required="true"' not in body
@@ -4291,6 +4298,11 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".completion-cert-col-name {\n  width: 140px;" in body
     assert ".completion-cert-col-email {\n  width: 250px;" in body
     assert ".completion-cert-col-organization,\n.completion-cert-col-ticket" in body
+    assert ".completion-ticket-filter-heading" in body
+    assert ".completion-ticket-filter-trigger" in body
+    assert ".completion-ticket-filter-trigger.is-filtered" in body
+    assert ".completion-ticket-filter-icon" in body
+    assert ".completion-ticket-filter-menu" in body
     assert ".completion-edit-identity-row" in body
     assert "grid-template-columns: minmax(72px, 0.56fr) minmax(104px, 0.8fr) minmax(160px, 1.4fr);" in body
     assert ".document-list-table th,\n.document-list-table td {\n  padding: 15px 16px;" in body
@@ -4916,13 +4928,20 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert '.endsWith(".csv")' in body
     assert 'document.querySelector(".document-filter-form")' in body
     assert 'document.getElementById("completion-event-filter")' in body
+    assert 'document.getElementById("completion-ticket-filter")' in body
     assert '"completion-event-filter-trigger"' in body
+    assert '"completion-ticket-filter-trigger"' in body
     assert "completionEventFilterOptions.forEach" in body
+    assert "completionTicketFilterOptions" in body
+    assert "M4.5 6.5h15l-6 7v4.5l-3 1.5v-6L4.5 6.5Z" in body
     assert "event.preventDefault()" in body
     assert "applyCompletionFilters" in body
     assert "applyCompletionEventFilterValue" in body
+    assert "applyCompletionTicketFilterValue" in body
     assert "openCompletionEventFilterSelect" in body
     assert "closeCompletionEventFilterSelect" in body
+    assert "openCompletionTicketFilterSelect" in body
+    assert "closeCompletionTicketFilterSelect" in body
     assert "openCompletionUploadDialog" in body
     assert "requestParentCompletionUploadDialog" in body
     assert "window.parent.postMessage" in body

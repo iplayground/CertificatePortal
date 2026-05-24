@@ -50,6 +50,7 @@ const completionEditTicketName = document.getElementById("completion-edit-ticket
 const completionEditFeedback = document.getElementById("completion-edit-feedback");
 const completionFilterForm = document.querySelector(".document-filter-form");
 const completionEventFilter = document.getElementById("completion-event-filter");
+const completionTicketFilter = document.getElementById("completion-ticket-filter");
 let completionEventFilterSelect = document.getElementById("completion-event-filter-select");
 let completionEventFilterTrigger = document.getElementById(
   "completion-event-filter-trigger"
@@ -58,6 +59,15 @@ let completionEventFilterValue = document.getElementById("completion-event-filte
 let completionEventFilterMenu = document.getElementById("completion-event-filter-options");
 let completionEventFilterOptions = Array.from(
   document.querySelectorAll("#completion-event-filter-options .custom-select-option")
+);
+let completionTicketFilterSelect = document.getElementById("completion-ticket-filter-select");
+let completionTicketFilterTrigger = document.getElementById(
+  "completion-ticket-filter-trigger"
+);
+let completionTicketFilterValue = document.getElementById("completion-ticket-filter-value");
+let completionTicketFilterMenu = document.getElementById("completion-ticket-filter-options");
+let completionTicketFilterOptions = Array.from(
+  document.querySelectorAll("#completion-ticket-filter-options .custom-select-option")
 );
 const adminEventsApiPath = "/api/v1/admin/events";
 const adminCompletionCertsApiPath = "/api/v1/admin/completion-certs";
@@ -70,10 +80,13 @@ const invalidCompletionUploadFileName = "請選擇 CSV 檔案";
 const failedCompletionUploadFileName = "CSV 檔案讀取失敗";
 const importingCompletionUploadFileName = "完訓證明資料匯入中...";
 const defaultCompletionEventName = "";
+const defaultCompletionTicketName = "";
 const emptyCompletionEventName = "尚無活動資料";
+const allCompletionTicketName = "全部票種";
 const loadingCompletionCertRowsMessage = "完訓證明資料載入中...";
 const emptyCompletionCertRowsMessage =
   "目前活動尚無完訓證明資料。請先上傳完訓證明 CSV。";
+const emptyCompletionTicketRowsMessage = "目前票種沒有完訓證明資料。";
 const completionCertRowsPerPage = 10;
 const completionCsvFieldAliases = {
   badgeName: ["你是誰，ID 或具有鑑識度的名稱 Name on Badge"],
@@ -217,6 +230,154 @@ function buildCompletionEventSelect({
   return { menu, select, trigger, value };
 }
 
+function buildCompletionTicketOption(ticketName, index) {
+  const option = document.createElement("button");
+  option.className = `custom-select-option${index === 0 ? " is-selected" : ""}`;
+  option.type = "button";
+  option.setAttribute("role", "option");
+  option.dataset.value = ticketName;
+  option.setAttribute("aria-selected", String(index === 0));
+  option.textContent = ticketName || allCompletionTicketName;
+
+  option.addEventListener("click", () => {
+    applyCompletionTicketFilterValue(option.dataset.value ?? "");
+    closeCompletionTicketFilterSelect({ blurTrigger: true });
+  });
+
+  option.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeCompletionTicketFilterSelect({ blurTrigger: true });
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      completionTicketFilterOptions[
+        (index + 1) % completionTicketFilterOptions.length
+      ]?.focus();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      completionTicketFilterOptions[
+        (index - 1 + completionTicketFilterOptions.length) %
+          completionTicketFilterOptions.length
+      ]?.focus();
+      return;
+    }
+
+    if (event.key === "Tab") {
+      closeCompletionTicketFilterSelect();
+    }
+  });
+
+  return option;
+}
+
+function getCompletionTicketFilterName() {
+  if (completionTicketFilter instanceof HTMLInputElement) {
+    return completionTicketFilter.value;
+  }
+
+  return defaultCompletionTicketName;
+}
+
+function resolveCompletionTicketFilterLabel(ticketName) {
+  return ticketName || allCompletionTicketName;
+}
+
+function getCompletionTicketFilterOptions() {
+  const eventId = getCompletionFilterEventName();
+  const ticketNames = completionCertRows
+    .filter((row) => row.eventId === eventId)
+    .map((row) => row.ticketName.trim())
+    .filter(Boolean);
+  return [
+    defaultCompletionTicketName,
+    ...Array.from(new Set(ticketNames)).sort((left, right) =>
+      left.localeCompare(right, "zh-Hant")
+    ),
+  ];
+}
+
+function renderCompletionTicketFilterSelect() {
+  if (!(completionTicketFilter instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const ticketOptions = getCompletionTicketFilterOptions();
+  const currentTicketName = getCompletionTicketFilterName();
+  const nextTicketName = ticketOptions.includes(currentTicketName)
+    ? currentTicketName
+    : defaultCompletionTicketName;
+  const isSingleOption = ticketOptions.length <= 1;
+  const select = document.createElement("div");
+  select.className = `completion-ticket-filter-control${isSingleOption ? " is-single-option" : ""}`;
+  select.id = "completion-ticket-filter-select";
+
+  const trigger = document.createElement("button");
+  trigger.className = "completion-ticket-filter-trigger";
+  trigger.id = "completion-ticket-filter-trigger";
+  trigger.type = "button";
+  trigger.setAttribute("aria-labelledby", "completion-ticket-filter-label completion-ticket-filter-value");
+  trigger.setAttribute("aria-expanded", "false");
+  if (isSingleOption) {
+    trigger.setAttribute("aria-disabled", "true");
+    trigger.setAttribute("tabindex", "-1");
+  } else {
+    trigger.setAttribute("aria-haspopup", "listbox");
+  }
+
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.classList.add("completion-ticket-filter-icon");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("focusable", "false");
+  icon.setAttribute("aria-hidden", "true");
+  const iconPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  iconPath.setAttribute("d", "M4.5 6.5h15l-6 7v4.5l-3 1.5v-6L4.5 6.5Z");
+  iconPath.setAttribute("fill", "none");
+  iconPath.setAttribute("stroke", "currentColor");
+  iconPath.setAttribute("stroke-width", "2");
+  iconPath.setAttribute("stroke-linecap", "round");
+  iconPath.setAttribute("stroke-linejoin", "round");
+  icon.append(iconPath);
+
+  const value = document.createElement("span");
+  value.className = "completion-ticket-filter-value";
+  value.id = "completion-ticket-filter-value";
+  value.hidden = true;
+  value.textContent = allCompletionTicketName;
+
+  const menu = document.createElement("div");
+  menu.className = "completion-ticket-filter-menu custom-select-menu";
+  menu.id = "completion-ticket-filter-options";
+  menu.role = "listbox";
+  menu.hidden = true;
+
+  trigger.append(icon);
+  select.append(trigger, value, menu);
+
+  const currentFilterControl =
+    completionTicketFilterSelect instanceof HTMLElement
+      ? completionTicketFilterSelect
+      : completionTicketFilterValue;
+  currentFilterControl?.replaceWith(select);
+  completionTicketFilterSelect = select;
+  completionTicketFilterTrigger = trigger;
+  completionTicketFilterValue = value;
+  completionTicketFilterMenu = menu;
+  completionTicketFilterOptions = ticketOptions.map((ticketName, index) =>
+    buildCompletionTicketOption(ticketName, index)
+  );
+  completionTicketFilterMenu.replaceChildren(...completionTicketFilterOptions);
+
+  completionTicketFilterTrigger.addEventListener("click", toggleCompletionTicketFilterSelect);
+  completionTicketFilterTrigger.addEventListener("keydown", handleCompletionTicketFilterTriggerKeydown);
+  applyCompletionTicketFilterValue(nextTicketName, { renderRows: false });
+}
+
 function renderCompletionEventSelects(events) {
   if (!(completionEventFilter instanceof HTMLInputElement)) {
     return;
@@ -255,6 +416,7 @@ function renderCompletionEventSelects(events) {
     }
     completionCertRows = [];
     isLoadingCompletionCertRows = false;
+    renderCompletionTicketFilterSelect();
     renderCompletionCertRows();
     return;
   }
@@ -871,6 +1033,16 @@ function normalizeCompletionCertRow(rowData) {
 
 function getVisibleCompletionCertRows() {
   const eventId = getCompletionFilterEventName();
+  const ticketName = getCompletionTicketFilterName();
+  return completionCertRows.filter(
+    (row) =>
+      row.eventId === eventId &&
+      (!ticketName || row.ticketName.trim() === ticketName)
+  );
+}
+
+function getCurrentEventCompletionCertRows() {
+  const eventId = getCompletionFilterEventName();
   return completionCertRows.filter((row) => row.eventId === eventId);
 }
 
@@ -1189,6 +1361,13 @@ async function updateCompletionRowAttendanceStatus(rowData, isCheckedIn) {
 function updateCompletionBulkActionControls() {
   const visibleRows = getVisibleCompletionCertRows();
   const hasVisibleRows = visibleRows.length > 0;
+  const bulkScope = document.querySelector(".document-bulk-scope");
+  if (bulkScope instanceof HTMLElement) {
+    bulkScope.textContent = getCompletionTicketFilterName()
+      ? "套用至目前票種篩選資料"
+      : "套用至目前活動全部資料";
+  }
+
   if (completionBulkDownloadableButton instanceof HTMLButtonElement) {
     completionBulkDownloadableButton.disabled =
       isUpdatingCompletionBulkAttendance || !hasVisibleRows;
@@ -1290,6 +1469,7 @@ function renderCompletionCertRows() {
   }
 
   updateCompletionTableBusyState();
+  renderCompletionTicketFilterSelect();
 
   completionCertTableBody
     .querySelectorAll(".completion-cert-row")
@@ -1299,11 +1479,14 @@ function renderCompletionCertRows() {
   const pageRows = getCurrentCompletionCertPageRows(visibleRows);
 
   if (completionCertEmptyRow instanceof HTMLTableRowElement) {
+    const hasCurrentEventRows = getCurrentEventCompletionCertRows().length > 0;
     completionCertEmptyRow.hidden = visibleRows.length > 0;
     setCompletionCertEmptyMessage(
       isLoadingCompletionCertRows
         ? loadingCompletionCertRowsMessage
-        : emptyCompletionCertRowsMessage
+        : hasCurrentEventRows
+          ? emptyCompletionTicketRowsMessage
+          : emptyCompletionCertRowsMessage
     );
   }
 
@@ -1580,6 +1763,7 @@ function applyCompletionEventFilterValue(nextValue, { renderRows = true } = {}) 
   if (completionEventFilter instanceof HTMLInputElement) {
     if (completionEventFilter.value !== normalizedValue) {
       completionCurrentPage = 1;
+      applyCompletionTicketFilterValue(defaultCompletionTicketName, { renderRows: false });
     }
     completionEventFilter.value = normalizedValue;
   }
@@ -1612,6 +1796,44 @@ function applyCompletionEventFilterValue(nextValue, { renderRows = true } = {}) 
   }
 }
 
+function applyCompletionTicketFilterValue(nextValue, { renderRows = true } = {}) {
+  const normalizedValue = nextValue?.trim() || defaultCompletionTicketName;
+
+  if (completionTicketFilter instanceof HTMLInputElement) {
+    if (completionTicketFilter.value !== normalizedValue) {
+      completionCurrentPage = 1;
+    }
+    completionTicketFilter.value = normalizedValue;
+  }
+
+  if (completionTicketFilterValue) {
+    completionTicketFilterValue.textContent = resolveCompletionTicketFilterLabel(
+      normalizedValue
+    );
+  }
+
+  if (completionTicketFilterTrigger instanceof HTMLButtonElement) {
+    const filterLabel = resolveCompletionTicketFilterLabel(normalizedValue);
+    completionTicketFilterTrigger.classList.toggle("is-filtered", Boolean(normalizedValue));
+    completionTicketFilterTrigger.setAttribute(
+      "aria-label",
+      normalizedValue ? `票種篩選：${filterLabel}` : "篩選票種"
+    );
+    completionTicketFilterTrigger.title = filterLabel;
+  }
+
+  completionTicketFilterOptions.forEach((item) => {
+    const optionValue = item.dataset.value ?? "";
+    const isSelected = optionValue === normalizedValue;
+    item.classList.toggle("is-selected", isSelected);
+    item.setAttribute("aria-selected", String(isSelected));
+  });
+
+  if (renderRows) {
+    renderCompletionCertRows();
+  }
+}
+
 function goToCompletionPage(nextPage) {
   completionCurrentPage = nextPage;
   clampCompletionCurrentPage();
@@ -1620,7 +1842,8 @@ function goToCompletionPage(nextPage) {
 
 function applyCompletionFilters() {
   const eventName = completionEventFilter instanceof HTMLInputElement ? completionEventFilter.value : "";
-  return { eventName };
+  const ticketName = completionTicketFilter instanceof HTMLInputElement ? completionTicketFilter.value : "";
+  return { eventName, ticketName };
 }
 
 function closeCompletionEventFilterSelect({ blurTrigger = false } = {}) {
@@ -1676,6 +1899,62 @@ function handleCompletionEventFilterTriggerKeydown(event) {
 
   if (event.key === "Escape") {
     closeCompletionEventFilterSelect({ blurTrigger: true });
+  }
+}
+
+function closeCompletionTicketFilterSelect({ blurTrigger = false } = {}) {
+  completionTicketFilterSelect?.classList.remove("is-open");
+  completionTicketFilterTrigger?.setAttribute("aria-expanded", "false");
+
+  if (completionTicketFilterMenu) {
+    completionTicketFilterMenu.hidden = true;
+  }
+
+  if (blurTrigger) {
+    completionTicketFilterTrigger?.blur();
+  }
+}
+
+function openCompletionTicketFilterSelect() {
+  if (completionTicketFilterOptions.length <= 1) {
+    closeCompletionTicketFilterSelect();
+    return;
+  }
+
+  completionTicketFilterSelect?.classList.add("is-open");
+  completionTicketFilterTrigger?.setAttribute("aria-expanded", "true");
+
+  if (completionTicketFilterMenu) {
+    completionTicketFilterMenu.hidden = false;
+  }
+}
+
+function toggleCompletionTicketFilterSelect() {
+  if (completionTicketFilterOptions.length <= 1) {
+    return;
+  }
+
+  if (completionTicketFilterSelect?.classList.contains("is-open")) {
+    closeCompletionTicketFilterSelect({ blurTrigger: true });
+    return;
+  }
+
+  openCompletionTicketFilterSelect();
+}
+
+function handleCompletionTicketFilterTriggerKeydown(event) {
+  if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    if (completionTicketFilterOptions.length <= 1) {
+      return;
+    }
+
+    openCompletionTicketFilterSelect();
+    completionTicketFilterOptions[0]?.focus();
+  }
+
+  if (event.key === "Escape") {
+    closeCompletionTicketFilterSelect({ blurTrigger: true });
   }
 }
 
@@ -1877,6 +2156,13 @@ document.addEventListener("click", (event) => {
     !completionEventFilterSelect.contains(event.target)
   ) {
     closeCompletionEventFilterSelect();
+  }
+
+  if (
+    completionTicketFilterSelect instanceof HTMLElement &&
+    !completionTicketFilterSelect.contains(event.target)
+  ) {
+    closeCompletionTicketFilterSelect();
   }
 
   if (
