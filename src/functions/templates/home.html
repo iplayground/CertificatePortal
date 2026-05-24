@@ -166,7 +166,18 @@
               </div>
 
               <div class="field" id="generated-at-field" data-user-data-field data-document-types="taxReceipt" hidden>
-                <span id="generated-at-label" class="field-label">{{generated_at_label}}</span>
+                <div class="field-label-row">
+                  <span id="generated-at-label" class="field-label">{{generated_at_label}}</span>
+                  <button
+                    class="field-help-action"
+                    id="generated-at-help-action"
+                    type="button"
+                    aria-label="{{generated_at_help_action_label}}"
+                    aria-expanded="false"
+                    aria-haspopup="dialog"
+                    aria-controls="generated-at-help-dialog"
+                  >?</button>
+                </div>
                 <input
                   class="form-datetime-input"
                   id="generated-at"
@@ -328,6 +339,23 @@
       <div class="page-loading-panel">
         <div class="page-loading-indicator" aria-hidden="true"></div>
         <div class="page-loading-text">{{lookup_pending_message}}</div>
+      </div>
+    </div>
+    <div
+      class="image-dialog-backdrop"
+      id="generated-at-help-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="{{generated_at_help_action_label}}"
+      hidden
+    >
+      <div class="image-dialog-panel">
+        <button class="image-dialog-close" id="generated-at-help-close-action" type="button" aria-label="{{generated_at_help_close_label}}"></button>
+        <img
+          id="generated-at-help-image"
+          src="{{asset_tax_receipt_generated_at_help_png_url}}"
+          alt="{{generated_at_help_image_alt}}"
+        >
       </div>
     </div>
 

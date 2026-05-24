@@ -1501,6 +1501,7 @@ def home_page(req: func.HttpRequest) -> func.HttpResponse:
             "logo_b_alpha.png",
             "logo_sq_b.png",
             "portal-datetime-picker.js",
+            "tax-receipt-generated-at-help.png",
             "theme.css",
         ),
         **build_home_page_event_context(home_page_context),

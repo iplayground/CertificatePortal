@@ -419,6 +419,11 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "報名序號" in body
     assert "統編" in body
     assert "產製時間" in body
+    assert 'id="generated-at-help-action"' in body
+    assert 'aria-label="查看產製時間位置"' in body
+    assert 'id="generated-at-help-dialog"' in body
+    assert 'id="generated-at-help-image"' in body
+    assert 'tax-receipt-generated-at-help.png?v=' in body
     assert 'id="tax-receipt-selection-status"' in body
     assert 'id="tax-receipt-download-feedback"' in body
     assert "全選" in body
@@ -2000,6 +2005,9 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert ".feedback.is-warning" in body
     assert ".certificate-preview-loading" in body
     assert ".certificate-preview-frame img.is-loading" in body
+    assert ".field-help-action" in body
+    assert ".image-dialog-backdrop" in body
+    assert ".image-dialog-panel img" in body
     assert "var(--theme-feedback-error-color)" in body
     assert "var(--theme-feedback-warning-color)" in body
     assert "white-space: pre-line;" in body
@@ -2046,6 +2054,20 @@ def test_home_css_asset_returns_expected_content_type() -> None:
     assert "margin-left: auto;" in body
     assert "form.is-certificate-options-active .field-static-value" in body
     assert "cursor: not-allowed;" in body
+
+
+def test_tax_receipt_generated_at_help_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/tax-receipt-generated-at-help.png",
+            route_params={"asset_name": "tax-receipt-generated-at-help.png"},
+        )
+    )
+    body = response.get_body()
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    assert body.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_versioned_static_asset_uses_long_cache_headers() -> None:
@@ -2298,6 +2320,11 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "tax_receipt_download_pending_message" in body
     assert "tax_receipt_download_cooldown_message" in body
     assert "tax_receipt_download_unavailable_message" in body
+    assert "generatedAtHelpAction" in body
+    assert "openGeneratedAtHelpDialog" in body
+    assert "closeGeneratedAtHelpDialog" in body
+    assert "generated_at_help_action_label" in body
+    assert "generated_at_help_image_alt" in body
     assert "setTaxReceiptDownloadBusy(true)" in body
     assert "setTaxReceiptDownloadBusy(false)" in body
     assert "isTaxReceiptDownloadInProgress" in body

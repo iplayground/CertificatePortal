@@ -62,6 +62,11 @@ ASSET_DEFINITIONS: dict[str, tuple[Path, str, bool]] = {
         True,
     ),
     "portal-login.js": (STATIC_DIR / "portal-login.js", "application/javascript", True),
+    "tax-receipt-generated-at-help.png": (
+        STATIC_DIR / "tax-receipt-generated-at-help.png",
+        "image/png",
+        False,
+    ),
     "theme.css": (STATIC_DIR / "theme.css", "text/css", True),
     "verify.css": (STATIC_DIR / "verify.css", "text/css", True),
     "verify.js": (STATIC_DIR / "verify.js", "application/javascript", True),

@@ -1062,6 +1062,7 @@ HTML 頁面會以 `?v=<content-hash>` 參數引用靜態資產，例如 `/assets
 | `GET` | `/assets/favicon.png` | 所有 HTML 頁面共用 favicon |
 | `GET` | `/assets/home.css` | 首頁樣式 |
 | `GET` | `/assets/home.js` | 首頁互動腳本 |
+| `GET` | `/assets/tax-receipt-generated-at-help.png` | 首頁營業稅繳稅證明查詢表單中，說明產製時間對應收據列印日期位置的圖片 |
 | `GET` | `/assets/locale-switcher.js` | 首頁與公開驗證頁共用的語系切換器互動腳本 |
 | `GET` | `/assets/theme.css` | 首頁、公開驗證頁與管理平台共用的日夜主題 token、語系切換器樣式與 shared alert 樣式 |
 | `GET` | `/assets/verify.css` | 公開驗證頁樣式 |

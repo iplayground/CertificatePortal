@@ -101,6 +101,10 @@ const attendeeNameLabel = document.getElementById("attendee-name-label");
 const emailLabel = document.getElementById("email-label");
 const businessTaxIdLabel = document.getElementById("business-tax-id-label");
 const generatedAtLabel = document.getElementById("generated-at-label");
+const generatedAtHelpAction = document.getElementById("generated-at-help-action");
+const generatedAtHelpDialog = document.getElementById("generated-at-help-dialog");
+const generatedAtHelpCloseAction = document.getElementById("generated-at-help-close-action");
+const generatedAtHelpImage = document.getElementById("generated-at-help-image");
 const copyrightNotice = document.getElementById("copyright-notice");
 const homePageI18n = parseHomePageI18n();
 let currentLocale = homePage.dataset.currentLocale ?? "zh-TW";
@@ -963,6 +967,28 @@ function setCertificateIssueBusy(isBusy) {
   }
 }
 
+function openGeneratedAtHelpDialog() {
+  if (!generatedAtHelpDialog) {
+    return;
+  }
+
+  generatedAtHelpDialog.hidden = false;
+  generatedAtHelpAction?.setAttribute("aria-expanded", "true");
+  generatedAtHelpCloseAction?.focus?.();
+}
+
+function closeGeneratedAtHelpDialog({ restoreFocus = true } = {}) {
+  if (!generatedAtHelpDialog || generatedAtHelpDialog.hidden) {
+    return;
+  }
+
+  generatedAtHelpDialog.hidden = true;
+  generatedAtHelpAction?.setAttribute("aria-expanded", "false");
+  if (restoreFocus) {
+    generatedAtHelpAction?.focus?.();
+  }
+}
+
 function resolveCertificatePdfFilename(response) {
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const match = disposition.match(/filename="([^"]+)"/i);
@@ -1120,6 +1146,7 @@ function setDocumentLookupFieldsLocked(isLocked) {
     email,
     businessTaxId,
     generatedAt,
+    generatedAtHelpAction,
   ].filter(Boolean).forEach((control) => {
     control.disabled = isLocked;
   });
@@ -1891,6 +1918,16 @@ function applyHomePageLocale(nextLocale) {
   updateTextContent(emailLabel, homePageCopy.email_label);
   updateTextContent(businessTaxIdLabel, homePageCopy.business_tax_id_label);
   updateTextContent(generatedAtLabel, homePageCopy.generated_at_label);
+  if (typeof homePageCopy.generated_at_help_action_label === "string") {
+    generatedAtHelpAction?.setAttribute("aria-label", homePageCopy.generated_at_help_action_label);
+    generatedAtHelpDialog?.setAttribute("aria-label", homePageCopy.generated_at_help_action_label);
+  }
+  if (typeof homePageCopy.generated_at_help_close_label === "string") {
+    generatedAtHelpCloseAction?.setAttribute("aria-label", homePageCopy.generated_at_help_close_label);
+  }
+  if (generatedAtHelpImage && typeof homePageCopy.generated_at_help_image_alt === "string") {
+    generatedAtHelpImage.alt = homePageCopy.generated_at_help_image_alt;
+  }
   updateTextContent(previewAction, homePageCopy.preview_action_label);
   updateTextContent(certificateOptionsTitle, homePageCopy.certificate_options_title);
   updateTextContent(certificateOptionsSubtitle, homePageCopy.certificate_options_subtitle);
@@ -2308,6 +2345,26 @@ documentRequestForm?.addEventListener("submit", (event) => {
 
 previewAction.addEventListener("click", () => {
   void submitDocumentLookup();
+});
+
+generatedAtHelpAction?.addEventListener("click", () => {
+  openGeneratedAtHelpDialog();
+});
+
+generatedAtHelpCloseAction?.addEventListener("click", () => {
+  closeGeneratedAtHelpDialog();
+});
+
+generatedAtHelpDialog?.addEventListener("click", (event) => {
+  if (event.target === generatedAtHelpDialog) {
+    closeGeneratedAtHelpDialog();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && generatedAtHelpDialog && !generatedAtHelpDialog.hidden) {
+    closeGeneratedAtHelpDialog();
+  }
 });
 
 [registrationNumber, email, businessTaxId, generatedAt].filter(Boolean).forEach((input) => {
