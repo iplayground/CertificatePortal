@@ -869,7 +869,7 @@ def format_completion_cert_event_date(value: str, *, locale: str) -> str:
 def build_issued_completion_cert_blob_name(cert_document: dict[str, Any]) -> str:
     event_id = str(cert_document.get("eventId", "")).strip()
     cert_id = str(cert_document.get("id", "")).strip()
-    return f"{event_id}/{cert_id}.pdf"
+    return f"completionCert/{event_id}/{cert_id}.pdf"
 
 
 def build_completion_cert_download_filename(cert_document: dict[str, Any]) -> str:

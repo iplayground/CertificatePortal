@@ -99,11 +99,24 @@
                 <button
                   class="admin-nav-item"
                   type="button"
+                  data-view-target="volunteer-service-certs"
+                  data-view-path="/portal/dashboard/volunteer-service-certs"
+                  aria-pressed="false"
+                >
+                  <span class="admin-nav-symbol" aria-hidden="true">04</span>
+                  <span class="admin-nav-copy">
+                    <strong>志工服務證明</strong>
+                    <span>服務證明資料管理</span>
+                  </span>
+                </button>
+                <button
+                  class="admin-nav-item"
+                  type="button"
                   data-view-target="tax-receipts"
                   data-view-path="/portal/dashboard/tax-receipts"
                   aria-pressed="false"
                 >
-                  <span class="admin-nav-symbol" aria-hidden="true">04</span>
+                  <span class="admin-nav-symbol" aria-hidden="true">05</span>
                   <span class="admin-nav-copy">
                     <strong>營業稅繳稅證明</strong>
                     <span>PDF/圖檔上傳與管理</span>
@@ -260,6 +273,18 @@
                 </div>
               </div>
             </div>
+            <label class="form-checkbox-option document-type-option">
+              <input
+                name="documentTypes"
+                type="checkbox"
+                value="volunteerServiceCert"
+                data-document-type="volunteerServiceCert"
+              >
+              <span>
+                <strong>志工服務證明</strong>
+                <small>開放活動志工申請服務時數證明</small>
+              </span>
+            </label>
             <label class="form-checkbox-option document-type-option">
               <input
                 name="documentTypes"

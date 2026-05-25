@@ -337,6 +337,10 @@ function resolveEventDocumentTypeItems(documentTypes) {
       label: "完訓證明",
       typeClassName: "is-completion-cert",
     },
+    volunteerServiceCert: {
+      label: "志工服務證明",
+      typeClassName: "is-volunteer-service-cert",
+    },
     taxReceipt: {
       label: "營業稅繳稅證明",
       typeClassName: "is-tax-receipt",

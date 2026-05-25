@@ -55,6 +55,9 @@ param cosmosCompletionCertsContainerName string = 'completionCerts'
 @description('Cosmos DB container name for completion certificate requests.')
 param cosmosCompletionCertRequestsContainerName string = 'completionCertRequests'
 
+@description('Cosmos DB container name for volunteer service certificate records.')
+param cosmosVolunteerServiceCertsContainerName string = 'volunteerServiceCerts'
+
 @description('Cosmos DB container name for tax receipt records.')
 param cosmosTaxReceiptsContainerName string = 'taxReceipts'
 
@@ -293,6 +296,22 @@ resource cosmosCompletionCertRequestsContainer 'Microsoft.DocumentDB/databaseAcc
   }
 }
 
+resource cosmosVolunteerServiceCertsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  name: cosmosVolunteerServiceCertsContainerName
+  parent: cosmosSqlDatabase
+  properties: {
+    resource: {
+      id: cosmosVolunteerServiceCertsContainerName
+      partitionKey: {
+        kind: 'Hash'
+        paths: [
+          '/eventId'
+        ]
+      }
+    }
+  }
+}
+
 resource cosmosTaxReceiptsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
   name: cosmosTaxReceiptsContainerName
   parent: cosmosSqlDatabase
@@ -396,6 +415,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'COSMOS_COMPLETION_CERT_REQUESTS_CONTAINER'
           value: cosmosCompletionCertRequestsContainer.name
+        }
+        {
+          name: 'COSMOS_VOLUNTEER_SERVICE_CERTS_CONTAINER'
+          value: cosmosVolunteerServiceCertsContainer.name
         }
         {
           name: 'COSMOS_TAX_RECEIPTS_CONTAINER'

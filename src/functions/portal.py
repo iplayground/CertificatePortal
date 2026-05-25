@@ -117,6 +117,17 @@ from src.shared.tax_receipt_download_ticket import (
     read_tax_receipt_download_ticket_payload,
 )
 from src.shared.templates import render_html_template
+from src.shared.volunteer_service_store import (
+    VolunteerServiceStoreConfigurationError,
+    VolunteerServiceStoreOperationError,
+    build_volunteer_service_cert_document,
+    build_volunteer_service_cert_id,
+    create_volunteer_service_cert_document,
+    get_volunteer_service_certs_container,
+    list_volunteer_service_cert_documents,
+    read_volunteer_service_cert_document,
+    replace_volunteer_service_cert_document,
+)
 
 blueprint = func.Blueprint()
 LOGGER = logging.getLogger(__name__)
@@ -138,7 +149,9 @@ PORTAL_API_CSRF_MAX_AGE_SECONDS = 28800
 PORTAL_API_CSRF_HEADER_NAME = "X-Portal-CSRF-Token"
 PORTAL_API_IDEMPOTENCY_HEADER_NAME = "Idempotency-Key"
 PORTAL_ALLOWED_EVENT_STATUSES = frozenset({"open", "unlisted"})
-PORTAL_ALLOWED_EVENT_DOCUMENT_TYPES = frozenset({"completionCert", "taxReceipt"})
+PORTAL_ALLOWED_EVENT_DOCUMENT_TYPES = frozenset(
+    {"completionCert", "volunteerServiceCert", "taxReceipt"}
+)
 PORTAL_COMPLETION_CSV_ALIASES = {
     "badgeName": ("你是誰，ID 或具有鑑識度的名稱 Name on Badge",),
     "email": ("Email", "email"),
@@ -197,6 +210,11 @@ PORTAL_DASHBOARD_COMPLETION_REVIEWS_TEMPLATE_PATH = (
     / "templates"
     / "portal_dashboard_completion_reviews.html"
 )
+PORTAL_DASHBOARD_VOLUNTEER_SERVICE_CERTS_TEMPLATE_PATH = (
+    Path(__file__).resolve().parent
+    / "templates"
+    / "portal_dashboard_volunteer_service_certs.html"
+)
 PORTAL_DASHBOARD_TAX_RECEIPTS_TEMPLATE_PATH = (
     Path(__file__).resolve().parent
     / "templates"
@@ -237,6 +255,13 @@ def load_portal_dashboard_completion_certs_template() -> str:
 @lru_cache(maxsize=1)
 def load_portal_dashboard_completion_reviews_template() -> str:
     return PORTAL_DASHBOARD_COMPLETION_REVIEWS_TEMPLATE_PATH.read_text(
+        encoding="utf-8"
+    )
+
+
+@lru_cache(maxsize=1)
+def load_portal_dashboard_volunteer_service_certs_template() -> str:
+    return PORTAL_DASHBOARD_VOLUNTEER_SERVICE_CERTS_TEMPLATE_PATH.read_text(
         encoding="utf-8"
     )
 
@@ -467,6 +492,7 @@ def build_portal_dashboard_context(req: func.HttpRequest, access: PortalAccess) 
             "portal-dashboard-completion-reviews.js",
             "portal-dashboard-events.js",
             "portal-dashboard-tax-receipts.js",
+            "portal-dashboard-volunteer-service-certs.js",
             "portal-dashboard-welcome.js",
             "portal-datetime-picker.js",
             "portal-event-cache.js",
@@ -767,6 +793,9 @@ def normalize_completion_cert_for_api(document: dict[str, Any]) -> dict[str, Any
             ("verificationCount",),
         ),
         "issuedAt": document.get("issuedAt"),
+        "transferredToDocumentType": document.get("transferredToDocumentType"),
+        "transferredToDocumentId": document.get("transferredToDocumentId"),
+        "transferredAt": document.get("transferredAt"),
         "createdAt": str(document.get("createdAt", "")).strip(),
     }
 
@@ -793,6 +822,26 @@ def normalize_completion_cert_request_for_api(
     if completion_cert is not None:
         payload["completionCert"] = normalize_completion_cert_for_api(completion_cert)
     return payload
+
+
+def normalize_volunteer_service_cert_for_api(document: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(document.get("id", "")).strip(),
+        "eventId": str(document.get("eventId", "")).strip(),
+        "sourceCompletionCertId": str(document.get("sourceCompletionCertId", "")).strip(),
+        "number": normalize_completion_cert_number(document.get("number")),
+        "kktixId": str(document.get("kktixId", "")).strip(),
+        "badgeName": str(document.get("badgeName", "")).strip(),
+        "name": str(document.get("name", "")).strip(),
+        "email": str(document.get("email", "")).strip(),
+        "serviceOrganization": document.get("serviceOrganization"),
+        "serviceHours": document.get("serviceHours"),
+        "serviceStartDate": document.get("serviceStartDate"),
+        "serviceEndDate": document.get("serviceEndDate"),
+        "downloadEnabled": document.get("downloadEnabled") is True,
+        "certStatus": str(document.get("certStatus", "")).strip() or "notIssued",
+        "createdAt": str(document.get("createdAt", "")).strip(),
+    }
 
 
 def normalize_tax_receipt_for_api(document: dict[str, Any]) -> dict[str, Any]:
@@ -1293,6 +1342,7 @@ def normalize_portal_event_document_types(document_types: Any) -> list[str]:
 def resolve_portal_event_document_type_labels(document_types: list[str]) -> list[str]:
     labels = {
         "completionCert": "完訓證明",
+        "volunteerServiceCert": "志工服務證明",
         "taxReceipt": "營業稅繳稅證明",
     }
     return [labels[document_type] for document_type in document_types if document_type in labels]
@@ -2294,6 +2344,13 @@ def portal_admin_completion_certs_update_api(req: func.HttpRequest) -> func.Http
 
         updates = update_payload["updates"]
         current_cert_status = str(document.get("certStatus", "")).strip() or "notIssued"
+        if current_cert_status == "transferred":
+            return build_portal_api_error_response(
+                409,
+                "completion_cert_already_transferred",
+                "已轉移的完訓證明不可再修改資料。",
+            )
+
         if current_cert_status == "issued" and PORTAL_COMPLETION_CERT_DATA_FIELDS.intersection(
             updates
         ):
@@ -2344,6 +2401,274 @@ def portal_admin_completion_certs_update_api(req: func.HttpRequest) -> func.Http
     return build_portal_api_json_response(
         {"completionCert": normalize_completion_cert_for_api(saved_document)},
         status_code=200,
+    )
+
+
+@blueprint.function_name(name="portal_admin_volunteer_service_certs_list_api")
+@blueprint.route(
+    route="api/v1/admin/volunteer-service-certs",
+    methods=["GET"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_volunteer_service_certs_list_api(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    access = require_portal_api_read_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    event_id = str(req.params.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_event_id",
+            "活動識別碼不合法。",
+        )
+
+    try:
+        documents = list_volunteer_service_cert_documents(
+            container=get_volunteer_service_certs_container(),
+            event_id=event_id,
+        )
+    except VolunteerServiceStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "volunteer_service_store_not_configured",
+            str(exc),
+        )
+    except VolunteerServiceStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "volunteer_service_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {
+            "volunteerServiceCerts": [
+                normalize_volunteer_service_cert_for_api(document)
+                for document in documents
+            ]
+        },
+        status_code=200,
+    )
+
+
+@blueprint.function_name(name="portal_admin_volunteer_service_cert_update_api")
+@blueprint.route(
+    route="api/v1/admin/volunteer-service-certs/{certid}",
+    methods=["PUT"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_volunteer_service_cert_update_api(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    access = require_portal_api_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    cert_id = str(req.route_params.get("certid", "")).strip()
+    if not cert_id.startswith("vscert_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_volunteer_service_cert_id",
+            "志工服務證明資料識別碼不合法。",
+        )
+
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return build_portal_api_error_response(400, "invalid_json", "請提供合法 JSON。")
+
+    if not isinstance(payload, dict):
+        return build_portal_api_error_response(
+            400,
+            "invalid_volunteer_service_cert_payload",
+            "請提供 JSON 物件。",
+        )
+
+    event_id = str(payload.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return build_portal_api_error_response(400, "invalid_event_id", "活動識別碼不合法。")
+
+    if "downloadEnabled" not in payload or not isinstance(payload.get("downloadEnabled"), bool):
+        return build_portal_api_error_response(
+            400,
+            "invalid_download_enabled",
+            "請提供可否下載的布林值。",
+        )
+
+    try:
+        container = get_volunteer_service_certs_container()
+        document = read_volunteer_service_cert_document(
+            cert_id=cert_id,
+            container=container,
+            event_id=event_id,
+        )
+        saved_document = replace_volunteer_service_cert_document(
+            container=container,
+            document={
+                **document,
+                "downloadEnabled": payload["downloadEnabled"],
+                "updatedAt": utc_now_iso(),
+                "updatedBy": get_portal_api_actor(access),
+            },
+        )
+    except VolunteerServiceStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "volunteer_service_store_not_configured",
+            str(exc),
+        )
+    except VolunteerServiceStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定志工服務證明資料。" else 503,
+            "volunteer_service_cert_not_found"
+            if str(exc) == "找不到指定志工服務證明資料。"
+            else "volunteer_service_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {"volunteerServiceCert": normalize_volunteer_service_cert_for_api(saved_document)},
+        status_code=200,
+    )
+
+
+@blueprint.function_name(name="portal_admin_volunteer_service_cert_transfer_api")
+@blueprint.route(
+    route="api/v1/admin/volunteer-service-certs/transfers",
+    methods=["POST"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_volunteer_service_cert_transfer_api(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    access = require_portal_api_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return build_portal_api_error_response(400, "invalid_json", "請提供合法 JSON。")
+
+    if not isinstance(payload, dict):
+        return build_portal_api_error_response(
+            400,
+            "invalid_transfer_payload",
+            "請提供 JSON 物件。",
+        )
+
+    event_id = str(payload.get("eventId", "")).strip()
+    completion_cert_id = str(payload.get("completionCertId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return build_portal_api_error_response(400, "invalid_event_id", "活動識別碼不合法。")
+    if not completion_cert_id.startswith("ccert_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_completion_cert_id",
+            "完訓證明資料識別碼不合法。",
+        )
+
+    actor = get_portal_api_actor(access)
+    transfer_timestamp = utc_now_iso()
+    try:
+        completion_container = get_completion_records_container()
+        completion_document = read_completion_cert_document(
+            cert_id=completion_cert_id,
+            container=completion_container,
+            event_id=event_id,
+        )
+        current_cert_status = str(completion_document.get("certStatus", "")).strip() or "notIssued"
+        if current_cert_status == "issued":
+            return build_portal_api_error_response(
+                409,
+                "completion_cert_already_issued",
+                "已發行的完訓證明不可轉移文件類型，請先撤銷發行狀態。",
+            )
+
+        existing_transfer_type = str(
+            completion_document.get("transferredToDocumentType", "")
+        ).strip()
+        if existing_transfer_type and existing_transfer_type != "volunteerServiceCert":
+            return build_portal_api_error_response(
+                409,
+                "completion_cert_already_transferred",
+                "此完訓證明資料已轉移到其他文件類型。",
+            )
+
+        volunteer_cert_id = build_volunteer_service_cert_id(
+            completion_cert_id=completion_cert_id,
+            event_id=event_id,
+        )
+        event_document = read_portal_event(event_id)
+        volunteer_document = build_volunteer_service_cert_document(
+            actor=actor,
+            completion_cert=completion_document,
+            event=event_document,
+            now=transfer_timestamp,
+            volunteer_service_cert_id=volunteer_cert_id,
+        )
+        saved_volunteer_document, _was_created = create_volunteer_service_cert_document(
+            container=get_volunteer_service_certs_container(),
+            document=volunteer_document,
+        )
+        updated_completion_document = {
+            **completion_document,
+            "certStatus": "transferred",
+            "transferredToDocumentType": "volunteerServiceCert",
+            "transferredToDocumentId": saved_volunteer_document["id"],
+            "transferredAt": transfer_timestamp,
+            "transferredBy": actor,
+        }
+        saved_completion_document = replace_completion_cert_document(
+            container=completion_container,
+            document=updated_completion_document,
+        )
+    except CompletionStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_not_configured",
+            str(exc),
+        )
+    except VolunteerServiceStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "volunteer_service_store_not_configured",
+            str(exc),
+        )
+    except CompletionStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定完訓證明資料。" else 503,
+            "completion_cert_not_found"
+            if str(exc) == "找不到指定完訓證明資料。"
+            else "volunteer_service_transfer_unavailable",
+            str(exc),
+        )
+    except EventStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定活動。" else 503,
+            "event_not_found"
+            if str(exc) == "找不到指定活動。"
+            else "event_store_unavailable",
+            str(exc),
+        )
+    except VolunteerServiceStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "volunteer_service_transfer_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {
+            "completionCert": normalize_completion_cert_for_api(saved_completion_document),
+            "volunteerServiceCert": normalize_volunteer_service_cert_for_api(
+                saved_volunteer_document
+            ),
+        },
+        status_code=201,
     )
 
 
@@ -3373,6 +3698,27 @@ def portal_dashboard_completion_reviews_page(
     return build_portal_page_response(
         render_html_template(
             load_portal_dashboard_completion_reviews_template(),
+            build_portal_dashboard_context(req, access),
+        )
+    )
+
+
+@blueprint.function_name(name="portal_dashboard_volunteer_service_certs_page")
+@blueprint.route(
+    route="portal/dashboard/volunteer-service-certs",
+    methods=["GET"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_dashboard_volunteer_service_certs_page(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    access = require_portal_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    return build_portal_page_response(
+        render_html_template(
+            load_portal_dashboard_volunteer_service_certs_template(),
             build_portal_dashboard_context(req, access),
         )
     )

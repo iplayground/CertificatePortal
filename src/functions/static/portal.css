@@ -995,6 +995,20 @@ form {
   transform: none;
 }
 
+.document-transfer-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 35px;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(5, 150, 105, 0.1);
+  color: #047857;
+  font-size: 0.84rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .document-table-wrap {
   overflow-x: auto;
   border: 1px solid rgba(81, 121, 254, 0.12);
@@ -1009,7 +1023,7 @@ form {
 }
 
 .completion-cert-table {
-  min-width: 1280px;
+  min-width: 1330px;
   table-layout: fixed;
 }
 
@@ -1089,7 +1103,7 @@ form {
 }
 
 .completion-cert-col-actions {
-  width: 140px;
+  width: 190px;
 }
 
 .document-list-table th,
@@ -1255,6 +1269,25 @@ form {
 
 .completion-cert-row .document-row-actions {
   flex-wrap: nowrap;
+}
+
+.completion-cert-row.is-transferred td:last-child {
+  text-align: center;
+}
+
+.completion-cert-row.is-transferred .document-row-actions {
+  display: inline-flex;
+  width: auto;
+  justify-content: center;
+  margin-inline: auto;
+}
+
+.volunteer-service-download-cell {
+  text-align: center;
+}
+
+.volunteer-service-download-cell .document-row-status-switch {
+  justify-content: center;
 }
 
 .completion-review-note {
@@ -1617,6 +1650,11 @@ form {
   color: #e95f17;
 }
 
+.document-type-pill.is-volunteer-service-cert {
+  background: rgba(5, 150, 105, 0.1);
+  color: #047857;
+}
+
 .document-type-pill.is-tax-receipt {
   background: rgba(49, 80, 203, 0.1);
   color: #3150cb;
@@ -1884,6 +1922,17 @@ form {
   display: flex;
   gap: 12px;
   justify-content: flex-start;
+}
+
+.document-transfer-button {
+  border-radius: 18px;
+  padding: 16px 20px;
+  font-size: 1rem;
+}
+
+.completion-edit-actions .document-transfer-button {
+  order: 3;
+  margin-left: auto;
 }
 
 .event-cancel-button {

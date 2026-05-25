@@ -135,10 +135,16 @@ def list_completion_cert_documents(
                     "c.ticketName, c.name, c.organization, c.email, c.attendanceStatus, "
                     "c.certStatus, c.issuedPdfBlobName, c.verificationTokenHash, "
                     "c.downloadCount, c.firstDownloadAt, c.lastDownloadAt, "
-                    "c.verificationCount, c.issuedAt, c.createdAt FROM c "
-                    "WHERE c.eventId = @eventId ORDER BY c.number ASC"
+                    "c.verificationCount, c.issuedAt, c.transferredToDocumentType, "
+                    "c.transferredToDocumentId, c.transferredAt, c.createdAt FROM c "
+                    "WHERE c.eventId = @eventId "
+                    "AND (NOT IS_DEFINED(c.documentType) OR c.documentType = @documentType) "
+                    "ORDER BY c.number ASC"
                 ),
-                parameters=[{"name": "@eventId", "value": event_id}],
+                parameters=[
+                    {"name": "@eventId", "value": event_id},
+                    {"name": "@documentType", "value": "completionCert"},
+                ],
                 partition_key=event_id,
                 enable_cross_partition_query=False,
             )
@@ -196,11 +202,14 @@ def find_completion_cert_document_for_public_lookup(
                     "SELECT TOP 1 c.id, c.eventId, c.number, c.email, c.badgeName, "
                     "c.name, c.organization, c.certStatus, c.issuedPdfBlobName "
                     "FROM c WHERE c.eventId = @eventId "
-                    "AND c.number = @number"
+                    "AND c.number = @number "
+                    "AND NOT IS_DEFINED(c.transferredToDocumentType) "
+                    "AND (NOT IS_DEFINED(c.documentType) OR c.documentType = @documentType)"
                 ),
                 parameters=[
                     {"name": "@eventId", "value": event_id},
                     {"name": "@number", "value": number},
+                    {"name": "@documentType", "value": "completionCert"},
                 ],
                 partition_key=event_id,
                 enable_cross_partition_query=False,

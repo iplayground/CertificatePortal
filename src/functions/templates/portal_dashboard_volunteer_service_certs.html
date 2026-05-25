@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="robots" content="noindex, nofollow">
+    <title>志工服務證明 - 文件管理平台 - iPlayground</title>
+    <link rel="icon" href="{{asset_favicon_png_url}}" type="image/png" sizes="32x32">
+    <link rel="stylesheet" href="{{asset_theme_css_url}}">
+    <link rel="stylesheet" href="{{asset_portal_css_url}}">
+  </head>
+  <body class="portal-embedded-body" data-portal-csrf-token="{{portal_csrf_token}}">
+    <main class="embedded-page-shell">
+      <section class="content-card embedded-page-card document-workspace-card">
+        <div class="event-management-header">
+          <div class="content-section-heading">
+            <h1 class="embedded-page-title">志工服務證明</h1>
+            <p class="embedded-page-lead">管理活動志工服務證明資料與後續文件發行流程。</p>
+          </div>
+        </div>
+
+        <form class="document-filter-form" aria-label="志工服務證明資料篩選">
+          <div class="field">
+            <span class="field-label" id="volunteer-service-event-filter-label">活動</span>
+            <input id="volunteer-service-event-filter" name="eventName" type="hidden" value="">
+            <div class="field-static-value" id="volunteer-service-event-filter-value">尚無活動資料</div>
+          </div>
+        </form>
+
+        <div class="document-table-wrap">
+          <table class="document-list-table" aria-label="志工服務證明清單">
+            <thead>
+              <tr>
+                <th scope="col">姓名</th>
+                <th scope="col">所屬單位</th>
+                <th scope="col">開始日期</th>
+                <th scope="col">結束日期</th>
+                <th scope="col">服務時數</th>
+                <th scope="col">可否下載</th>
+                <th scope="col">狀態</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="document-empty-row">
+                <td colspan="7">志工服務證明資料尚未建立。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{asset_portal_event_cache_js_url}}"></script>
+    <script src="{{asset_portal_dashboard_volunteer_service_certs_js_url}}"></script>
+  </body>
+</html>

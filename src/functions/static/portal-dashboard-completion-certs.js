@@ -40,6 +40,9 @@ const completionPageStatus = document.getElementById("completion-page-status");
 const completionEditDialog = document.getElementById("completion-edit-dialog");
 const completionEditCancelButton = document.getElementById("completion-edit-cancel");
 const completionEditSubmitButton = document.getElementById("completion-edit-submit");
+const completionEditTransferVolunteerButton = document.getElementById(
+  "completion-edit-transfer-volunteer"
+);
 const completionEditNumber = document.getElementById("completion-edit-number");
 const completionEditKktixId = document.getElementById("completion-edit-kktix-id");
 const completionEditBadgeName = document.getElementById("completion-edit-badge-name");
@@ -72,6 +75,8 @@ let completionTicketFilterOptions = Array.from(
 const adminEventsApiPath = "/api/v1/admin/events";
 const adminCompletionCertsApiPath = "/api/v1/admin/completion-certs";
 const adminCompletionCertsImportApiPath = "/api/v1/admin/completion-certs/import";
+const adminVolunteerServiceCertTransferApiPath =
+  "/api/v1/admin/volunteer-service-certs/transfers";
 const portalCsrfToken = document.body?.dataset.portalCsrfToken || "";
 const completionUploadOpenMessageType = "ipg:completion-upload:open";
 const completionUploadImportMessageType = "ipg:completion-upload:import";
@@ -1009,6 +1014,10 @@ function normalizeCompletionCertRow(rowData) {
       ? rowData.attendanceStatus
       : "notCheckedIn";
   const certStatus = typeof rowData?.certStatus === "string" ? rowData.certStatus : "notIssued";
+  const transferredToDocumentType =
+    typeof rowData?.transferredToDocumentType === "string"
+      ? rowData.transferredToDocumentType
+      : "";
 
   return {
     attendanceStatus,
@@ -1028,7 +1037,30 @@ function normalizeCompletionCertRow(rowData) {
     organization:
       typeof rowData?.organization === "string" ? rowData.organization : "",
     ticketName: typeof rowData?.ticketName === "string" ? rowData.ticketName : "",
+    transferredAt:
+      typeof rowData?.transferredAt === "string" ? rowData.transferredAt : "",
+    transferredToDocumentId:
+      typeof rowData?.transferredToDocumentId === "string"
+        ? rowData.transferredToDocumentId
+        : "",
+    transferredToDocumentType,
+    transferredToLabel: resolveCompletionTransferTargetLabel(transferredToDocumentType),
   };
+}
+
+function resolveCompletionTransferTargetLabel(documentType) {
+  const normalizedType = typeof documentType === "string" ? documentType.trim() : "";
+  if (normalizedType === "volunteerServiceCert") {
+    return "志工服務證明";
+  }
+  return normalizedType || "其他文件";
+}
+
+function isCompletionCertTransferred(rowData) {
+  return (
+    rowData?.certStatus === "transferred" ||
+    Boolean(String(rowData?.transferredToDocumentType || "").trim())
+  );
 }
 
 function getVisibleCompletionCertRows() {
@@ -1186,6 +1218,9 @@ async function submitCompletionEditDialog() {
   };
 
   completionEditSubmitButton.disabled = true;
+  if (completionEditTransferVolunteerButton instanceof HTMLButtonElement) {
+    completionEditTransferVolunteerButton.disabled = true;
+  }
   clearCompletionEditFeedback();
   try {
     const response = await fetch(
@@ -1222,6 +1257,74 @@ async function submitCompletionEditDialog() {
     );
   } finally {
     completionEditSubmitButton.disabled = false;
+    if (completionEditTransferVolunteerButton instanceof HTMLButtonElement) {
+      completionEditTransferVolunteerButton.disabled = false;
+    }
+  }
+}
+
+async function transferCompletionCertToVolunteerService() {
+  const rowData = getCompletionCertRow(completionEditRowId);
+  if (!rowData || !(completionEditTransferVolunteerButton instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  if (!(await verifyPortalSession())) {
+    return;
+  }
+
+  const rowLabel = rowData.name || rowData.number || "此筆完訓證明資料";
+  if (!window.confirm(`確定要將 ${rowLabel} 轉移到志工服務證明？`)) {
+    return;
+  }
+
+  completionEditTransferVolunteerButton.disabled = true;
+  if (completionEditSubmitButton instanceof HTMLButtonElement) {
+    completionEditSubmitButton.disabled = true;
+  }
+  clearCompletionEditFeedback();
+
+  try {
+    const response = await fetch(
+      adminVolunteerServiceCertTransferApiPath,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Portal-CSRF-Token": portalCsrfToken,
+        },
+        body: JSON.stringify({
+          completionCertId: rowData.id,
+          eventId: rowData.eventId,
+        }),
+      }
+    );
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
+    const responsePayload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(responsePayload?.error?.message || "志工服務證明轉移失敗。");
+    }
+
+    updateCompletionCertRow(responsePayload.completionCert);
+    renderCompletionCertRows();
+    closeCompletionEditDialog();
+    showCompletionPageAlert({
+      message: "資料已轉移到志工服務證明。",
+      title: "轉移成功",
+      tone: "success",
+    });
+  } catch (error) {
+    showCompletionEditFeedback(
+      error instanceof Error ? error.message : "志工服務證明轉移失敗。"
+    );
+  } finally {
+    completionEditTransferVolunteerButton.disabled = false;
+    if (completionEditSubmitButton instanceof HTMLButtonElement) {
+      completionEditSubmitButton.disabled = false;
+    }
   }
 }
 
@@ -1293,9 +1396,12 @@ function applyCompletionRowDownloadState(rowElement, rowData) {
   const switchInput = rowElement.querySelector('[data-action="toggle-downloadable"]');
   const downloadButton = rowElement.querySelector(".document-download-button");
   const editButton = rowElement.querySelector(".document-edit-button");
+  const actionContainer = rowElement.querySelector(".document-row-actions");
+  const isTransferred = isCompletionCertTransferred(rowData);
 
   rowElement.classList.toggle("is-downloadable", rowData.isDownloadable);
   rowElement.classList.toggle("is-blocked", !rowData.isDownloadable);
+  rowElement.classList.toggle("is-transferred", isTransferred);
 
   if (switchInput instanceof HTMLInputElement) {
     switchInput.checked = rowData.isCheckedIn;
@@ -1303,18 +1409,35 @@ function applyCompletionRowDownloadState(rowElement, rowData) {
   }
 
   if (downloadButton instanceof HTMLButtonElement) {
-    downloadButton.disabled = isUpdatingCompletionBulkAttendance || !rowData.isDownloadable;
+    downloadButton.hidden = isTransferred;
+    downloadButton.disabled =
+      isUpdatingCompletionBulkAttendance || !rowData.isDownloadable || isTransferred;
   }
 
   if (editButton instanceof HTMLButtonElement) {
     const isIssued = rowData.certStatus === "issued";
+    editButton.hidden = isTransferred;
     editButton.textContent = isIssued ? "撤銷" : "修改";
     editButton.classList.toggle("document-revoke-button", isIssued);
     editButton.setAttribute(
       "aria-label",
       isIssued ? "撤銷完訓證明發行狀態" : "修改完訓證明資料"
     );
-    editButton.disabled = isUpdatingCompletionBulkAttendance;
+    editButton.disabled = isUpdatingCompletionBulkAttendance || isTransferred;
+  }
+
+  if (actionContainer instanceof HTMLElement) {
+    let transferStatus = actionContainer.querySelector(".document-transfer-status");
+    if (isTransferred) {
+      if (!(transferStatus instanceof HTMLElement)) {
+        transferStatus = document.createElement("span");
+        transferStatus.className = "document-transfer-status";
+        actionContainer.append(transferStatus);
+      }
+      transferStatus.textContent = `已轉移到${rowData.transferredToLabel}`;
+    } else if (transferStatus instanceof HTMLElement) {
+      transferStatus.remove();
+    }
   }
 }
 
@@ -1664,7 +1787,7 @@ async function applyDownloadableStateToCurrentActivity(isDownloadable) {
 
   const eventId = getCompletionFilterEventName();
   const rowsToUpdate = getVisibleCompletionCertRows().filter(
-    (row) => row.isCheckedIn !== isDownloadable
+    (row) => !isCompletionCertTransferred(row) && row.isCheckedIn !== isDownloadable
   );
   if (!rowsToUpdate.length) {
     return;
@@ -2028,6 +2151,9 @@ completionUploadSubmitButton?.addEventListener("click", () => {
 completionEditCancelButton?.addEventListener("click", closeCompletionEditDialog);
 completionEditSubmitButton?.addEventListener("click", () => {
   void submitCompletionEditDialog();
+});
+completionEditTransferVolunteerButton?.addEventListener("click", () => {
+  void transferCompletionCertToVolunteerService();
 });
 
 completionUploadFileInput?.addEventListener("change", updateCompletionUploadFileName);

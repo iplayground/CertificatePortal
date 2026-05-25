@@ -23,6 +23,9 @@ from src.functions.portal import (
     portal_admin_completion_cert_change_requests_review_api,
     portal_admin_events_create_api,
     portal_admin_events_update_api,
+    portal_admin_volunteer_service_certs_list_api,
+    portal_admin_volunteer_service_cert_update_api,
+    portal_admin_volunteer_service_cert_transfer_api,
     portal_admin_tax_receipts_list_create_api,
     portal_admin_tax_receipts_update_delete_api,
     public_tax_receipts_download_api,
@@ -31,6 +34,7 @@ from src.functions.portal import (
     portal_dashboard_events_page,
     portal_dashboard_page,
     portal_dashboard_tax_receipts_page,
+    portal_dashboard_volunteer_service_certs_page,
     portal_dashboard_welcome_page,
     portal_google_callback_page,
     portal_google_login_page,
@@ -152,8 +156,71 @@ class FakeCompletionCertsContainer:
         self.items[item] = body
         return body
 
+    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]:
+        if item not in self.items:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        self.items[item] = body
+        return body
+
     def upsert_item(self, body: dict[str, Any]) -> dict[str, Any]:
         self.items[body["id"]] = body
+        return body
+
+    def query_items(
+        self,
+        query: str,
+        *,
+        parameters: list[dict[str, Any]] | None = None,
+        partition_key: str | None = None,
+        enable_cross_partition_query: bool,
+    ) -> list[dict[str, Any]]:
+        assert "WHERE c.eventId = @eventId" in query
+        assert not enable_cross_partition_query
+        event_id = next(
+            parameter["value"]
+            for parameter in parameters or []
+            if parameter["name"] == "@eventId"
+        )
+        assert partition_key == event_id
+        return sorted(
+            [
+                item
+                for item in self.items.values()
+                if item["eventId"] == event_id
+                and item.get("documentType", "completionCert") == "completionCert"
+            ],
+            key=lambda item: item["number"],
+        )
+
+
+class FakeVolunteerServiceCertsContainer:
+    def __init__(self) -> None:
+        self.items: dict[str, dict[str, Any]] = {}
+
+    def create_item(self, body: dict[str, Any]) -> dict[str, Any]:
+        if body["id"] in self.items:
+            error = RuntimeError("conflict")
+            setattr(error, "status_code", 409)
+            raise error
+        self.items[body["id"]] = body
+        return body
+
+    def read_item(self, item: str, partition_key: str) -> dict[str, Any]:
+        document = self.items.get(item)
+        if document is None or document["eventId"] != partition_key:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        return document
+
+    def replace_item(self, item: str, body: dict[str, Any]) -> dict[str, Any]:
+        if item not in self.items:
+            error = RuntimeError("not found")
+            setattr(error, "status_code", 404)
+            raise error
+        self.items[item] = body
         return body
 
     def query_items(
@@ -542,6 +609,31 @@ def test_portal_admin_events_create_api_allows_non_completion_event_without_hour
     assert event["completionCertDownloadStartsAt"] is None
 
 
+def test_portal_admin_events_create_api_allows_volunteer_service_cert_without_hours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_container = FakeEventsContainer()
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_container)
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=(
+            b'{"name":"iPlayground 2026","status":"open",'
+            b'"eventStartDate":"2026-07-24","eventEndDate":"2026-07-25",'
+            b'"completionHours":null,'
+            b'"documentTypes":["volunteerServiceCert"],'
+            b'"completionCertDownloadStartsAt":""}'
+        ),
+    )
+
+    response = portal_admin_events_create_api(request)
+
+    assert response.status_code == 201
+    event = next(iter(fake_container.items.values()))
+    assert event["documentTypes"] == ["volunteerServiceCert"]
+    assert event["completionHours"] is None
+    assert event["completionCertDownloadStartsAt"] is None
+
+
 def test_portal_admin_events_create_api_preserves_completion_settings_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -675,7 +767,7 @@ def test_portal_admin_events_list_api_returns_events_without_blocking_page_rende
                 "id": "evt_1",
                 "name": "iPlayground 2026",
                 "status": "open",
-                "documentTypes": ["completionCert", "taxReceipt"],
+                "documentTypes": ["completionCert", "volunteerServiceCert", "taxReceipt"],
                 "eventStartDate": "2026-07-24",
                 "eventEndDate": "2026-07-25",
                 "completionHours": 16,
@@ -694,7 +786,7 @@ def test_portal_admin_events_list_api_returns_events_without_blocking_page_rende
     assert '"events"' in body
     assert '"name":"iPlayground 2026"' in body
     assert '"status":"open"' in body
-    assert '"documentTypes":["completionCert","taxReceipt"]' in body
+    assert '"documentTypes":["completionCert","volunteerServiceCert","taxReceipt"]' in body
     assert '"eventStartDate":"2026-07-24"' in body
     assert '"eventEndDate":"2026-07-25"' in body
     assert '"completionHours":16' in body
@@ -1067,9 +1159,74 @@ def test_portal_admin_completion_certs_list_api_returns_event_partition_rows(
     assert response.status_code == 200
     assert '"completionCerts"' in body
     assert '"number":2' in body
+    assert '"ticketName":"一般票"' in body
     assert '"organization":"好玩公司"' in body
     assert '"attendanceStatus":"checkedIn"' in body
     assert '"verificationCount":0' in body
+
+
+def test_portal_admin_completion_certs_list_api_includes_transferred_completion_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "",
+        "ticketName": "志工票",
+        "transferredToDocumentType": "volunteerServiceCert",
+        "transferredToDocumentId": "vscert_1",
+        "transferredAt": "2026-04-28T06:03:00Z",
+        "name": "志工小明",
+        "organization": "",
+        "email": "volunteer@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "transferred",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:01:00Z",
+    }
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "",
+        "ticketName": "一般票",
+        "name": "王小華",
+        "organization": "好玩公司",
+        "email": "hua@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "notIssued",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        method="GET",
+        url="http://localhost:7075/api/v1/admin/completion-certs",
+        params={"eventId": "evt_1"},
+    )
+
+    response = portal_admin_completion_certs_list_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"id":"ccert_2"' in body
+    assert '"id":"ccert_1"' in body
+    assert "志工小明" in body
+    assert '"certStatus":"transferred"' in body
+    assert '"transferredToDocumentType":"volunteerServiceCert"' in body
+    assert '"transferredToDocumentId":"vscert_1"' in body
 
 
 def test_portal_admin_completion_certs_update_api_updates_mutable_fields(
@@ -1178,6 +1335,292 @@ def test_portal_admin_completion_certs_update_api_rejects_data_edit_when_issued(
     assert "已發行的完訓證明不可修改資料" in body
     assert fake_completion_container.items["ccert_2"]["name"] == "王小華"
     assert fake_completion_container.items["ccert_2"]["certStatus"] == "issued"
+
+
+def test_portal_admin_volunteer_service_cert_transfer_api_creates_independent_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_volunteer_container = FakeVolunteerServiceCertsContainer()
+    fake_events_container.items["evt_1"] = {
+        "id": "evt_1",
+        "eventStartDate": "2026-07-24",
+        "eventEndDate": "2026-07-25",
+        "completionHours": 16,
+    }
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Volunteer",
+        "ticketName": "志工票",
+        "name": "志工小華",
+        "organization": "好玩公司",
+        "email": "volunteer@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "notIssued",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_events_container",
+        lambda: fake_events_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_volunteer_service_certs_container",
+        lambda: fake_volunteer_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "completionCertId": "ccert_2",
+                "eventId": "evt_1",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="POST",
+        url="http://localhost:7075/api/v1/admin/volunteer-service-certs/transfers",
+    )
+
+    response = portal_admin_volunteer_service_cert_transfer_api(request)
+    body = response.get_body().decode("utf-8")
+    completion_cert = fake_completion_container.items["ccert_2"]
+    volunteer_cert = next(iter(fake_volunteer_container.items.values()))
+
+    assert response.status_code == 201
+    assert '"volunteerServiceCert"' in body
+    assert volunteer_cert["sourceCompletionCertId"] == "ccert_2"
+    assert volunteer_cert["eventId"] == "evt_1"
+    assert volunteer_cert["name"] == "志工小華"
+    assert "attendanceStatus" not in volunteer_cert
+    assert "organization" not in volunteer_cert
+    assert "ticketName" not in volunteer_cert
+    assert volunteer_cert["serviceOrganization"] == "好玩公司"
+    assert volunteer_cert["serviceHours"] == 16
+    assert volunteer_cert["serviceStartDate"] == "2026-07-24"
+    assert volunteer_cert["serviceEndDate"] == "2026-07-25"
+    assert volunteer_cert["downloadEnabled"] is False
+    assert volunteer_cert["certStatus"] == "notIssued"
+    assert completion_cert["certStatus"] == "transferred"
+    assert completion_cert["transferredToDocumentType"] == "volunteerServiceCert"
+    assert completion_cert["transferredToDocumentId"] == volunteer_cert["id"]
+    assert completion_cert["transferredBy"] == "admin@iplayground.io"
+
+
+def test_portal_admin_completion_certs_update_api_rejects_transferred_cert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Volunteer",
+        "ticketName": "志工票",
+        "name": "志工小華",
+        "organization": "好玩公司",
+        "email": "volunteer@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "transferred",
+        "transferredToDocumentType": "volunteerServiceCert",
+        "transferredToDocumentId": "vscert_2",
+        "transferredAt": "2026-05-25T03:00:00Z",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "name": "不可修改",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"certid": "ccert_2"},
+        url="http://localhost:7075/api/v1/admin/completion-certs/ccert_2",
+    )
+
+    response = portal_admin_completion_certs_update_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 409
+    assert "已轉移的完訓證明不可再修改資料" in body
+    assert fake_completion_container.items["ccert_2"]["name"] == "志工小華"
+
+
+def test_portal_admin_volunteer_service_cert_transfer_api_rejects_issued_cert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_volunteer_container = FakeVolunteerServiceCertsContainer()
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Volunteer",
+        "ticketName": "志工票",
+        "name": "志工小華",
+        "organization": "好玩公司",
+        "email": "volunteer@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "issued",
+        "issuedPdfBlobName": "issued/ccert_2.pdf",
+        "verificationTokenHash": "hash-2",
+        "issuedAt": "2026-04-28T06:02:00Z",
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_volunteer_service_certs_container",
+        lambda: fake_volunteer_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "completionCertId": "ccert_2",
+                "eventId": "evt_1",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="POST",
+        url="http://localhost:7075/api/v1/admin/volunteer-service-certs/transfers",
+    )
+
+    response = portal_admin_volunteer_service_cert_transfer_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 409
+    assert "已發行的完訓證明不可轉移文件類型" in body
+    assert fake_volunteer_container.items == {}
+
+
+def test_portal_admin_volunteer_service_certs_list_api_returns_event_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_volunteer_container = FakeVolunteerServiceCertsContainer()
+    fake_volunteer_container.items["vscert_2"] = {
+        "id": "vscert_2",
+        "eventId": "evt_1",
+        "sourceCompletionCertId": "ccert_2",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Volunteer",
+        "name": "志工小華",
+        "email": "volunteer@example.com",
+        "serviceOrganization": "社群組",
+        "serviceHours": 8,
+        "serviceStartDate": "2026-07-24",
+        "serviceEndDate": "2026-07-25",
+        "downloadEnabled": True,
+        "certStatus": "issued",
+        "createdAt": "2026-05-25T03:00:00Z",
+    }
+    fake_volunteer_container.items["vscert_3"] = {
+        "id": "vscert_3",
+        "eventId": "evt_2",
+        "sourceCompletionCertId": "ccert_3",
+        "number": 3,
+        "name": "其他活動",
+        "email": "other@example.com",
+        "serviceOrganization": None,
+        "serviceHours": None,
+        "serviceStartDate": None,
+        "serviceEndDate": None,
+        "downloadEnabled": False,
+        "certStatus": "notIssued",
+        "createdAt": "2026-05-25T03:00:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_volunteer_service_certs_container",
+        lambda: fake_volunteer_container,
+    )
+    configure_portal_auth_bypass_env(monkeypatch)
+    request = build_request(
+        "http://localhost:7075/api/v1/admin/volunteer-service-certs",
+        method="GET",
+        headers={
+            "Host": "localhost:7075",
+            "Origin": "http://localhost:7075",
+        },
+        params={"eventId": "evt_1"},
+    )
+
+    response = portal_admin_volunteer_service_certs_list_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"volunteerServiceCerts"' in body
+    assert '"id":"vscert_2"' in body
+    assert '"id":"vscert_3"' not in body
+    assert '"serviceOrganization":"社群組"' in body
+    assert '"serviceHours":8' in body
+    assert '"serviceStartDate":"2026-07-24"' in body
+    assert '"serviceEndDate":"2026-07-25"' in body
+    assert '"downloadEnabled":true' in body
+    assert '"ticketName"' not in body
+
+
+def test_portal_admin_volunteer_service_cert_update_api_updates_download_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_volunteer_container = FakeVolunteerServiceCertsContainer()
+    fake_volunteer_container.items["vscert_2"] = {
+        "id": "vscert_2",
+        "eventId": "evt_1",
+        "sourceCompletionCertId": "ccert_2",
+        "number": 2,
+        "name": "志工小華",
+        "email": "volunteer@example.com",
+        "serviceOrganization": "社群組",
+        "serviceHours": 8,
+        "serviceStartDate": "2026-07-24",
+        "serviceEndDate": "2026-07-25",
+        "downloadEnabled": False,
+        "certStatus": "issued",
+        "createdAt": "2026-05-25T03:00:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_volunteer_service_certs_container",
+        lambda: fake_volunteer_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps({"eventId": "evt_1", "downloadEnabled": True}).encode("utf-8"),
+        method="PUT",
+        route_params={"certid": "vscert_2"},
+        url="http://localhost:7075/api/v1/admin/volunteer-service-certs/vscert_2",
+    )
+
+    response = portal_admin_volunteer_service_cert_update_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"downloadEnabled":true' in body
+    assert fake_volunteer_container.items["vscert_2"]["downloadEnabled"] is True
+    assert fake_volunteer_container.items["vscert_2"]["updatedBy"] == "admin@iplayground.io"
 
 
 def test_portal_admin_completion_certs_update_api_revokes_issued_cert(
@@ -2790,14 +3233,19 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
         'data-view-target="completion-reviews"'
     )
     assert body.index('data-view-target="completion-reviews"') < body.index(
+        'data-view-target="volunteer-service-certs"'
+    )
+    assert body.index('data-view-target="volunteer-service-certs"') < body.index(
         'data-view-target="tax-receipts"'
     )
     assert 'data-view-target="completion-certs"' in body
+    assert 'data-view-target="volunteer-service-certs"' in body
     assert 'data-view-target="tax-receipts"' in body
     assert 'data-view-target="completion-reviews"' in body
     assert 'data-view-target="events"' in body
     assert 'data-view-path="/portal/dashboard/welcome"' in body
     assert 'data-view-path="/portal/dashboard/completion-certs"' in body
+    assert 'data-view-path="/portal/dashboard/volunteer-service-certs"' in body
     assert 'data-view-path="/portal/dashboard/tax-receipts"' in body
     assert 'data-view-path="/portal/dashboard/completion-reviews"' in body
     assert 'data-view-path="/portal/dashboard/events"' in body
@@ -2806,6 +3254,8 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert "活動管理" in body
     assert "活動與文件設定" in body
     assert "清單與資料上傳" in body
+    assert "志工服務證明" in body
+    assert "服務證明資料管理" in body
     assert "PDF/圖檔上傳與管理" in body
     assert "修改審核" in body
     assert "完訓證明申請處理" in body
@@ -2925,12 +3375,13 @@ def test_portal_dashboard_page_returns_html_with_authenticated_user_context(
     assert "下架" in body
     assert "開放" in body
     assert "完訓證明" in body
+    assert "志工服務證明" in body
     assert "營業稅繳稅證明" in body
     assert 'class="form-checkbox-option document-type-option"' in body
+    assert "開放活動志工申請服務時數證明" in body
     assert "開放協會 407 收據聯影本供下載" in body
     assert "適用營業稅繳稅資料" not in body
     assert "參與證明" not in body
-    assert "志工服務證明" not in body
     assert 'src="/assets/logo_sq_b.png?v=' in body
     assert 'class="panel admin-workspace"' in body
     assert 'class="sidebar-account-panel"' in body
@@ -3820,6 +4271,8 @@ def test_portal_dashboard_completion_certs_page_returns_html_when_user_is_author
     assert '<div class="field-static-value" id="completion-edit-ticket-name">-</div>' in body
     assert 'id="completion-edit-name" name="completionEditName"' in body
     assert 'id="completion-edit-email" name="completionEditEmail"' in body
+    assert 'id="completion-edit-transfer-volunteer"' in body
+    assert "轉移到志工服務證明" in body
     assert 'data-1p-ignore data-lpignore="true" data-form-type="other"' in body
     assert 'id="completion-edit-email" name="email"' not in body
     assert 'id="completion-edit-badge-name" name="badgeName"' not in body
@@ -4102,6 +4555,52 @@ def test_portal_dashboard_tax_receipts_page_returns_html_when_user_is_authorized
     assert "獨立工作頁" not in body
 
 
+def test_portal_dashboard_volunteer_service_certs_page_returns_html_when_user_is_authorized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_portal_auth_env(monkeypatch)
+    configure_portal_auth_bypass_env(monkeypatch)
+
+    response = portal_dashboard_volunteer_service_certs_page(
+        build_request(
+            "http://localhost:7075/portal/dashboard/volunteer-service-certs",
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert "<title>志工服務證明 - 文件管理平台 - iPlayground</title>" in body
+    assert 'class="portal-embedded-body"' in body
+    assert "document-workspace-card" in body
+    assert "志工服務證明" in body
+    assert "志工服務證明清單" in body
+    assert "管理活動志工服務證明資料與後續文件發行流程。" in body
+    assert 'class="document-filter-form"' in body
+    assert 'aria-label="志工服務證明資料篩選"' in body
+    assert 'id="volunteer-service-event-filter"' in body
+    assert 'id="volunteer-service-event-filter-value"' in body
+    assert 'id="volunteer-service-event-filter-select"' not in body
+    assert 'id="volunteer-service-event-filter-trigger"' not in body
+    assert 'id="volunteer-service-event-filter-options"' not in body
+    assert "尚無活動資料" in body
+    assert '<th scope="col">活動</th>' not in body
+    assert '<th scope="col">姓名</th>' in body
+    assert '<th scope="col">志工</th>' not in body
+    assert "所屬單位" in body
+    assert "開始日期" in body
+    assert "結束日期" in body
+    assert "服務時數" in body
+    assert "可否下載" in body
+    assert 'colspan="7"' in body
+    assert "志工服務證明資料尚未建立。" in body
+    assert 'src="/assets/portal-event-cache.js?v=' in body
+    assert 'src="/assets/portal-dashboard-volunteer-service-certs.js?v=' in body
+    assert body.index('src="/assets/portal-event-cache.js?v=') < body.index(
+        'src="/assets/portal-dashboard-volunteer-service-certs.js?v='
+    )
+
+
 def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4191,6 +4690,8 @@ def test_portal_dashboard_events_page_returns_html_when_user_is_authorized(
     assert "開放" in body
     assert "可申請文件類型" in body
     assert "完訓證明" in body
+    assert "志工服務證明" in body
+    assert "開放活動志工申請服務時數證明" in body
     assert "完訓證明開放下載時間" in body
     assert 'id="event-completion-download-setting"' in body
     assert "data-completion-document-type-option" in body
@@ -4896,20 +5397,35 @@ def test_portal_dashboard_completion_certs_js_asset_returns_expected_content_typ
     assert 'isDownloadable: rowData?.attendanceStatus === "checkedIn"' not in body
     assert "switchInput.checked = rowData.isCheckedIn" in body
     assert "switchInput.checked = rowData.isDownloadable" not in body
-    assert "(row) => row.isCheckedIn !== isDownloadable" in body
+    assert "!isCompletionCertTransferred(row) && row.isCheckedIn !== isDownloadable" in body
     assert "isUpdatingCompletionBulkAttendance" in body
     assert "updateCompletionTableBusyState" in body
     assert "\"is-bulk-updating\"" in body
     assert "\"aria-busy\"" in body
     assert "openCompletionEditDialog" in body
     assert "submitCompletionEditDialog" in body
+    assert "transferCompletionCertToVolunteerService" in body
     assert "revokeIssuedCompletionCert" in body
+    assert "adminVolunteerServiceCertTransferApiPath" in body
+    assert '"/api/v1/admin/volunteer-service-certs/transfers"' in body
+    assert 'method: "POST"' in body
+    assert "completionCertId: rowData.id" in body
+    assert "updateCompletionCertRow(responsePayload.completionCert)" in body
+    assert "completionCertRows = completionCertRows.filter((row) => row.id !== rowData.id)" not in body
+    assert "資料已轉移到志工服務證明。" in body
+    assert "轉移成功" in body
     assert 'certStatus: "notIssued"' in body
     assert 'editButton.textContent = isIssued ? "撤銷" : "修改"' in body
     assert 'editButton.classList.toggle("document-revoke-button", isIssued)' in body
+    assert "isCompletionCertTransferred" in body
+    assert "resolveCompletionTransferTargetLabel" in body
+    assert "已轉移到" in body
+    assert "downloadButton.hidden = isTransferred" in body
+    assert "editButton.hidden = isTransferred" in body
     assert "完訓證明已撤銷，狀態已退回未發行。" in body
     assert 'document.getElementById("completion-edit-dialog")' in body
     assert 'document.getElementById("completion-edit-submit")' in body
+    assert "completion-edit-transfer-volunteer" in body
     assert "setCompletionEditStaticValue" in body
     assert "completionEditName?.focus()" in body
     assert "showCompletionPageAlert" in body
@@ -5170,6 +5686,9 @@ def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> Non
     assert "const idempotencyKey = isEditMode ? \"\" : buildEventIdempotencyKey()" in body
     assert "\"Idempotency-Key\": idempotencyKey" in body
     assert "eventCompletionDocumentTypeOption" in body
+    assert "volunteerServiceCert" in body
+    assert "志工服務證明" in body
+    assert "is-volunteer-service-cert" in body
     assert "completionCertDownloadStartsAt" in body
     assert "updateCompletionDownloadStartsAtVisibility" in body
     assert "hasRequiredCompletionCertFields" in body
@@ -5230,6 +5749,39 @@ def test_portal_dashboard_events_js_asset_returns_expected_content_type() -> Non
     assert "getCachedEvents" in body
     assert "refresh" in body
     assert "upsertCachedEvent" in body
+
+
+def test_portal_dashboard_volunteer_service_certs_js_asset_returns_expected_content_type() -> None:
+    response = static_asset(
+        build_request(
+            "http://localhost:7075/assets/portal-dashboard-volunteer-service-certs.js",
+            route_params={"asset_name": "portal-dashboard-volunteer-service-certs.js"},
+        )
+    )
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert 'document.getElementById("volunteer-service-event-filter")' in body
+    assert "const adminEventsApiPath = \"/api/v1/admin/events\"" in body
+    assert (
+        "const adminVolunteerServiceCertsApiPath = "
+        "\"/api/v1/admin/volunteer-service-certs\""
+    ) in body
+    assert "window.iPlaygroundPortalEvents" in body
+    assert "renderVolunteerServiceEventSelect" in body
+    assert "loadVolunteerServiceEvents" in body
+    assert "loadVolunteerServiceCertsForSelectedEvent" in body
+    assert "volunteerServiceCerts" in body
+    assert "serviceOrganization" in body
+    assert "downloadEnabled" in body
+    assert "renderVolunteerServiceDownloadSwitch" in body
+    assert "updateVolunteerServiceDownloadEnabled" in body
+    assert 'method: "PUT"' in body
+    assert "X-Portal-CSRF-Token" in body
+    assert "event-status-switch-option document-row-status-switch" in body
+    assert "handlePortalUnauthorizedResponse" in body
+    assert "custom-select-trigger" in body
 
 
 def test_favicon_asset_returns_expected_content_type_for_portal_pages() -> None:

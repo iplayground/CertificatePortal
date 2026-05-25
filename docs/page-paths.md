@@ -12,6 +12,7 @@
 | `GET` | `/portal/dashboard/welcome` | dashboard iframe 預設載入的歡迎頁 | `text/html` |
 | `GET` | `/portal/dashboard/completion-certs` | dashboard iframe 的完訓證明頁 | `text/html` |
 | `GET` | `/portal/dashboard/completion-reviews` | dashboard iframe 的完訓證明修改審核頁 | `text/html` |
+| `GET` | `/portal/dashboard/volunteer-service-certs` | dashboard iframe 的志工服務證明頁 | `text/html` |
 | `GET` | `/portal/dashboard/tax-receipts` | dashboard iframe 的營業稅繳稅證明頁 | `text/html` |
 | `GET` | `/portal/dashboard/events` | dashboard iframe 的活動管理頁 | `text/html` |
 | `GET` | `/api/v1/events` | 公開首頁可申請活動清單 | `application/json` |
@@ -23,6 +24,9 @@
 | `GET` | `/api/v1/admin/completion-certs` | 查詢單一活動的完訓證明清單 | `application/json` |
 | `POST` | `/api/v1/admin/completion-certs/import` | 匯入單一活動的 KKTIX 完訓證明 CSV | `application/json` |
 | `PUT` | `/api/v1/admin/completion-certs/{certid}` | 修改單筆完訓證明資料 | `application/json` |
+| `GET` | `/api/v1/admin/volunteer-service-certs` | 查詢單一活動的志工服務證明清單 | `application/json` |
+| `PUT` | `/api/v1/admin/volunteer-service-certs/{certid}` | 更新志工服務證明管理欄位 | `application/json` |
+| `POST` | `/api/v1/admin/volunteer-service-certs/transfers` | 從完訓證明轉移建立志工服務證明資料 | `application/json` |
 | `GET` | `/api/v1/admin/completion-cert-change-requests` | 查詢完訓證明修改申請 | `application/json` |
 | `PUT` | `/api/v1/admin/completion-cert-change-requests/{requestid}` | 審核完訓證明修改申請 | `application/json` |
 | `GET` | `/api/v1/admin/tax-receipts` | 查詢單一活動的營業稅繳稅證明清單 | `application/json` |
@@ -52,7 +56,7 @@
 - 公開驗證頁面為 QRCode 掃描後的公開入口，會以 QRCode 內的驗證 token 查詢已發證的完訓證明紀錄，並只顯示驗證所需的最低限度資料
 - 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓證明 CSV 由後端解析、驗證並寫入 Cosmos DB；營業稅繳稅證明由後端驗證 metadata、將檔案寫入 Blob Storage，並將權威 metadata 寫入 Cosmos DB
 - 完訓證明頁目前已有後端 CSV 匯入、活動篩選、清單載入與單筆資料修改流程
-- 完訓證明 PDF 合成邏輯已建立於 `src/shared/completion_certificate_pdf.py`，模板檔跟隨 git 版控，單位印章圖預設位於 Azure Storage `document-assets/completion-cert/organization-seal.png`；跨平台嵌入字體由部署 workflow 從 private `document-assets/completion-cert/fonts/` 下載後放進 Function App 部署包；首頁確認後會發證、以 Cool tier 上傳 PDF 至 `issued-certs`，已發證資料再次查詢時會下載既有 PDF
+- 完訓證明 PDF 合成邏輯已建立於 `src/shared/completion_certificate_pdf.py`，模板檔跟隨 git 版控，單位印章圖預設位於 Azure Storage `document-assets/completion-cert/organization-seal.png`；跨平台嵌入字體由部署 workflow 從 private `document-assets/completion-cert/fonts/` 下載後放進 Function App 部署包；首頁確認後會發證、以 Cool tier 上傳 PDF 至 `issued-certs/completionCert/{eventId}/{certId}.pdf`，已發證資料再次查詢時會下載既有 PDF
 - 營業稅繳稅證明頁目前支援單筆 PDF、PNG 或 JPG/JPEG 新增、拖曳上傳、清單讀取、修改、下載與刪除；目前不支援 WebP
 - 首頁完訓證明查詢成功且 `certStatus` 為 `notIssued`、`changeRequested` 或 `issued` 時，會顯示「選擇證明顯示方式」區塊；`notIssued` 時「提出修改申請」會切換到首頁同卡片內的修改申請流程，送出後會寫入 Cosmos DB `completionCertRequests` 並將對應完訓證明狀態改為 `changeRequested`；同一張完訓證明已有 `approved` 或 `rejected` 修改申請時，公開 API 會拒絕再次提出，首頁並顯示已通過或已駁回的審核結果；`changeRequested` 時不再顯示「提出修改申請」，改顯示修改申請處理中提示；`issued` 時再次按下產生按鈕會下載既有 PDF，不重新合成
 
@@ -80,7 +84,7 @@
 - 不要求 API Key、管理者 session、同源請求或 CSRF token
 - 只回傳狀態為 `open` 的活動，並依 `updatedAt` 由新到舊排序
 - `documentTypes` 可為空陣列；首頁會顯示活動，並在文件類型欄位顯示 `尚無可申請文件`
-- 後端只會回傳支援的文件類型代碼，目前為 `completionCert` 與 `taxReceipt`
+- 後端只會回傳公開首頁支援的文件類型代碼，目前為 `completionCert` 與 `taxReceipt`
 - Response JSON 範例：
 
 ```json
@@ -453,6 +457,7 @@ Request JSON 範例：
 - 清單欄位包含報名序號、ID、Badge Name、姓名、公司名、Email、票種、簽到狀態與操作
 - 每列在操作欄提供 `下載` 與狀態相依的資料動作；`certStatus` 非 `issued` 時顯示 `修改`，`issued` 時改顯示 `撤銷`，不提供修改資料入口；`撤銷` 按鈕以紅底白字呈現，讓管理者一眼辨識為危險操作；`下載` 按鈕是否可用依 `certStatus` 判斷，只有 `issued` 可下載，不能用 `attendanceStatus` 或簽到狀態判斷
 - 修改視窗可更新姓名、公司名與 Email；報名序號、KKTIX ID、Badge Name 與票種不直接修改
+- 修改視窗可將尚未發行的完訓證明資料轉移到志工服務證明；後端會在 `volunteerServiceCerts` 建立獨立文件，並在來源 `completionCerts` 寫入轉移稽核欄位；轉移後該筆資料仍保留在完訓證明清單，但操作欄不顯示下載、修改或撤銷按鈕，改顯示已轉移到哪個文件類型
 - 修改視窗將報名序號、ID 與票種放在同一排，且 Badge Name 與票種為唯讀顯示
 - 修改成功後顯示共用 page alert 成功提示；共用 alert 預設 6 秒後自動關閉
 - 清單表格標題列置中，標題與資料列皆維持單行
@@ -469,6 +474,14 @@ Request JSON 範例：
 - 上傳視窗可選擇匯入資料所屬活動，預設帶入目前清單篩選活動
 - 上傳視窗僅接受 CSV 檔，並使用管理平台風格的檔案選取區
 - 若直接開啟完訓證明子頁，點擊上傳按鈕後會使用頁內中央上傳視窗作為 fallback
+
+### `/portal/dashboard/volunteer-service-certs`
+
+- 作為 dashboard 右側 iframe 的志工服務證明頁
+- 志工服務證明資料依活動 `eventId` 從 `GET /api/v1/admin/volunteer-service-certs?eventId=<eventId>` 載入
+- 清單欄位包含姓名、所屬單位、開始日期、結束日期、服務時數、可否下載與狀態
+- `可否下載` 欄位使用 switch，切換後呼叫 `PUT /api/v1/admin/volunteer-service-certs/{certid}` 將 `downloadEnabled` 寫回 Cosmos DB
+- 清單上方提供活動篩選欄位；沒有活動或只有一個活動時以靜態欄位顯示，只有多個活動可選時才使用下拉選單並直接套用篩選
 
 ### `/portal/dashboard/completion-reviews`
 
@@ -784,6 +797,136 @@ Response JSON example:
     "verificationCount": 0,
     "issuedAt": null,
     "createdAt": "2026-04-28T06:02:00Z"
+  }
+}
+```
+
+### `GET /api/v1/admin/volunteer-service-certs`
+
+- 查詢單一活動的志工服務證明清單，query string 必須提供 `eventId`
+- 只接受已登入且通過授權的管理者 session，並檢查同源 `Origin` 或 `Referer`
+- 讀取 Cosmos DB `volunteerServiceCerts` container，partition key 為 `/eventId`
+- 管理端表格的 `downloadEnabled` 欄位以 switch 顯示；切換時會呼叫 `PUT /api/v1/admin/volunteer-service-certs/{certid}` 寫回 DB
+
+Request example:
+
+```text
+GET /api/v1/admin/volunteer-service-certs?eventId=evt_20260425_ipg
+```
+
+Response JSON example:
+
+```json
+{
+  "volunteerServiceCerts": [
+    {
+      "id": "vscert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0002",
+      "eventId": "evt_20260425_ipg",
+      "sourceCompletionCertId": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+      "number": 1,
+      "kktixId": "KKTIX-001",
+      "badgeName": "Ming",
+      "name": "王小明",
+      "email": "ming@example.com",
+      "serviceOrganization": "iPlayground",
+      "serviceHours": 8,
+      "serviceStartDate": "2026-07-24",
+      "serviceEndDate": "2026-07-25",
+      "downloadEnabled": true,
+      "certStatus": "issued",
+      "createdAt": "2026-05-25T03:00:00Z"
+    }
+  ]
+}
+```
+
+### `PUT /api/v1/admin/volunteer-service-certs/{certid}`
+
+- 更新單筆志工服務證明管理欄位；目前支援 `downloadEnabled`
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
+- `eventId` 必須與該筆文件 partition key 一致
+- 更新時會同步寫入 `updatedAt` 與 `updatedBy`
+
+Request JSON example:
+
+```json
+{
+  "eventId": "evt_20260425_ipg",
+  "downloadEnabled": true
+}
+```
+
+Response JSON example:
+
+```json
+{
+  "volunteerServiceCert": {
+    "id": "vscert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0002",
+    "eventId": "evt_20260425_ipg",
+    "sourceCompletionCertId": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+    "number": 1,
+    "name": "王小明",
+    "email": "ming@example.com",
+    "serviceOrganization": "iPlayground",
+    "serviceHours": 8,
+    "serviceStartDate": "2026-07-24",
+    "serviceEndDate": "2026-07-25",
+    "downloadEnabled": true,
+    "certStatus": "issued",
+    "createdAt": "2026-05-25T03:00:00Z"
+  }
+}
+```
+
+### `POST /api/v1/admin/volunteer-service-certs/transfers`
+
+- 從尚未發行的完訓證明建立志工服務證明資料
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
+- 後端會讀取來源 `completionCerts` 文件，建立獨立 `volunteerServiceCerts` 文件，並在來源文件寫入 `transferredToDocumentType`、`transferredToDocumentId`、`transferredAt` 與 `transferredBy`
+- `volunteerServiceCerts.serviceOrganization` 會在轉移建立時帶入來源完訓證明的 `organization`
+- `volunteerServiceCerts.serviceStartDate`、`serviceEndDate` 與 `serviceHours` 會在轉移建立時帶入來源活動的 `eventStartDate`、`eventEndDate` 與 `completionHours`
+- 來源 `completionCerts.certStatus` 會改為 `transferred`，避免後續完訓證明流程再次修改或發行同一筆來源資料；管理端完訓證明清單仍顯示來源資料作為稽核紀錄，但操作欄只顯示轉移目標
+- 已發行的完訓證明不可轉移，需先撤銷發行狀態
+
+Request JSON example:
+
+```json
+{
+  "eventId": "evt_20260425_ipg",
+  "completionCertId": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001"
+}
+```
+
+Response JSON example:
+
+```json
+{
+  "completionCert": {
+    "id": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+    "eventId": "evt_20260425_ipg",
+    "certStatus": "transferred",
+    "transferredToDocumentType": "volunteerServiceCert",
+    "transferredToDocumentId": "vscert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0002",
+    "transferredAt": "2026-05-25T03:00:00Z"
+  },
+  "volunteerServiceCert": {
+    "id": "vscert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0002",
+    "eventId": "evt_20260425_ipg",
+    "sourceCompletionCertId": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+    "number": 1,
+    "kktixId": "KKTIX-001",
+    "badgeName": "Ming",
+    "name": "王小明",
+    "email": "ming@example.com",
+    "serviceOrganization": "iPlayground",
+    "serviceHours": 16,
+    "serviceStartDate": "2026-07-24",
+    "serviceEndDate": "2026-07-25",
+    "downloadEnabled": false,
+    "certStatus": "notIssued",
+    "createdAt": "2026-05-25T03:00:00Z"
   }
 }
 ```

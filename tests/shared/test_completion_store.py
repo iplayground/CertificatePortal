@@ -167,6 +167,7 @@ class FakeCompletionListContainer:
             document
             for document in self.documents
             if document.get("eventId") == event_id
+            and document.get("documentType", "completionCert") == "completionCert"
         ]
 
 
@@ -200,7 +201,13 @@ def test_list_completion_cert_documents_queries_download_stat_fields() -> None:
     assert "c.downloadCount" in container.last_query
     assert "c.firstDownloadAt" in container.last_query
     assert "c.lastDownloadAt" in container.last_query
-    assert container.last_parameters == [{"name": "@eventId", "value": "evt_1"}]
+    assert "c.transferredToDocumentType" in container.last_query
+    assert "NOT IS_DEFINED(c.transferredToDocumentType)" not in container.last_query
+    assert "c.documentType = @documentType" in container.last_query
+    assert container.last_parameters == [
+        {"name": "@eventId", "value": "evt_1"},
+        {"name": "@documentType", "value": "completionCert"},
+    ]
     assert container.last_partition_key == "evt_1"
     assert container.last_enable_cross_partition_query is False
 

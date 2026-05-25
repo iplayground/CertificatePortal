@@ -108,6 +108,7 @@ class FakeCompletionCertsContainer:
             assert "c.organization" in query
             assert "LOWER(c.email)" not in query
             assert "AND c.number = @number" in query
+            assert "c.documentType = @documentType" in query
             assert not enable_cross_partition_query
             self.timeout_options.append(kwargs)
             assert partition_key == parameter_values["@eventId"]
@@ -117,6 +118,7 @@ class FakeCompletionCertsContainer:
                 for item in self.items
                 if item["eventId"] == parameter_values["@eventId"]
                 and item["number"] == parameter_values["@number"]
+                and item.get("documentType", "completionCert") == parameter_values["@documentType"]
             ][:1]
 
         assert "WHERE c.eventId = @eventId" in query
@@ -2491,7 +2493,7 @@ def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
     assert uploaded_blobs == [
         {
             "container_name": "issued-certs",
-            "blob_name": "evt_1/ccert_1.pdf",
+            "blob_name": "completionCert/evt_1/ccert_1.pdf",
             "data": b"%PDF-1.4\nissued",
             "standard_blob_tier": "Cool",
         }
@@ -2506,7 +2508,10 @@ def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
         "http://localhost:7075/verify/1234567890abcdef1234567890abcdef"
     )
     assert records_container.items[0]["certStatus"] == "issued"
-    assert records_container.items[0]["issuedPdfBlobName"] == "evt_1/ccert_1.pdf"
+    assert (
+        records_container.items[0]["issuedPdfBlobName"]
+        == "completionCert/evt_1/ccert_1.pdf"
+    )
     assert records_container.items[0]["verificationTokenHash"] == "1234567890abcdef1234567890abcdef"
     assert records_container.items[0]["certificateDisplayName"] == "王小明 (Ming)"
     assert records_container.items[0]["certificateDisplayOrganization"] == "iPlayground"
