@@ -513,13 +513,17 @@ Request JSON 範例：
 
 - 作為 dashboard 右側 iframe 的完訓證明修改申請審核頁
 - 頁面載入後呼叫 `GET /api/v1/admin/completion-cert-change-requests?status=pending` 查詢待審核申請
-- 頁面提供 `待審核` 與 `已完成` 篩選；切到已完成時呼叫 `GET /api/v1/admin/completion-cert-change-requests?status=completed`，列出已通過、已駁回與因用戶發證而取消的案例
+- 頁面提供 `待審核` 與 `已完成` 篩選；切到已完成時呼叫 `GET /api/v1/admin/completion-cert-change-requests?status=completed`，列出已通過、已駁回、已轉移與因用戶發證而取消的案例
 - 清單欄位包含申請時間、審核時間、狀態、報名序號、目前姓名、Email、申請內容與操作
 - 待審核每列操作欄提供 `審核` 按鈕，已完成每列操作欄提供 `查看` 按鈕，開啟中央視窗
 - 審核視窗顯示報名序號、KKTIX ID、票種、Email 與使用者填寫的申請內容；Email 位於申請內容上方且不可編輯
-- 已完成案例的中央視窗欄位會以 disabled 樣式顯示，顯示審核狀態、審核時間、審核者與審核備註，不提供再次通過或駁回；因用戶發證而取消的狀態顯示為 `已取消`，右下角按鈕文字顯示為 `關閉`
-- 管理者審核通過時可直接修改姓名與公司名，送出後呼叫 `PUT /api/v1/admin/completion-cert-change-requests/{requestid}`，將申請狀態改為 `approved`，並把對應完訓證明資料更新後恢復為 `notIssued`
+- 審核視窗在申請內容下方提供 `證明類型` 切換，可選 `完訓證明` 或 `志工服務證明`；只有該筆完訓資料的 `ticketName` 符合活動 `volunteerServiceTicketNames` 設定時才顯示此切換
+- 選擇志工服務證明時，姓名與公司名仍可編輯，並顯示服務開始日期、服務結束日期與服務時數欄位，主要送出按鈕顯示 `轉移並結案`
+- 志工服務證明的服務開始日期、服務結束日期與服務時數會先依活動 `eventStartDate`、`eventEndDate` 與 `completionHours` 預填；日期在管理端 UI 顯示為 `yyyy / MM / dd`，送出時轉回純日期 `yyyy-MM-dd`
+- 已完成案例的中央視窗欄位會以 disabled 樣式顯示，顯示審核狀態、審核時間、審核者與審核備註，不提供再次操作；因用戶發證而取消的狀態顯示為 `已取消`，右下角按鈕文字顯示為 `關閉`
+- 管理者選擇完訓證明並審核通過時可直接修改姓名與公司名，送出後呼叫 `PUT /api/v1/admin/completion-cert-change-requests/{requestid}`，將申請狀態改為 `approved`，並把對應完訓證明資料更新後恢復為 `notIssued`
 - 管理者駁回時會將申請狀態改為 `rejected`，並把對應完訓證明恢復為 `notIssued`
+- 管理者轉移時會將申請狀態改為 `transferred`，依審核視窗中的姓名、公司名、服務開始日期、服務結束日期與服務時數建立對應 `volunteerServiceCerts` 文件，並把來源完訓證明標記為 `transferred`
 - 若用戶在審核完成前進行發證，發證流程會將同張證明的 pending 修改申請改為 `cancelledByIssue`，寫入系統審核者與取消備註，並繼續完成發證
 - 審核完成後該筆資料會從待審核清單移除，並顯示共用 page alert 成功提示
 
@@ -782,7 +786,7 @@ Response JSON example:
 - 修改單筆完訓證明清單資料
 - 只接受已登入且通過授權的管理者 session
 - 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
-- 目前可修改欄位為 `name`、`organization`、`email`、`attendanceStatus`；已發行資料不可修改 `name`、`organization` 或 `email`
+- 目前可修改欄位為 `name`、`organization`、`email`、`attendanceStatus`；已發行資料不可修改資料或簽到狀態，只能先撤銷發行狀態
 - `attendanceStatus` 只接受 `checkedIn` 或 `notCheckedIn`
 - 已發行資料可送出 `{"eventId":"...","certStatus":"notIssued"}` 撤銷發行狀態；後端會將 `certStatus` 退回 `notIssued`，並清空 `issuedPdfBlobName`、`verificationTokenHash`、`issuedAt` 與證書顯示設定
 - `number`、`kktixId`、`badgeName` 與 `ticketName` 不在此端點直接修改
@@ -965,6 +969,7 @@ Response JSON example:
 - 後端會讀取來源 `completionCerts` 文件，建立獨立 `volunteerServiceCerts` 文件，並在來源文件寫入 `transferredToDocumentType`、`transferredToDocumentId`、`transferredAt` 與 `transferredBy`
 - `volunteerServiceCerts.serviceOrganization` 會在轉移建立時帶入來源完訓證明的 `organization`
 - `volunteerServiceCerts.serviceStartDate`、`serviceEndDate` 與 `serviceHours` 會在轉移建立時帶入來源活動的 `eventStartDate`、`eventEndDate` 與 `completionHours`
+- `volunteerServiceCerts.downloadEnabled` 會在轉移建立時依來源完訓證明 `attendanceStatus` 判斷，`checkedIn` 為 `true`，其他狀態為 `false`
 - 來源 `completionCerts.certStatus` 會改為 `transferred`，避免後續完訓證明流程再次修改或發行同一筆來源資料；管理端完訓證明清單仍顯示來源資料作為稽核紀錄，但操作欄只顯示轉移目標
 - 已發行的完訓證明不可轉移，需先撤銷發行狀態
 
@@ -1002,7 +1007,7 @@ Response JSON example:
     "serviceHours": 16,
     "serviceStartDate": "2026-07-24",
     "serviceEndDate": "2026-07-25",
-    "downloadEnabled": false,
+    "downloadEnabled": true,
     "certStatus": "notIssued",
     "createdAt": "2026-05-25T03:00:00Z"
   }
@@ -1142,10 +1147,11 @@ Response JSON example:
 
 ### `GET /api/v1/admin/completion-cert-change-requests`
 
-- 查詢完訓證明修改申請，預設查詢 `pending` 狀態；`status=completed` 會回傳 `approved`、`rejected` 與 `cancelledByIssue` 終態案例，依 `reviewedAt` 由新到舊排序
-- `status` 也可指定單一狀態 `pending`、`approved`、`rejected` 或 `cancelledByIssue`
+- 查詢完訓證明修改申請，預設查詢 `pending` 狀態；`status=completed` 會回傳 `approved`、`rejected`、`transferred` 與 `cancelledByIssue` 終態案例，依 `reviewedAt` 由新到舊排序
+- `status` 也可指定單一狀態 `pending`、`approved`、`rejected`、`transferred` 或 `cancelledByIssue`
 - 只接受已登入且通過授權的管理者 session，並檢查同源 `Origin` 或 `Referer`
 - 讀取 Cosmos DB `completionCertRequests` container，並依申請內的 `completionCertId` 與 `eventId` 讀取對應 `completionCerts` 權威資料
+- 回應中的 `volunteerServiceDefaults` 由活動設定產生，包含 `serviceStartDate`、`serviceEndDate`、`serviceHours` 與 `eligible`；`eligible` 會依活動文件類型、活動支援的志工服務票種與完訓資料 `ticketName` 判斷，供管理端決定是否顯示 `證明類型` 切換與志工服務欄位
 
 Request example:
 
@@ -1191,6 +1197,12 @@ Response JSON example:
         "verificationCount": 0,
         "issuedAt": null,
         "createdAt": "2026-04-28T06:02:00Z"
+      },
+      "volunteerServiceDefaults": {
+        "serviceStartDate": "2026-07-24",
+        "serviceEndDate": "2026-07-25",
+        "serviceHours": 16,
+        "eligible": true
       }
     }
   ]
@@ -1202,10 +1214,13 @@ Response JSON example:
 - 審核單筆完訓證明修改申請
 - 只接受已登入且通過授權的管理者 session
 - 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
-- `status` 只接受 `approved` 或 `rejected`
+- `status` 只接受 `approved`、`rejected` 或 `transferred`
 - `approved` 可同時更新 `name`、`organization` 與 `email`；`email` 不可空白
 - 審核完成後，申請文件會寫入 `reviewedBy`、`reviewedAt`、`reviewNote` 與 `updatedAt`
-- 審核完成後，對應完訓證明的 `certStatus` 會恢復為 `notIssued`
+- `approved` 與 `rejected` 審核完成後，對應完訓證明的 `certStatus` 會恢復為 `notIssued`
+- `transferred` 審核完成後，後端會用請求中的 `name`、`organization`、`serviceStartDate`、`serviceEndDate` 與 `serviceHours` 建立志工服務證明資料，並將來源完訓證明標記為 `transferred`
+- `serviceStartDate` 與 `serviceEndDate` 使用純日期 `yyyy-MM-dd`；`serviceHours` 必須是大於 0 的整數
+- `transferred` 會再次依活動 `volunteerServiceTicketNames` 檢查來源完訓資料票種；不符合時回覆 `409 volunteer_service_cert_ticket_not_supported`
 
 Request JSON example:
 

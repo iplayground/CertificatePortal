@@ -119,6 +119,20 @@
                 <div class="field-static-value completion-review-note" id="completion-review-requester-note">-</div>
               </div>
 
+              <fieldset class="completion-review-certificate-type-field" id="completion-review-certificate-type-field">
+                <legend class="field-label">證明類型</legend>
+                <div class="completion-review-certificate-type-options">
+                  <label class="completion-review-certificate-type-option">
+                    <input id="completion-review-certificate-type-completion" name="completionReviewCertificateType" type="radio" value="completionCert" checked>
+                    <span>完訓證明</span>
+                  </label>
+                  <label class="completion-review-certificate-type-option">
+                    <input id="completion-review-certificate-type-volunteer" name="completionReviewCertificateType" type="radio" value="volunteerServiceCert">
+                    <span>志工服務證明</span>
+                  </label>
+                </div>
+              </fieldset>
+
               <label class="field">
                 <span class="field-label">姓名</span>
                 <input id="completion-review-name" name="completionReviewName" type="text" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other">
@@ -128,6 +142,21 @@
                 <span class="field-label">公司名</span>
                 <input id="completion-review-organization" name="completionReviewOrganization" type="text" autocomplete="organization">
               </label>
+
+              <div class="completion-review-volunteer-fields" id="completion-review-volunteer-fields" hidden>
+                <label class="field">
+                  <span class="field-label">服務開始日期</span>
+                  <input class="form-datetime-input" id="completion-review-service-start-date" name="completionReviewServiceStartDate" type="text" inputmode="numeric" autocomplete="off" placeholder="---- / -- / --">
+                </label>
+                <label class="field">
+                  <span class="field-label">服務結束日期</span>
+                  <input class="form-datetime-input" id="completion-review-service-end-date" name="completionReviewServiceEndDate" type="text" inputmode="numeric" autocomplete="off" placeholder="---- / -- / --">
+                </label>
+                <label class="field">
+                  <span class="field-label">服務時數</span>
+                  <input class="form-datetime-input" id="completion-review-service-hours" name="completionReviewServiceHours" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+              </div>
 
               <label class="field">
                 <span class="field-label">審核備註</span>
@@ -161,6 +190,7 @@
     </main>
 
     <script src="{{asset_page_alert_js_url}}"></script>
+    <script src="{{asset_portal_datetime_picker_js_url}}"></script>
     <script src="{{asset_portal_dashboard_completion_reviews_js_url}}"></script>
   </body>
 </html>

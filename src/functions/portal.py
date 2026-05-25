@@ -125,6 +125,8 @@ from src.shared.volunteer_service_store import (
     create_volunteer_service_cert_document,
     get_volunteer_service_certs_container,
     list_volunteer_service_cert_documents,
+    normalize_optional_int,
+    normalize_optional_string,
     read_volunteer_service_cert_document,
     replace_volunteer_service_cert_document,
 )
@@ -186,9 +188,8 @@ PORTAL_COMPLETION_CERT_ALLOWED_ATTENDANCE_STATUSES = frozenset(
     {"checkedIn", "notCheckedIn"}
 )
 PORTAL_COMPLETION_CERT_REVOKE_FIELDS = frozenset({"certStatus"})
-PORTAL_COMPLETION_CERT_DATA_FIELDS = frozenset({"email", "name", "organization"})
 PORTAL_COMPLETION_CERT_REQUEST_ALLOWED_REVIEW_STATUSES = frozenset(
-    {"approved", "rejected"}
+    {"approved", "rejected", "transferred"}
 )
 PORTAL_TAX_RECEIPT_ALLOWED_CONTENT_TYPES = frozenset(
     {"application/pdf", "image/png", "image/jpeg"}
@@ -832,6 +833,7 @@ def normalize_completion_cert_request_for_api(
     document: dict[str, Any],
     *,
     completion_cert: dict[str, Any] | None = None,
+    volunteer_service_defaults: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = {
         "id": str(document.get("id", "")).strip(),
@@ -849,6 +851,8 @@ def normalize_completion_cert_request_for_api(
     }
     if completion_cert is not None:
         payload["completionCert"] = normalize_completion_cert_for_api(completion_cert)
+    if volunteer_service_defaults is not None:
+        payload["volunteerServiceDefaults"] = volunteer_service_defaults
     return payload
 
 
@@ -870,6 +874,51 @@ def normalize_volunteer_service_cert_for_api(document: dict[str, Any]) -> dict[s
         "certStatus": str(document.get("certStatus", "")).strip() or "notIssued",
         "createdAt": str(document.get("createdAt", "")).strip(),
     }
+
+
+def build_volunteer_service_defaults_for_api(event: dict[str, Any] | None) -> dict[str, Any]:
+    event_data = event if isinstance(event, dict) else {}
+    return {
+        "serviceStartDate": normalize_optional_string(event_data.get("eventStartDate")),
+        "serviceEndDate": normalize_optional_string(event_data.get("eventEndDate")),
+        "serviceHours": normalize_optional_int(event_data.get("completionHours")),
+    }
+
+
+def build_volunteer_service_review_defaults_for_api(
+    *,
+    completion_cert: dict[str, Any] | None,
+    event: dict[str, Any] | None,
+) -> dict[str, Any]:
+    defaults = build_volunteer_service_defaults_for_api(event)
+    defaults["eligible"] = (
+        is_volunteer_service_cert_supported_for_completion_cert(
+            completion_cert=completion_cert,
+            event=event,
+        )
+        if isinstance(completion_cert, dict) and isinstance(event, dict)
+        else False
+    )
+    return defaults
+
+
+def is_volunteer_service_cert_supported_for_completion_cert(
+    *,
+    completion_cert: dict[str, Any],
+    event: dict[str, Any],
+) -> bool:
+    if "volunteerServiceCert" not in normalize_portal_event_document_types(
+        event.get("documentTypes")
+    ):
+        return False
+
+    ticket_name = str(completion_cert.get("ticketName", "")).strip()
+    if not ticket_name:
+        return False
+
+    return ticket_name in normalize_portal_volunteer_service_ticket_names(
+        event.get("volunteerServiceTicketNames")
+    )
 
 
 def normalize_tax_receipt_for_api(document: dict[str, Any]) -> dict[str, Any]:
@@ -1158,6 +1207,7 @@ def parse_completion_cert_request_review_payload(
         return None, "審核備註不可超過 600 字。"
 
     cert_updates = {}
+    volunteer_service_updates = {}
     if review_status == "approved":
         cert_updates = {
             field_name: str(payload.get(field_name, "")).strip()
@@ -1167,12 +1217,40 @@ def parse_completion_cert_request_review_payload(
         cert_updates.pop("attendanceStatus", None)
         if "email" in cert_updates and not cert_updates["email"]:
             return None, "完訓證明資料缺少必要欄位值：Email。"
+    elif review_status == "transferred":
+        service_start_date, service_start_error = parse_event_date_payload(
+            payload.get("serviceStartDate"),
+            field_label="服務開始日期",
+        )
+        if service_start_date is None:
+            return None, service_start_error
+        service_end_date, service_end_error = parse_event_date_payload(
+            payload.get("serviceEndDate"),
+            field_label="服務結束日期",
+        )
+        if service_end_date is None:
+            return None, service_end_error
+        if service_end_date < service_start_date:
+            return None, "服務結束日期不可早於服務開始日期。"
+
+        service_hours = normalize_event_completion_hours(payload.get("serviceHours"))
+        if service_hours is None:
+            return None, "服務時數必須是大於 0 的整數。"
+
+        volunteer_service_updates = {
+            "name": str(payload.get("name", "")).strip(),
+            "serviceOrganization": str(payload.get("organization", "")).strip(),
+            "serviceStartDate": service_start_date.isoformat(),
+            "serviceEndDate": service_end_date.isoformat(),
+            "serviceHours": service_hours,
+        }
 
     return {
         "eventId": event_id,
         "reviewNote": review_note,
         "status": review_status,
         "updates": cert_updates,
+        "volunteerServiceUpdates": volunteer_service_updates,
     }, None
 
 
@@ -2472,13 +2550,14 @@ def portal_admin_completion_certs_update_api(req: func.HttpRequest) -> func.Http
                 "已轉移的完訓證明不可再修改資料。",
             )
 
-        if current_cert_status == "issued" and PORTAL_COMPLETION_CERT_DATA_FIELDS.intersection(
-            updates
+        if (
+            current_cert_status == "issued"
+            and set(updates) != PORTAL_COMPLETION_CERT_REVOKE_FIELDS
         ):
             return build_portal_api_error_response(
                 409,
                 "completion_cert_already_issued",
-                "已發行的完訓證明不可修改資料，請先撤銷發行狀態。",
+                "已發行的完訓證明不可修改資料或簽到狀態，請先撤銷發行狀態。",
             )
 
         if (
@@ -3630,6 +3709,7 @@ def portal_admin_completion_cert_change_requests_list_api(
         normalized_requests = []
         for request_document in request_documents:
             completion_cert = None
+            volunteer_service_defaults = None
             completion_cert_id = str(
                 request_document.get("completionCertId", "")
             ).strip()
@@ -3643,10 +3723,18 @@ def portal_admin_completion_cert_change_requests_list_api(
                     )
                 except CompletionStoreOperationError:
                     completion_cert = None
+                try:
+                    volunteer_service_defaults = build_volunteer_service_review_defaults_for_api(
+                        completion_cert=completion_cert,
+                        event=read_portal_event(event_id),
+                    )
+                except (EventStoreConfigurationError, EventStoreOperationError):
+                    volunteer_service_defaults = None
             normalized_requests.append(
                 normalize_completion_cert_request_for_api(
                     request_document,
                     completion_cert=completion_cert,
+                    volunteer_service_defaults=volunteer_service_defaults,
                 )
             )
     except CompletionStoreConfigurationError as exc:
@@ -3725,12 +3813,70 @@ def portal_admin_completion_cert_change_requests_review_api(
             event_id=event_id,
         )
         reviewed_at = utc_now_iso()
-        updated_cert_document = {
-            **cert_document,
-            **review_payload["updates"],
-            "certStatus": "notIssued",
-            "updatedAt": reviewed_at,
-        }
+        saved_volunteer_document = None
+        if review_payload["status"] == "transferred":
+            current_cert_status = str(cert_document.get("certStatus", "")).strip() or "notIssued"
+            if current_cert_status == "issued":
+                return build_portal_api_error_response(
+                    409,
+                    "completion_cert_already_issued",
+                    "已發行的完訓證明不可轉移文件類型，請先撤銷發行狀態。",
+                )
+            existing_transfer_type = str(
+                cert_document.get("transferredToDocumentType", "")
+            ).strip()
+            if existing_transfer_type and existing_transfer_type != "volunteerServiceCert":
+                return build_portal_api_error_response(
+                    409,
+                    "completion_cert_already_transferred",
+                    "此完訓證明資料已轉移到其他文件類型。",
+                )
+
+            volunteer_cert_id = build_volunteer_service_cert_id(
+                completion_cert_id=completion_cert_id,
+                event_id=event_id,
+            )
+            event_document = read_portal_event(event_id)
+            if not is_volunteer_service_cert_supported_for_completion_cert(
+                completion_cert=cert_document,
+                event=event_document,
+            ):
+                return build_portal_api_error_response(
+                    409,
+                    "volunteer_service_cert_ticket_not_supported",
+                    "此完訓證明票種不支援轉移為志工服務證明。",
+                )
+            volunteer_document = build_volunteer_service_cert_document(
+                actor=get_portal_api_actor(access),
+                completion_cert=cert_document,
+                event=event_document,
+                now=reviewed_at,
+                volunteer_service_cert_id=volunteer_cert_id,
+            )
+            volunteer_document = {
+                **volunteer_document,
+                **review_payload["volunteerServiceUpdates"],
+            }
+            saved_volunteer_document, _was_created = create_volunteer_service_cert_document(
+                container=get_volunteer_service_certs_container(),
+                document=volunteer_document,
+            )
+            updated_cert_document = {
+                **cert_document,
+                "certStatus": "transferred",
+                "transferredToDocumentType": "volunteerServiceCert",
+                "transferredToDocumentId": saved_volunteer_document["id"],
+                "transferredAt": reviewed_at,
+                "transferredBy": get_portal_api_actor(access),
+                "updatedAt": reviewed_at,
+            }
+        else:
+            updated_cert_document = {
+                **cert_document,
+                **review_payload["updates"],
+                "certStatus": "notIssued",
+                "updatedAt": reviewed_at,
+            }
         saved_cert_document = replace_completion_cert_document(
             container=certs_container,
             document=updated_cert_document,
@@ -3754,6 +3900,26 @@ def portal_admin_completion_cert_change_requests_review_api(
             "completion_store_not_configured",
             str(exc),
         )
+    except VolunteerServiceStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "volunteer_service_store_not_configured",
+            str(exc),
+        )
+    except EventStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定活動。" else 503,
+            "event_not_found"
+            if str(exc) == "找不到指定活動。"
+            else "event_store_unavailable",
+            str(exc),
+        )
+    except VolunteerServiceStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "volunteer_service_transfer_unavailable",
+            str(exc),
+        )
     except CompletionStoreOperationError as exc:
         not_found = str(exc) in {
             "找不到指定完訓證明修改申請。",
@@ -3767,15 +3933,18 @@ def portal_admin_completion_cert_change_requests_review_api(
             str(exc),
         )
 
-    return build_portal_api_json_response(
-        {
-            "changeRequest": normalize_completion_cert_request_for_api(
-                saved_request_document,
-                completion_cert=saved_cert_document,
-            )
-        },
-        status_code=200,
-    )
+    response_payload = {
+        "changeRequest": normalize_completion_cert_request_for_api(
+            saved_request_document,
+            completion_cert=saved_cert_document,
+        )
+    }
+    if saved_volunteer_document is not None:
+        response_payload["volunteerServiceCert"] = normalize_volunteer_service_cert_for_api(
+            saved_volunteer_document
+        )
+
+    return build_portal_api_json_response(response_payload, status_code=200)
 
 
 @blueprint.function_name(name="portal_dashboard_page")

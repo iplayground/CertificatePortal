@@ -9,6 +9,12 @@ const completionReviewDialog = document.getElementById("completion-review-dialog
 const completionReviewDialogTitle = document.getElementById("completion-review-dialog-title");
 const completionReviewCancelButton = document.getElementById("completion-review-cancel");
 const completionReviewApproveButton = document.getElementById("completion-review-approve");
+const completionReviewCertificateTypeField = document.getElementById(
+  "completion-review-certificate-type-field"
+);
+const completionReviewCertificateTypeInputs = Array.from(
+  document.querySelectorAll('input[name="completionReviewCertificateType"]')
+);
 const completionReviewRejectButton = document.getElementById("completion-review-reject");
 const completionReviewNumber = document.getElementById("completion-review-number");
 const completionReviewKktixId = document.getElementById("completion-review-kktix-id");
@@ -17,6 +23,16 @@ const completionReviewRequesterNote = document.getElementById("completion-review
 const completionReviewName = document.getElementById("completion-review-name");
 const completionReviewOrganization = document.getElementById("completion-review-organization");
 const completionReviewEmail = document.getElementById("completion-review-email");
+const completionReviewServiceStartDate = document.getElementById(
+  "completion-review-service-start-date"
+);
+const completionReviewServiceEndDate = document.getElementById(
+  "completion-review-service-end-date"
+);
+const completionReviewServiceHours = document.getElementById("completion-review-service-hours");
+const completionReviewVolunteerFields = document.getElementById(
+  "completion-review-volunteer-fields"
+);
 const completionReviewNote = document.getElementById("completion-review-note");
 const completionReviewCompletedSummary = document.getElementById("completion-review-completed-summary");
 const completionReviewCompletedStatus = document.getElementById("completion-review-completed-status");
@@ -36,7 +52,13 @@ const completionReviewStatusLabels = {
   cancelledByIssue: "已取消",
   pending: "待審核",
   rejected: "已駁回",
+  transferred: "已轉移",
 };
+const {
+  formatIsoDateInputValue,
+  installDatePicker,
+  normalizeDateInputValue,
+} = window.iPlaygroundPortalDateTime || {};
 
 let completionReviewRows = [];
 let selectedCompletionReviewStatus = "pending";
@@ -129,6 +151,30 @@ function normalizeCompletionReview(rowData) {
     reviewedBy: typeof rowData?.reviewedBy === "string" ? rowData.reviewedBy : "",
     reviewNote: typeof rowData?.reviewNote === "string" ? rowData.reviewNote : "",
     status: typeof rowData?.status === "string" ? rowData.status : "pending",
+    volunteerServiceDefaults:
+      rowData?.volunteerServiceDefaults && typeof rowData.volunteerServiceDefaults === "object"
+        ? {
+            serviceEndDate:
+              typeof rowData.volunteerServiceDefaults.serviceEndDate === "string"
+                ? rowData.volunteerServiceDefaults.serviceEndDate
+                : "",
+            serviceHours:
+              typeof rowData.volunteerServiceDefaults.serviceHours === "number" ||
+              typeof rowData.volunteerServiceDefaults.serviceHours === "string"
+                ? String(rowData.volunteerServiceDefaults.serviceHours)
+                : "",
+            serviceStartDate:
+              typeof rowData.volunteerServiceDefaults.serviceStartDate === "string"
+                ? rowData.volunteerServiceDefaults.serviceStartDate
+                : "",
+            volunteerServiceEligible: rowData.volunteerServiceDefaults.eligible === true,
+          }
+        : {
+            serviceEndDate: "",
+            serviceHours: "",
+            serviceStartDate: "",
+            volunteerServiceEligible: false,
+          },
   };
 }
 
@@ -311,6 +357,13 @@ function setInputValue(element, value) {
   }
 }
 
+function setDatePickerInputValue(element, value) {
+  if (element instanceof HTMLInputElement) {
+    element.value = value;
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
 function setDisabledInput(element, isDisabled) {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     element.disabled = isDisabled;
@@ -331,6 +384,94 @@ function setStaticValue(element, value) {
   }
 }
 
+function getSelectedCompletionReviewCertificateType() {
+  const selectedInput = completionReviewCertificateTypeInputs.find(
+    (input) => input instanceof HTMLInputElement && input.checked
+  );
+  return selectedInput instanceof HTMLInputElement
+    ? selectedInput.value
+    : "completionCert";
+}
+
+function setCompletionReviewCertificateType(value) {
+  completionReviewCertificateTypeInputs.forEach((input) => {
+    if (input instanceof HTMLInputElement) {
+      input.checked = input.value === value;
+    }
+  });
+}
+
+function setDisabledCertificateTypeInputs(isDisabled) {
+  completionReviewCertificateTypeInputs.forEach((input) => {
+    if (input instanceof HTMLInputElement) {
+      input.disabled = isDisabled;
+    }
+  });
+}
+
+function updateCompletionReviewCertificateTypeControls(isPendingReview, rowData = null) {
+  const isVolunteerServiceEligible =
+    rowData?.volunteerServiceDefaults?.volunteerServiceEligible === true ||
+    rowData?.status === "transferred";
+  if (!isVolunteerServiceEligible) {
+    setCompletionReviewCertificateType("completionCert");
+  }
+  const isVolunteerService =
+    getSelectedCompletionReviewCertificateType() === "volunteerServiceCert";
+  setDisabledInput(completionReviewName, !isPendingReview);
+  setDisabledInput(completionReviewOrganization, !isPendingReview);
+  setDisabledInput(completionReviewServiceStartDate, !isPendingReview);
+  setDisabledInput(completionReviewServiceEndDate, !isPendingReview);
+  setDisabledInput(completionReviewServiceHours, !isPendingReview);
+  setDisabledCertificateTypeInputs(!isPendingReview);
+  if (completionReviewCertificateTypeField instanceof HTMLElement) {
+    completionReviewCertificateTypeField.hidden = !isVolunteerServiceEligible;
+  }
+  if (completionReviewVolunteerFields instanceof HTMLElement) {
+    completionReviewVolunteerFields.hidden = !isVolunteerServiceEligible || !isVolunteerService;
+  }
+  if (completionReviewApproveButton instanceof HTMLButtonElement) {
+    completionReviewApproveButton.textContent = isVolunteerService
+      ? "轉移並結案"
+      : "通過並更新";
+  }
+}
+
+function fillCompletionReviewVolunteerDefaults(rowData, { overwrite = false } = {}) {
+  const defaults = rowData?.volunteerServiceDefaults;
+  if (!defaults || typeof defaults !== "object") {
+    return;
+  }
+
+  if (overwrite || !getInputValue(completionReviewServiceStartDate)) {
+    setDatePickerInputValue(
+      completionReviewServiceStartDate,
+      normalizeReviewServiceDateInput(defaults.serviceStartDate)
+    );
+  }
+  if (overwrite || !getInputValue(completionReviewServiceEndDate)) {
+    setDatePickerInputValue(
+      completionReviewServiceEndDate,
+      normalizeReviewServiceDateInput(defaults.serviceEndDate)
+    );
+  }
+  if (overwrite || !getInputValue(completionReviewServiceHours)) {
+    setInputValue(completionReviewServiceHours, defaults.serviceHours);
+  }
+}
+
+function normalizeReviewServiceDateInput(value) {
+  return typeof normalizeDateInputValue === "function"
+    ? normalizeDateInputValue(value)
+    : value;
+}
+
+function formatReviewServiceDatePayload(value) {
+  return typeof formatIsoDateInputValue === "function"
+    ? formatIsoDateInputValue(value)
+    : value;
+}
+
 async function openCompletionReviewDialog(rowData) {
   if (!completionReviewDialog || isSubmittingCompletionReview) {
     return;
@@ -349,14 +490,17 @@ async function openCompletionReviewDialog(rowData) {
   setStaticValue(completionReviewKktixId, rowData.completionCert.kktixId);
   setStaticValue(completionReviewTicketName, rowData.completionCert.ticketName);
   setStaticValue(completionReviewRequesterNote, rowData.requesterNote);
+  setCompletionReviewCertificateType(
+    rowData.status === "transferred" ? "volunteerServiceCert" : "completionCert"
+  );
   setInputValue(completionReviewName, rowData.completionCert.name);
   setInputValue(completionReviewOrganization, rowData.completionCert.organization);
   setInputValue(completionReviewEmail, rowData.completionCert.email || rowData.requesterEmail);
+  fillCompletionReviewVolunteerDefaults(rowData, { overwrite: true });
   setInputValue(completionReviewNote, isPendingReview ? "" : rowData.reviewNote);
-  setDisabledInput(completionReviewName, !isPendingReview);
-  setDisabledInput(completionReviewOrganization, !isPendingReview);
   setDisabledInput(completionReviewEmail, !isPendingReview);
   setDisabledInput(completionReviewNote, !isPendingReview);
+  updateCompletionReviewCertificateTypeControls(isPendingReview, rowData);
   [completionReviewApproveButton, completionReviewRejectButton].forEach((button) => {
     if (button instanceof HTMLButtonElement) {
       button.hidden = !isPendingReview;
@@ -400,7 +544,21 @@ function closeCompletionReviewDialog() {
   setDisabledInput(completionReviewName, false);
   setDisabledInput(completionReviewOrganization, false);
   setDisabledInput(completionReviewEmail, false);
+  setDisabledInput(completionReviewServiceStartDate, false);
+  setDisabledInput(completionReviewServiceEndDate, false);
+  setDisabledInput(completionReviewServiceHours, false);
   setDisabledInput(completionReviewNote, false);
+  setInputValue(completionReviewServiceStartDate, "");
+  setInputValue(completionReviewServiceEndDate, "");
+  setInputValue(completionReviewServiceHours, "");
+  setDisabledCertificateTypeInputs(false);
+  setCompletionReviewCertificateType("completionCert");
+  if (completionReviewVolunteerFields instanceof HTMLElement) {
+    completionReviewVolunteerFields.hidden = true;
+  }
+  if (completionReviewApproveButton instanceof HTMLButtonElement) {
+    completionReviewApproveButton.textContent = "通過並更新";
+  }
   [completionReviewApproveButton, completionReviewRejectButton].forEach((button) => {
     if (button instanceof HTMLButtonElement) {
       button.hidden = false;
@@ -415,7 +573,12 @@ function closeCompletionReviewDialog() {
 
 function setCompletionReviewSubmitting(isSubmitting) {
   isSubmittingCompletionReview = isSubmitting;
-  [completionReviewApproveButton, completionReviewRejectButton, completionReviewCancelButton, completionReviewRefreshButton].forEach(
+  [
+    completionReviewApproveButton,
+    completionReviewRejectButton,
+    completionReviewCancelButton,
+    completionReviewRefreshButton,
+  ].forEach(
     (button) => {
       if (button instanceof HTMLButtonElement) {
         button.disabled = isSubmitting;
@@ -441,6 +604,17 @@ async function submitCompletionReview(status) {
   if (status === "approved") {
     payload.name = getInputValue(completionReviewName);
     payload.organization = getInputValue(completionReviewOrganization);
+  }
+  if (status === "transferred") {
+    payload.name = getInputValue(completionReviewName);
+    payload.organization = getInputValue(completionReviewOrganization);
+    payload.serviceStartDate = formatReviewServiceDatePayload(
+      getInputValue(completionReviewServiceStartDate)
+    );
+    payload.serviceEndDate = formatReviewServiceDatePayload(
+      getInputValue(completionReviewServiceEndDate)
+    );
+    payload.serviceHours = getInputValue(completionReviewServiceHours);
   }
 
   setCompletionReviewSubmitting(true);
@@ -469,8 +643,14 @@ async function submitCompletionReview(status) {
     completionReviewRows = completionReviewRows.filter((row) => row.id !== rowData.id);
     closeCompletionReviewDialog();
     renderCompletionReviewRows();
+    const successMessage =
+      status === "approved"
+        ? "修改申請已通過並更新資料。"
+        : status === "transferred"
+          ? "資料已轉移到志工服務證明。"
+          : "修改申請已駁回。";
     showCompletionReviewPageAlert({
-      message: status === "approved" ? "修改申請已通過並更新資料。" : "修改申請已駁回。",
+      message: successMessage,
       title: "審核完成",
       tone: "success",
     });
@@ -506,11 +686,31 @@ completionReviewStatusButtons.forEach((button) => {
 
 completionReviewCancelButton?.addEventListener("click", closeCompletionReviewDialog);
 completionReviewApproveButton?.addEventListener("click", () => {
-  void submitCompletionReview("approved");
+  const certificateType = getSelectedCompletionReviewCertificateType();
+  void submitCompletionReview(
+    certificateType === "volunteerServiceCert" ? "transferred" : "approved"
+  );
 });
 completionReviewRejectButton?.addEventListener("click", () => {
   void submitCompletionReview("rejected");
 });
+
+completionReviewCertificateTypeInputs.forEach((input) => {
+  if (input instanceof HTMLInputElement) {
+    input.addEventListener("change", () => {
+      const rowData = getCompletionReviewRow(selectedCompletionReviewId);
+      if (input.checked && input.value === "volunteerServiceCert") {
+        fillCompletionReviewVolunteerDefaults(rowData);
+      }
+      updateCompletionReviewCertificateTypeControls(rowData?.status === "pending", rowData);
+    });
+  }
+});
+
+if (typeof installDatePicker === "function") {
+  installDatePicker(completionReviewServiceStartDate);
+  installDatePicker(completionReviewServiceEndDate);
+}
 
 completionReviewDialog?.addEventListener("click", (event) => {
   if (event.target === completionReviewDialog && !isSubmittingCompletionReview) {

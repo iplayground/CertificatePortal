@@ -39,6 +39,7 @@ def test_build_volunteer_service_cert_document_copies_completion_source_fields()
             "name": "王小明",
             "organization": "iPlayground",
             "email": "ming@example.com",
+            "attendanceStatus": "checkedIn",
             "createdAt": "2026-04-28T06:02:00Z",
         },
         event={
@@ -63,7 +64,7 @@ def test_build_volunteer_service_cert_document_copies_completion_source_fields()
         "serviceHours": 16,
         "serviceStartDate": "2026-07-24",
         "serviceEndDate": "2026-07-25",
-        "downloadEnabled": False,
+        "downloadEnabled": True,
         "certStatus": "notIssued",
         "sourceCreatedAt": "2026-04-28T06:02:00Z",
         "createdAt": "2026-05-25T03:00:00Z",
@@ -71,6 +72,22 @@ def test_build_volunteer_service_cert_document_copies_completion_source_fields()
         "updatedAt": "2026-05-25T03:00:00Z",
         "updatedBy": "admin@iplayground.io",
     }
+
+
+def test_build_volunteer_service_cert_document_disables_download_when_not_checked_in() -> None:
+    document = build_volunteer_service_cert_document(
+        actor="admin@iplayground.io",
+        completion_cert={
+            "id": "ccert_1",
+            "eventId": "evt_1",
+            "attendanceStatus": "notCheckedIn",
+        },
+        event={},
+        now="2026-05-25T03:00:00Z",
+        volunteer_service_cert_id="vscert_1",
+    )
+
+    assert document["downloadEnabled"] is False
 
 
 class FakeVolunteerContainer:

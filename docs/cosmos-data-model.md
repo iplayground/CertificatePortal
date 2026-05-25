@@ -440,7 +440,7 @@ partition key: /eventId
 | `serviceHours` | int \| null | 志工服務時數；轉移建立時使用來源活動的 `completionHours`，後續由志工服務證明流程維護 |
 | `serviceStartDate` | string \| null | 志工服務開始日期，純日期，格式 `yyyy-MM-dd`；轉移建立時使用來源活動的 `eventStartDate` |
 | `serviceEndDate` | string \| null | 志工服務結束日期，純日期，格式 `yyyy-MM-dd`；轉移建立時使用來源活動的 `eventEndDate` |
-| `downloadEnabled` | bool | 申請人是否可下載志工服務證明；轉移建立時為 false，後續由志工服務證明流程或管理端開關維護 |
+| `downloadEnabled` | bool | 申請人是否可下載志工服務證明；轉移建立時依來源完訓證明 `attendanceStatus` 判斷，`checkedIn` 為 true，其他狀態為 false，後續由志工服務證明流程或管理端開關維護 |
 | `certStatus` | string | 志工服務證明狀態；轉移建立時為 `notIssued` |
 | `sourceCreatedAt` | string \| null | 來源完訓證明建立時間 |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
@@ -450,7 +450,7 @@ partition key: /eventId
 
 ### 資料調整申請文件
 
-`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。公開首頁送出修改申請時會寫入此 container；同一張完訓證明使用相同申請備註重送時，會使用穩定 id upsert 同一筆申請文件。管理端審核通過或駁回後會寫入審核欄位，並將對應 `completionCerts.certStatus` 從 `changeRequested` 恢復為 `notIssued`，讓後續發證流程可重新處理權威清單資料；同一張完訓證明已有 `approved` 或 `rejected` 申請後，不可再由公開首頁建立新的修改申請。
+`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。公開首頁送出修改申請時會寫入此 container；同一張完訓證明使用相同申請備註重送時，會使用穩定 id upsert 同一筆申請文件。管理端審核通過或駁回後會寫入審核欄位，並將對應 `completionCerts.certStatus` 從 `changeRequested` 恢復為 `notIssued`，讓後續發證流程可重新處理權威清單資料；若管理者在審核時轉移為志工服務證明，申請狀態會改為 `transferred`，來源完訓證明狀態會改為 `transferred` 並建立對應 `volunteerServiceCerts` 文件。同一張完訓證明已有 `approved` 或 `rejected` 申請後，不可再由公開首頁建立新的修改申請。
 
 必要欄位：
 
@@ -475,7 +475,8 @@ partition key: /eventId
 pending
 approved
 rejected
-cancelled
+transferred
+cancelledByIssue
 ```
 
 管理端查詢活動下待審核申請：

@@ -299,7 +299,12 @@ class FakeCompletionCertRequestsContainer:
             parameter["value"]
             for parameter in parameters or []
             if parameter["name"]
-            in {"@approvedStatus", "@rejectedStatus", "@cancelledByIssueStatus"}
+            in {
+                "@approvedStatus",
+                "@rejectedStatus",
+                "@transferredStatus",
+                "@cancelledByIssueStatus",
+            }
         }
         return [
             item
@@ -1338,6 +1343,54 @@ def test_portal_admin_completion_certs_update_api_rejects_data_edit_when_issued(
     assert fake_completion_container.items["ccert_2"]["certStatus"] == "issued"
 
 
+def test_portal_admin_completion_certs_update_api_rejects_attendance_edit_when_issued(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "kktixId": "KKTIX-002",
+        "badgeName": "Old Badge",
+        "ticketName": "一般票",
+        "name": "王小華",
+        "organization": "舊公司",
+        "email": "hua@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "issued",
+        "issuedPdfBlobName": "issued/ccert_2.pdf",
+        "verificationTokenHash": "hash-2",
+        "issuedAt": "2026-04-28T06:02:00Z",
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "attendanceStatus": "notCheckedIn",
+                "eventId": "evt_1",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"certid": "ccert_2"},
+        url="http://localhost:7075/api/v1/admin/completion-certs/ccert_2",
+    )
+
+    response = portal_admin_completion_certs_update_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 409
+    assert "已發行的完訓證明不可修改資料或簽到狀態" in body
+    assert fake_completion_container.items["ccert_2"]["attendanceStatus"] == "checkedIn"
+    assert fake_completion_container.items["ccert_2"]["certStatus"] == "issued"
+
+
 def test_portal_admin_volunteer_service_cert_transfer_api_creates_independent_document(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1346,9 +1399,11 @@ def test_portal_admin_volunteer_service_cert_transfer_api_creates_independent_do
     fake_volunteer_container = FakeVolunteerServiceCertsContainer()
     fake_events_container.items["evt_1"] = {
         "id": "evt_1",
+        "documentTypes": ["completionCert", "volunteerServiceCert"],
         "eventStartDate": "2026-07-24",
         "eventEndDate": "2026-07-25",
         "completionHours": 16,
+        "volunteerServiceTicketNames": ["志工票"],
     }
     fake_completion_container.items["ccert_2"] = {
         "id": "ccert_2",
@@ -1409,7 +1464,7 @@ def test_portal_admin_volunteer_service_cert_transfer_api_creates_independent_do
     assert volunteer_cert["serviceHours"] == 16
     assert volunteer_cert["serviceStartDate"] == "2026-07-24"
     assert volunteer_cert["serviceEndDate"] == "2026-07-25"
-    assert volunteer_cert["downloadEnabled"] is False
+    assert volunteer_cert["downloadEnabled"] is True
     assert volunteer_cert["certStatus"] == "notIssued"
     assert completion_cert["certStatus"] == "transferred"
     assert completion_cert["transferredToDocumentType"] == "volunteerServiceCert"
@@ -2646,6 +2701,15 @@ def test_public_tax_receipts_download_api_downloads_multiple_blobs_as_zip(
 def test_portal_admin_completion_cert_change_requests_list_api_returns_pending_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_1"] = {
+        "id": "evt_1",
+        "documentTypes": ["completionCert", "volunteerServiceCert"],
+        "eventStartDate": "2026-07-24",
+        "eventEndDate": "2026-07-25",
+        "completionHours": 16,
+        "volunteerServiceTicketNames": ["一般票"],
+    }
     fake_completion_container = FakeCompletionCertsContainer()
     fake_completion_container.items["ccert_1"] = {
         "id": "ccert_1",
@@ -2680,6 +2744,10 @@ def test_portal_admin_completion_cert_change_requests_list_api_returns_pending_r
         "updatedAt": "2026-04-30T08:00:00Z",
     }
     monkeypatch.setattr(
+        "src.functions.portal.get_events_container",
+        lambda: fake_events_container,
+    )
+    monkeypatch.setattr(
         "src.functions.portal.get_completion_records_container",
         lambda: fake_completion_container,
     )
@@ -2704,6 +2772,7 @@ def test_portal_admin_completion_cert_change_requests_list_api_returns_pending_r
     assert '"completionCert"' in body
     assert '"number":1' in body
     assert '"certStatus":"changeRequested"' in body
+    assert '"volunteerServiceDefaults":{"serviceStartDate":"2026-07-24","serviceEndDate":"2026-07-25","serviceHours":16,"eligible":true}' in body
 
 
 def test_portal_admin_completion_cert_change_requests_list_api_returns_completed_requests(
@@ -2784,6 +2853,20 @@ def test_portal_admin_completion_cert_change_requests_list_api_returns_completed
         "createdAt": "2026-04-30T11:00:00Z",
         "updatedAt": "2026-04-30T11:30:00Z",
     }
+    fake_requests_container.items["ccreq_5"] = {
+        "id": "ccreq_5",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "transferred",
+        "requesterEmail": "volunteer@example.com",
+        "requesterNote": "改為志工服務證明",
+        "reviewedBy": "admin@iplayground.io",
+        "reviewedAt": "2026-04-30T12:30:00Z",
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": "已轉移",
+        "createdAt": "2026-04-30T12:00:00Z",
+        "updatedAt": "2026-04-30T12:30:00Z",
+    }
     monkeypatch.setattr(
         "src.functions.portal.get_completion_records_container",
         lambda: fake_completion_container,
@@ -2813,6 +2896,8 @@ def test_portal_admin_completion_cert_change_requests_list_api_returns_completed
     assert '"id":"ccreq_3"' not in body
     assert '"id":"ccreq_4"' in body
     assert '"status":"cancelledByIssue"' in body
+    assert '"id":"ccreq_5"' in body
+    assert '"status":"transferred"' in body
     assert '"reviewedBy":"system:public-issue"' in body
     assert '"completionCert"' in body
 
@@ -2968,6 +3053,111 @@ def test_portal_admin_completion_cert_change_requests_review_api_rejects_pending
     assert fake_requests_container.items["ccreq_1"]["reviewedBy"] == "admin@iplayground.io"
     assert fake_requests_container.items["ccreq_1"]["reviewedAt"].endswith("Z")
     assert fake_requests_container.items["ccreq_1"]["reviewNote"] == "資料不符"
+
+
+def test_portal_admin_completion_cert_change_requests_review_api_transfers_to_volunteer_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_1"] = {
+        "id": "evt_1",
+        "documentTypes": ["completionCert", "volunteerServiceCert"],
+        "eventStartDate": "2026-07-24",
+        "eventEndDate": "2026-07-25",
+        "completionHours": 16,
+        "volunteerServiceTicketNames": ["志工票"],
+    }
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Ming",
+        "ticketName": "志工票",
+        "name": "王小明",
+        "organization": "舊公司",
+        "email": "ming@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "changeRequested",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    fake_requests_container = FakeCompletionCertRequestsContainer()
+    fake_requests_container.items["ccreq_1"] = {
+        "id": "ccreq_1",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "pending",
+        "requesterEmail": "ming@example.com",
+        "requesterNote": "請改為志工服務證明",
+        "reviewedBy": None,
+        "reviewedAt": None,
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": None,
+        "createdAt": "2026-04-30T08:00:00Z",
+        "updatedAt": "2026-04-30T08:00:00Z",
+    }
+    fake_volunteer_container = FakeVolunteerServiceCertsContainer()
+    monkeypatch.setattr(
+        "src.functions.portal.get_events_container",
+        lambda: fake_events_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        lambda: fake_requests_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_volunteer_service_certs_container",
+        lambda: fake_volunteer_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "name": "王小明志工",
+                "organization": "志工服務組",
+                "serviceStartDate": "2026-08-01",
+                "serviceEndDate": "2026-08-02",
+                "serviceHours": 12,
+                "status": "transferred",
+                "reviewNote": "已轉移為志工服務證明",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"requestid": "ccreq_1"},
+        url="http://localhost:7075/api/v1/admin/completion-cert-change-requests/ccreq_1",
+    )
+
+    response = portal_admin_completion_cert_change_requests_review_api(request)
+    body = response.get_body().decode("utf-8")
+    completion_cert = fake_completion_container.items["ccert_1"]
+    volunteer_cert = next(iter(fake_volunteer_container.items.values()))
+
+    assert response.status_code == 200
+    assert '"status":"transferred"' in body
+    assert '"volunteerServiceCert"' in body
+    assert volunteer_cert["sourceCompletionCertId"] == "ccert_1"
+    assert volunteer_cert["name"] == "王小明志工"
+    assert volunteer_cert["serviceOrganization"] == "志工服務組"
+    assert volunteer_cert["serviceStartDate"] == "2026-08-01"
+    assert volunteer_cert["serviceEndDate"] == "2026-08-02"
+    assert volunteer_cert["serviceHours"] == 12
+    assert volunteer_cert["downloadEnabled"] is True
+    assert completion_cert["certStatus"] == "transferred"
+    assert completion_cert["transferredToDocumentType"] == "volunteerServiceCert"
+    assert completion_cert["transferredToDocumentId"] == volunteer_cert["id"]
+    assert fake_requests_container.items["ccreq_1"]["status"] == "transferred"
+    assert fake_requests_container.items["ccreq_1"]["reviewedBy"] == "admin@iplayground.io"
+    assert fake_requests_container.items["ccreq_1"]["reviewNote"] == "已轉移為志工服務證明"
 
 
 def test_portal_admin_completion_cert_change_requests_review_api_rejects_once_only(
@@ -4461,6 +4651,20 @@ def test_portal_dashboard_completion_reviews_page_returns_html_when_user_is_auth
         'id="completion-review-requester-note"'
     )
     assert 'id="completion-review-email" name="completionReviewEmail" type="email" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" readonly' in body
+    assert 'id="completion-review-certificate-type-field"' in body
+    assert "證明類型" in body
+    assert 'id="completion-review-certificate-type-completion"' in body
+    assert 'value="completionCert" checked' in body
+    assert 'id="completion-review-certificate-type-volunteer"' in body
+    assert 'value="volunteerServiceCert"' in body
+    assert 'id="completion-review-volunteer-fields" hidden' in body
+    assert 'id="completion-review-service-start-date"' in body
+    assert 'name="completionReviewServiceStartDate"' in body
+    assert 'id="completion-review-service-end-date"' in body
+    assert 'name="completionReviewServiceEndDate"' in body
+    assert 'id="completion-review-service-hours"' in body
+    assert 'name="completionReviewServiceHours"' in body
+    assert 'placeholder="---- / -- / --"' in body
     assert 'id="completion-review-note"' in body
     assert 'class="form-textarea-shell completion-review-note-field"' in body
     assert 'class="form-textarea"' in body
@@ -4469,6 +4673,7 @@ def test_portal_dashboard_completion_reviews_page_returns_html_when_user_is_auth
     assert "駁回" in body
     assert "退回" not in body
     assert 'class="event-form-actions completion-review-form-actions"' in body
+    assert 'id="completion-review-transfer-volunteer"' not in body
     assert body.index('id="completion-review-approve"') < body.index(
         'id="completion-review-cancel"'
     )
@@ -4478,6 +4683,10 @@ def test_portal_dashboard_completion_reviews_page_returns_html_when_user_is_auth
     assert 'class="brand-square-action completion-review-reject-button" id="completion-review-reject"' in body
     assert "通過並更新" in body
     assert 'src="/assets/page-alert.js?v=' in body
+    assert 'src="/assets/portal-datetime-picker.js?v=' in body
+    assert body.index('src="/assets/portal-datetime-picker.js?v=') < body.index(
+        'src="/assets/portal-dashboard-completion-reviews.js?v='
+    )
     assert 'src="/assets/portal-dashboard-completion-reviews.js?v=' in body
 
 
@@ -5590,6 +5799,21 @@ def test_portal_dashboard_completion_reviews_js_asset_returns_expected_content_t
     assert "status=${encodeURIComponent(status)}" in body
     assert "目前沒有已完成審核的修改申請。" in body
     assert "cancelledByIssue: \"已取消\"" in body
+    assert "transferred: \"已轉移\"" in body
+    assert 'document.getElementById(\n  "completion-review-certificate-type-field"\n)' in body
+    assert 'document.getElementById(\n  "completion-review-service-start-date"\n)' in body
+    assert 'document.getElementById("completion-review-service-hours")' in body
+    assert 'input[name="completionReviewCertificateType"]' in body
+    assert "getSelectedCompletionReviewCertificateType" in body
+    assert "fillCompletionReviewVolunteerDefaults" in body
+    assert "setDatePickerInputValue" in body
+    assert 'dispatchEvent(new Event("input", { bubbles: true }))' in body
+    assert 'input.checked && input.value === "volunteerServiceCert"' in body
+    assert "formatIsoDateInputValue" in body
+    assert "installDatePicker(completionReviewServiceStartDate)" in body
+    assert "serviceStartDate" in body
+    assert "serviceEndDate" in body
+    assert "serviceHours" in body
     assert "setDisabledInput(completionReviewEmail, !isPendingReview)" in body
     assert "setDisabledInput(completionReviewNote, !isPendingReview)" in body
     assert 'completionReviewCancelButton.textContent = isPendingReview ? "取消" : "關閉"' in body
@@ -5598,6 +5822,8 @@ def test_portal_dashboard_completion_reviews_js_asset_returns_expected_content_t
     assert "openCompletionReviewDialog" in body
     assert "submitCompletionReview" in body
     assert "status === \"approved\"" in body
+    assert "status === \"transferred\"" in body
+    assert "轉移並結案" in body
     assert "payload.email" not in body
     assert "修改申請已通過並更新資料。" in body
     assert "修改申請已駁回。" in body

@@ -337,12 +337,13 @@ def list_completion_cert_request_documents(
             "c.requesterEmail, c.requesterNote, c.reviewedBy, c.reviewedAt, "
             "c.reviewCompletedNotifiedAt, c.reviewNote, c.createdAt, c.updatedAt "
             "FROM c WHERE c.status = @approvedStatus OR c.status = @rejectedStatus "
-            "OR c.status = @cancelledByIssueStatus "
+            "OR c.status = @transferredStatus OR c.status = @cancelledByIssueStatus "
             "ORDER BY c.reviewedAt DESC"
         )
         parameters = [
             {"name": "@approvedStatus", "value": "approved"},
             {"name": "@rejectedStatus", "value": "rejected"},
+            {"name": "@transferredStatus", "value": "transferred"},
             {"name": "@cancelledByIssueStatus", "value": "cancelledByIssue"},
         ]
     else:

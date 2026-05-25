@@ -88,7 +88,8 @@ def build_volunteer_service_cert_document(
         "serviceHours": normalize_optional_int(event_data.get("completionHours")),
         "serviceStartDate": normalize_optional_string(event_data.get("eventStartDate")),
         "serviceEndDate": normalize_optional_string(event_data.get("eventEndDate")),
-        "downloadEnabled": False,
+        "downloadEnabled": str(completion_cert.get("attendanceStatus", "")).strip()
+        == "checkedIn",
         "certStatus": "notIssued",
         "sourceCreatedAt": completion_cert.get("createdAt"),
         "createdAt": timestamp,

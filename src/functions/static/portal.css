@@ -1324,6 +1324,84 @@ form {
   white-space: pre-wrap;
 }
 
+.completion-review-certificate-type-field {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.completion-review-certificate-type-field legend {
+  margin-bottom: 8px;
+}
+
+.completion-review-certificate-type-options {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.completion-review-certificate-type-option {
+  align-items: center;
+  background: var(--theme-form-shell-bg);
+  border: 1px solid var(--theme-input-border);
+  border-radius: 8px;
+  color: var(--theme-content-text);
+  cursor: pointer;
+  display: flex;
+  min-height: 38px;
+  padding: 7px 10px;
+  user-select: none;
+}
+
+.completion-review-certificate-type-option:has(input:checked) {
+  background: var(--theme-menu-active-bg);
+  border-color: var(--theme-accent);
+}
+
+.completion-review-certificate-type-option:has(input:disabled) {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.completion-review-certificate-type-option input[type="radio"] {
+  appearance: none;
+  background: var(--theme-input-bg);
+  border: 2px solid var(--theme-input-border);
+  border-radius: 50%;
+  flex: 0 0 auto;
+  height: 16px;
+  margin: 0 7px 0 0;
+  width: 16px;
+}
+
+.completion-review-certificate-type-option input[type="radio"]:checked {
+  background:
+    radial-gradient(circle, var(--theme-accent) 0 42%, transparent 45%),
+    var(--theme-input-bg);
+  border-color: var(--theme-accent);
+}
+
+.completion-review-certificate-type-option input[type="radio"]:focus-visible {
+  outline: 3px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.completion-review-certificate-type-option span {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.completion-review-volunteer-fields {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.completion-review-volunteer-fields[hidden] {
+  display: none;
+}
+
 .completion-review-cancel-button {
   margin-left: auto;
 }
@@ -2034,6 +2112,14 @@ form {
 
   .completion-review-cancel-button {
     margin-left: 0;
+  }
+
+  .completion-review-certificate-type-options {
+    grid-template-columns: 1fr;
+  }
+
+  .completion-review-volunteer-fields {
+    grid-template-columns: 1fr;
   }
 }
 
