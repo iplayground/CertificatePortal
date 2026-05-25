@@ -1936,6 +1936,10 @@ form {
   gap: 12px;
 }
 
+.completion-review-event-name-field {
+  grid-column: 1 / -1;
+}
+
 .document-type-fieldset {
   display: grid;
   gap: 12px;

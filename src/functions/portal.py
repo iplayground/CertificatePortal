@@ -833,12 +833,17 @@ def normalize_completion_cert_request_for_api(
     document: dict[str, Any],
     *,
     completion_cert: dict[str, Any] | None = None,
+    event: dict[str, Any] | None = None,
     volunteer_service_defaults: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    event_id = str(document.get("eventId", "")).strip()
+    event_data = event if isinstance(event, dict) else {}
+    event_name = str(event_data.get("name", "")).strip()
     payload = {
         "id": str(document.get("id", "")).strip(),
         "completionCertId": str(document.get("completionCertId", "")).strip(),
-        "eventId": str(document.get("eventId", "")).strip(),
+        "eventId": event_id,
+        "eventName": event_name or event_id,
         "status": str(document.get("status", "")).strip() or "pending",
         "requesterEmail": str(document.get("requesterEmail", "")).strip(),
         "requesterNote": str(document.get("requesterNote", "")).strip(),
@@ -3709,6 +3714,7 @@ def portal_admin_completion_cert_change_requests_list_api(
         normalized_requests = []
         for request_document in request_documents:
             completion_cert = None
+            event_document = None
             volunteer_service_defaults = None
             completion_cert_id = str(
                 request_document.get("completionCertId", "")
@@ -3724,9 +3730,10 @@ def portal_admin_completion_cert_change_requests_list_api(
                 except CompletionStoreOperationError:
                     completion_cert = None
                 try:
+                    event_document = read_portal_event(event_id)
                     volunteer_service_defaults = build_volunteer_service_review_defaults_for_api(
                         completion_cert=completion_cert,
-                        event=read_portal_event(event_id),
+                        event=event_document,
                     )
                 except (EventStoreConfigurationError, EventStoreOperationError):
                     volunteer_service_defaults = None
@@ -3734,6 +3741,7 @@ def portal_admin_completion_cert_change_requests_list_api(
                 normalize_completion_cert_request_for_api(
                     request_document,
                     completion_cert=completion_cert,
+                    event=event_document,
                     volunteer_service_defaults=volunteer_service_defaults,
                 )
             )

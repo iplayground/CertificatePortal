@@ -450,7 +450,7 @@ partition key: /eventId
 
 ### 資料調整申請文件
 
-`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。公開首頁送出修改申請時會寫入此 container；同一張完訓證明使用相同申請備註重送時，會使用穩定 id upsert 同一筆申請文件。管理端審核通過或駁回後會寫入審核欄位，並將對應 `completionCerts.certStatus` 從 `changeRequested` 恢復為 `notIssued`，讓後續發證流程可重新處理權威清單資料；若管理者在審核時轉移為志工服務證明，申請狀態會改為 `transferred`，來源完訓證明狀態會改為 `transferred` 並建立對應 `volunteerServiceCerts` 文件。同一張完訓證明已有 `approved` 或 `rejected` 申請後，不可再由公開首頁建立新的修改申請。
+`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。公開首頁送出修改申請時會寫入此 container；同一張完訓證明使用相同申請備註重送時，會使用穩定 id upsert 同一筆申請文件。管理端審核通過或駁回後會寫入審核欄位，並將對應 `completionCerts.certStatus` 從 `changeRequested` 恢復為 `notIssued`，讓後續發證流程可重新處理權威清單資料；若管理者在審核時轉移為志工服務證明，申請狀態會改為 `transferred`，來源完訓證明狀態會改為 `transferred` 並建立對應 `volunteerServiceCerts` 文件。同一張完訓證明已有 `approved` 或 `rejected` 申請後，不可再由公開首頁建立新的修改申請。管理端修改審核 API 會依 `eventId` 讀取 `events.name` 並以 `eventName` 回傳供審核視窗顯示；`eventName` 不存入 `completionCertRequests`，活動名稱權威仍在 `events` container。
 
 必要欄位：
 

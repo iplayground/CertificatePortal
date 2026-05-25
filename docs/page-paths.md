@@ -514,9 +514,9 @@ Request JSON 範例：
 - 作為 dashboard 右側 iframe 的完訓證明修改申請審核頁
 - 頁面載入後呼叫 `GET /api/v1/admin/completion-cert-change-requests?status=pending` 查詢待審核申請
 - 頁面提供 `待審核` 與 `已完成` 篩選；切到已完成時呼叫 `GET /api/v1/admin/completion-cert-change-requests?status=completed`，列出已通過、已駁回、已轉移與因用戶發證而取消的案例
-- 清單欄位包含申請時間、審核時間、狀態、報名序號、目前姓名、Email、申請內容與操作
+- 待審核清單欄位包含申請時間、報名序號、目前姓名、Email、申請內容與操作；已完成清單欄位包含審核時間、狀態、報名序號、目前姓名、Email、申請內容與操作
 - 待審核每列操作欄提供 `審核` 按鈕，已完成每列操作欄提供 `查看` 按鈕，開啟中央視窗
-- 審核視窗顯示報名序號、KKTIX ID、票種、Email 與使用者填寫的申請內容；Email 位於申請內容上方且不可編輯
+- 審核視窗顯示活動名稱、報名序號、KKTIX ID、票種、Email 與使用者填寫的申請內容；Email 位於申請內容上方且不可編輯；查看已完成審核結果時，會在申請內容上方以唯讀文字顯示申請時間
 - 審核視窗在申請內容下方提供 `證明類型` 切換，可選 `完訓證明` 或 `志工服務證明`；只有該筆完訓資料的 `ticketName` 符合活動 `volunteerServiceTicketNames` 設定時才顯示此切換
 - 選擇志工服務證明時，姓名與公司名仍可編輯，並顯示服務開始日期、服務結束日期與服務時數欄位，主要送出按鈕顯示 `轉移並結案`
 - 志工服務證明的服務開始日期、服務結束日期與服務時數會先依活動 `eventStartDate`、`eventEndDate` 與 `completionHours` 預填；日期在管理端 UI 顯示為 `yyyy / MM / dd`，送出時轉回純日期 `yyyy-MM-dd`
@@ -1150,7 +1150,7 @@ Response JSON example:
 - 查詢完訓證明修改申請，預設查詢 `pending` 狀態；`status=completed` 會回傳 `approved`、`rejected`、`transferred` 與 `cancelledByIssue` 終態案例，依 `reviewedAt` 由新到舊排序
 - `status` 也可指定單一狀態 `pending`、`approved`、`rejected`、`transferred` 或 `cancelledByIssue`
 - 只接受已登入且通過授權的管理者 session，並檢查同源 `Origin` 或 `Referer`
-- 讀取 Cosmos DB `completionCertRequests` container，並依申請內的 `completionCertId` 與 `eventId` 讀取對應 `completionCerts` 權威資料
+- 讀取 Cosmos DB `completionCertRequests` container，並依申請內的 `completionCertId` 與 `eventId` 讀取對應 `completionCerts` 權威資料與活動名稱
 - 回應中的 `volunteerServiceDefaults` 由活動設定產生，包含 `serviceStartDate`、`serviceEndDate`、`serviceHours` 與 `eligible`；`eligible` 會依活動文件類型、活動支援的志工服務票種與完訓資料 `ticketName` 判斷，供管理端決定是否顯示 `證明類型` 切換與志工服務欄位
 
 Request example:
@@ -1168,6 +1168,7 @@ Response JSON example:
       "id": "ccreq_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
       "completionCertId": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
       "eventId": "evt_20260425_ipg",
+      "eventName": "iPlayground 2026",
       "status": "pending",
       "requesterEmail": "ming@example.com",
       "requesterNote": "公司名需要調整",

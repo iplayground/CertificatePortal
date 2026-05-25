@@ -5,6 +5,12 @@ const completionReviewStatusButtons = Array.from(
 const completionReviewTableBody = document.getElementById("completion-review-table-body");
 const completionReviewEmptyRow = document.getElementById("completion-review-empty-row");
 const completionReviewRowTemplate = document.getElementById("completion-review-row-template");
+const completionReviewCompletedOnlyCells = Array.from(
+  document.querySelectorAll("[data-completed-only]")
+);
+const completionReviewPendingOnlyCells = Array.from(
+  document.querySelectorAll("[data-pending-only]")
+);
 const completionReviewDialog = document.getElementById("completion-review-dialog");
 const completionReviewDialogTitle = document.getElementById("completion-review-dialog-title");
 const completionReviewCancelButton = document.getElementById("completion-review-cancel");
@@ -16,9 +22,12 @@ const completionReviewCertificateTypeInputs = Array.from(
   document.querySelectorAll('input[name="completionReviewCertificateType"]')
 );
 const completionReviewRejectButton = document.getElementById("completion-review-reject");
+const completionReviewEventName = document.getElementById("completion-review-event-name");
 const completionReviewNumber = document.getElementById("completion-review-number");
 const completionReviewKktixId = document.getElementById("completion-review-kktix-id");
 const completionReviewTicketName = document.getElementById("completion-review-ticket-name");
+const completionReviewCreatedAtField = document.getElementById("completion-review-created-at-field");
+const completionReviewCreatedAt = document.getElementById("completion-review-created-at");
 const completionReviewRequesterNote = document.getElementById("completion-review-requester-note");
 const completionReviewName = document.getElementById("completion-review-name");
 const completionReviewOrganization = document.getElementById("completion-review-organization");
@@ -142,6 +151,7 @@ function normalizeCompletionReview(rowData) {
       typeof rowData?.completionCertId === "string" ? rowData.completionCertId : "",
     createdAt: typeof rowData?.createdAt === "string" ? rowData.createdAt : "",
     eventId: typeof rowData?.eventId === "string" ? rowData.eventId : "",
+    eventName: typeof rowData?.eventName === "string" ? rowData.eventName : "",
     id: typeof rowData?.id === "string" ? rowData.id : "",
     requesterEmail:
       typeof rowData?.requesterEmail === "string" ? rowData.requesterEmail : "",
@@ -229,12 +239,28 @@ function renderCompletionReviewRows() {
     return;
   }
 
+  const isCompletedReviewList = selectedCompletionReviewStatus === "completed";
+  completionReviewCompletedOnlyCells.forEach((element) => {
+    if (element instanceof HTMLElement || element instanceof HTMLTableColElement) {
+      element.hidden = !isCompletedReviewList;
+    }
+  });
+  completionReviewPendingOnlyCells.forEach((element) => {
+    if (element instanceof HTMLElement || element instanceof HTMLTableColElement) {
+      element.hidden = isCompletedReviewList;
+    }
+  });
+
   completionReviewTableBody
     .querySelectorAll(".completion-review-row")
     .forEach((rowElement) => rowElement.remove());
 
   if (completionReviewEmptyRow instanceof HTMLTableRowElement) {
     completionReviewEmptyRow.hidden = completionReviewRows.length > 0;
+    const emptyCell = completionReviewEmptyRow.querySelector("td");
+    if (emptyCell instanceof HTMLTableCellElement) {
+      emptyCell.colSpan = isCompletedReviewList ? 7 : 6;
+    }
     setCompletionReviewEmptyMessage(
       isLoadingCompletionReviews
         ? loadingCompletionReviewsMessage
@@ -252,6 +278,16 @@ function renderCompletionReviewRows() {
     }
 
     rowElement.dataset.rowId = rowData.id;
+    rowElement.querySelectorAll("[data-completed-only]").forEach((element) => {
+      if (element instanceof HTMLElement) {
+        element.hidden = !isCompletedReviewList;
+      }
+    });
+    rowElement.querySelectorAll("[data-pending-only]").forEach((element) => {
+      if (element instanceof HTMLElement) {
+        element.hidden = isCompletedReviewList;
+      }
+    });
     setTextContent(rowElement, '[data-field="createdAt"]', formatDisplayDateTime(rowData.createdAt));
     setTextContent(rowElement, '[data-field="reviewedAt"]', formatDisplayDateTime(rowData.reviewedAt));
     setTextContent(rowElement, '[data-field="status"]', getCompletionReviewStatusLabel(rowData.status));
@@ -486,9 +522,11 @@ async function openCompletionReviewDialog(rowData) {
   completionReviewPreviousFocus = document.activeElement;
   clearCompletionReviewFeedback();
   setStaticValue(completionReviewDialogTitle, isPendingReview ? "審核修改申請" : "查看審核結果");
+  setStaticValue(completionReviewEventName, rowData.eventName || rowData.eventId);
   setStaticValue(completionReviewNumber, rowData.completionCert.number);
   setStaticValue(completionReviewKktixId, rowData.completionCert.kktixId);
   setStaticValue(completionReviewTicketName, rowData.completionCert.ticketName);
+  setStaticValue(completionReviewCreatedAt, formatDisplayDateTime(rowData.createdAt));
   setStaticValue(completionReviewRequesterNote, rowData.requesterNote);
   setCompletionReviewCertificateType(
     rowData.status === "transferred" ? "volunteerServiceCert" : "completionCert"
@@ -508,6 +546,9 @@ async function openCompletionReviewDialog(rowData) {
   });
   if (completionReviewCompletedSummary instanceof HTMLElement) {
     completionReviewCompletedSummary.hidden = isPendingReview;
+  }
+  if (completionReviewCreatedAtField instanceof HTMLElement) {
+    completionReviewCreatedAtField.hidden = isPendingReview;
   }
   if (completionReviewCancelButton instanceof HTMLButtonElement) {
     completionReviewCancelButton.textContent = isPendingReview ? "取消" : "關閉";

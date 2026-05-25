@@ -35,9 +35,9 @@
         <div class="document-table-wrap">
           <table class="document-list-table completion-review-table" aria-label="完訓證明修改申請清單">
             <colgroup>
-              <col class="completion-review-col-created">
-              <col class="completion-review-col-reviewed">
-              <col class="completion-review-col-status">
+              <col class="completion-review-col-created" data-pending-only>
+              <col class="completion-review-col-reviewed" data-completed-only hidden>
+              <col class="completion-review-col-status" data-completed-only hidden>
               <col class="completion-review-col-number">
               <col class="completion-review-col-name">
               <col class="completion-review-col-email">
@@ -46,9 +46,9 @@
             </colgroup>
             <thead>
               <tr>
-                <th scope="col">申請時間</th>
-                <th scope="col">審核時間</th>
-                <th scope="col">狀態</th>
+                <th scope="col" data-pending-only>申請時間</th>
+                <th scope="col" data-completed-only hidden>審核時間</th>
+                <th scope="col" data-completed-only hidden>狀態</th>
                 <th scope="col">報名序號</th>
                 <th scope="col">目前姓名</th>
                 <th scope="col">Email</th>
@@ -58,15 +58,15 @@
             </thead>
             <tbody id="completion-review-table-body">
               <tr class="document-empty-row" id="completion-review-empty-row">
-                <td colspan="8">修改申請載入中...</td>
+                <td colspan="6">修改申請載入中...</td>
               </tr>
             </tbody>
           </table>
           <template id="completion-review-row-template">
             <tr class="completion-review-row">
-              <td data-field="createdAt"></td>
-              <td data-field="reviewedAt"></td>
-              <td data-field="status"></td>
+              <td data-field="createdAt" data-pending-only></td>
+              <td data-field="reviewedAt" data-completed-only hidden></td>
+              <td data-field="status" data-completed-only hidden></td>
               <td data-field="number"></td>
               <td data-field="name"></td>
               <td data-field="email"></td>
@@ -95,6 +95,10 @@
 
             <form class="event-form" aria-label="審核完訓證明修改申請">
               <div class="completion-edit-identity-row">
+                <div class="field completion-review-event-name-field">
+                  <span class="field-label">活動名稱</span>
+                  <div class="field-static-value" id="completion-review-event-name">-</div>
+                </div>
                 <div class="field completion-edit-number-field">
                   <span class="field-label">報名序號</span>
                   <div class="field-static-value" id="completion-review-number">-</div>
@@ -113,6 +117,11 @@
                 <span class="field-label">Email</span>
                 <input id="completion-review-email" name="completionReviewEmail" type="email" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" readonly>
               </label>
+
+              <div class="field" id="completion-review-created-at-field" hidden>
+                <span class="field-label">申請時間</span>
+                <div class="field-static-value completion-review-note" id="completion-review-created-at">-</div>
+              </div>
 
               <div class="field">
                 <span class="field-label">申請內容</span>

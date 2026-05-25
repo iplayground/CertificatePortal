@@ -2704,6 +2704,7 @@ def test_portal_admin_completion_cert_change_requests_list_api_returns_pending_r
     fake_events_container = FakeEventsContainer()
     fake_events_container.items["evt_1"] = {
         "id": "evt_1",
+        "name": "iPlayground 2026",
         "documentTypes": ["completionCert", "volunteerServiceCert"],
         "eventStartDate": "2026-07-24",
         "eventEndDate": "2026-07-25",
@@ -2768,6 +2769,7 @@ def test_portal_admin_completion_cert_change_requests_list_api_returns_pending_r
     assert response.status_code == 200
     assert '"changeRequests"' in body
     assert '"id":"ccreq_1"' in body
+    assert '"eventName":"iPlayground 2026"' in body
     assert '"requesterNote":"公司名需要調整"' in body
     assert '"completionCert"' in body
     assert '"number":1' in body
@@ -2778,6 +2780,12 @@ def test_portal_admin_completion_cert_change_requests_list_api_returns_pending_r
 def test_portal_admin_completion_cert_change_requests_list_api_returns_completed_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_1"] = {
+        "id": "evt_1",
+        "name": "iPlayground 2026",
+        "documentTypes": ["completionCert"],
+    }
     fake_completion_container = FakeCompletionCertsContainer()
     fake_completion_container.items["ccert_1"] = {
         "id": "ccert_1",
@@ -2868,6 +2876,10 @@ def test_portal_admin_completion_cert_change_requests_list_api_returns_completed
         "updatedAt": "2026-04-30T12:30:00Z",
     }
     monkeypatch.setattr(
+        "src.functions.portal.get_events_container",
+        lambda: fake_events_container,
+    )
+    monkeypatch.setattr(
         "src.functions.portal.get_completion_records_container",
         lambda: fake_completion_container,
     )
@@ -2887,6 +2899,7 @@ def test_portal_admin_completion_cert_change_requests_list_api_returns_completed
 
     assert response.status_code == 200
     assert '"id":"ccreq_1"' in body
+    assert '"eventName":"iPlayground 2026"' in body
     assert '"status":"approved"' in body
     assert '"reviewedAt":"2026-04-30T08:30:00Z"' in body
     assert '"reviewedBy":"admin@iplayground.io"' in body
@@ -4633,16 +4646,27 @@ def test_portal_dashboard_completion_reviews_page_returns_html_when_user_is_auth
     assert 'class="document-list-table completion-review-table"' in body
     assert 'id="completion-review-table-body"' in body
     assert 'id="completion-review-row-template"' in body
-    assert '<th scope="col">申請時間</th>' in body
-    assert '<th scope="col">審核時間</th>' in body
-    assert '<th scope="col">狀態</th>' in body
+    assert '<th scope="col" data-pending-only>申請時間</th>' in body
+    assert '<th scope="col" data-completed-only hidden>審核時間</th>' in body
+    assert '<th scope="col" data-completed-only hidden>狀態</th>' in body
     assert '<th scope="col">報名序號</th>' in body
     assert '<th scope="col">目前姓名</th>' in body
     assert '<th scope="col">Email</th>' in body
     assert '<th scope="col">申請內容</th>' in body
     assert '<th scope="col">操作</th>' in body
+    assert '<td colspan="6">修改申請載入中...</td>' in body
+    assert '<td data-field="createdAt" data-pending-only></td>' in body
+    assert '<td data-field="reviewedAt" data-completed-only hidden></td>' in body
+    assert '<td data-field="status" data-completed-only hidden></td>' in body
     assert "審核修改申請" in body
     assert 'id="completion-review-dialog"' in body
+    assert "活動名稱" in body
+    assert 'id="completion-review-event-name"' in body
+    assert 'id="completion-review-created-at-field" hidden' in body
+    assert 'id="completion-review-created-at"' in body
+    assert body.index('id="completion-review-created-at-field"') < body.index(
+        'id="completion-review-requester-note"'
+    )
     assert 'id="completion-review-requester-note"' in body
     assert 'id="completion-review-name"' in body
     assert 'id="completion-review-organization"' in body
@@ -5790,7 +5814,11 @@ def test_portal_dashboard_completion_reviews_js_asset_returns_expected_content_t
     assert response.status_code == 200
     assert response.mimetype == "application/javascript"
     assert 'document.getElementById("completion-review-refresh")' in body
+    assert 'document.getElementById("completion-review-event-name")' in body
+    assert 'document.getElementById("completion-review-created-at-field")' in body
+    assert 'document.getElementById("completion-review-created-at")' in body
     assert 'document.querySelectorAll(".completion-review-status-option")' in body
+    assert 'document.querySelectorAll("[data-pending-only]")' in body
     assert 'document.getElementById("completion-review-table-body")' in body
     assert 'document.getElementById("completion-review-dialog")' in body
     assert 'document.getElementById("completion-review-completed-summary")' in body
@@ -5818,8 +5846,12 @@ def test_portal_dashboard_completion_reviews_js_asset_returns_expected_content_t
     assert "setDisabledInput(completionReviewNote, !isPendingReview)" in body
     assert 'completionReviewCancelButton.textContent = isPendingReview ? "取消" : "關閉"' in body
     assert "rowData.status === \"pending\" ? \"審核\" : \"查看\"" in body
+    assert "emptyCell.colSpan = isCompletedReviewList ? 7 : 6" in body
     assert "loadCompletionReviews" in body
     assert "openCompletionReviewDialog" in body
+    assert "rowData.eventName || rowData.eventId" in body
+    assert "formatDisplayDateTime(rowData.createdAt)" in body
+    assert "completionReviewCreatedAtField.hidden = isPendingReview" in body
     assert "submitCompletionReview" in body
     assert "status === \"approved\"" in body
     assert "status === \"transferred\"" in body
