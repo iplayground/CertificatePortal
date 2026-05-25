@@ -442,11 +442,15 @@ partition key: /eventId
 | `serviceEndDate` | string \| null | 志工服務結束日期，純日期，格式 `yyyy-MM-dd`；轉移建立時使用來源活動的 `eventEndDate` |
 | `downloadEnabled` | bool | 申請人是否可下載志工服務證明；轉移建立時依來源完訓證明 `attendanceStatus` 判斷，`checkedIn` 為 true，其他狀態為 false，後續由志工服務證明流程或管理端開關維護 |
 | `certStatus` | string | 志工服務證明狀態；轉移建立時為 `notIssued` |
+| `issuedPdfBlobName` | string \| null | `issued-certs` 中的 PDF blob 名稱，格式為 `volunteerServiceCert/{eventId}/{certId}.pdf`；發行前或撤銷後為 null |
+| `issuedAt` | string \| null | 志工服務證明發行時間，UTC ISO 8601；發行前或撤銷後為 null |
 | `sourceCreatedAt` | string \| null | 來源完訓證明建立時間 |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
 | `createdBy` | string | 建立者識別 |
 | `updatedAt` | string | 最後更新時間，UTC ISO 8601 |
 | `updatedBy` | string | 最後更新者識別 |
+
+管理端志工服務證明清單會依發行狀態切換操作：未發行時提供修改與刪除；刪除會移除 `volunteerServiceCerts` 文件，將來源 `completionCerts.certStatus` 從 `transferred` 恢復為 `notIssued`，並清空來源完訓證明的 `transferredToDocumentType`、`transferredToDocumentId`、`transferredAt` 與 `transferredBy`，讓完訓證明重新回到可申請下載流程；不會把志工服務證明中的姓名、單位、時數或日期寫回完訓證明。已發行時提供下載與撤銷；撤銷會將 `certStatus` 改回 `notIssued`，並清空已發行檔案與發行 metadata。
 
 ### 資料調整申請文件
 

@@ -1936,6 +1936,10 @@ form {
   gap: 12px;
 }
 
+.volunteer-service-edit-date-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(72px, 96px);
+}
+
 .completion-review-event-name-field {
   grid-column: 1 / -1;
 }

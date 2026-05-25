@@ -39,10 +39,28 @@ const volunteerServiceTicketOptions = document.getElementById(
 const volunteerServiceTicketSettingsSave = document.getElementById(
   "volunteer-service-ticket-settings-save"
 );
+const volunteerServiceEditDialog = document.getElementById("volunteer-service-edit-dialog");
+const volunteerServiceEditCancel = document.getElementById("volunteer-service-edit-cancel");
+const volunteerServiceEditSubmit = document.getElementById("volunteer-service-edit-submit");
+const volunteerServiceEditName = document.getElementById("volunteer-service-edit-name");
+const volunteerServiceEditOrganization = document.getElementById(
+  "volunteer-service-edit-organization"
+);
+const volunteerServiceEditStartDate = document.getElementById(
+  "volunteer-service-edit-start-date"
+);
+const volunteerServiceEditEndDate = document.getElementById("volunteer-service-edit-end-date");
+const volunteerServiceEditHours = document.getElementById("volunteer-service-edit-hours");
+const volunteerServiceEditFeedback = document.getElementById(
+  "volunteer-service-edit-feedback"
+);
 let volunteerServiceTicketSettingsAvailable = [];
 let volunteerServiceTicketSettingsSupported = [];
+let volunteerServiceRows = [];
 let isSavingVolunteerServiceTicketSettings = false;
 let volunteerServiceTicketSettingsPreviousFocus = null;
+let volunteerServiceEditRowId = "";
+let volunteerServiceEditPreviousFocus = null;
 
 function handlePortalUnauthorizedResponse(response) {
   return window.iPlaygroundPortalAuth?.handleUnauthorizedResponse?.(response) === true;
@@ -111,6 +129,8 @@ function normalizeVolunteerServiceCertRow(rowData) {
       typeof rowData?.serviceOrganization === "string" ? rowData.serviceOrganization : "",
     serviceStartDate:
       typeof rowData?.serviceStartDate === "string" ? rowData.serviceStartDate : "",
+    issuedPdfBlobName:
+      typeof rowData?.issuedPdfBlobName === "string" ? rowData.issuedPdfBlobName : "",
   };
 }
 
@@ -156,7 +176,7 @@ function renderVolunteerServiceEmptyRow(message) {
   const row = document.createElement("tr");
   row.className = "document-empty-row";
   const cell = document.createElement("td");
-  cell.colSpan = 7;
+  cell.colSpan = 8;
   cell.textContent = message;
   row.append(cell);
   volunteerServiceTableBody.replaceChildren(row);
@@ -193,6 +213,105 @@ function showVolunteerServicePageAlert({ dismissDelay = 3000, message, title, to
     title,
     tone,
   });
+}
+
+function normalizeVolunteerServiceDateInput(value) {
+  const normalizedValue = String(value || "").trim();
+  const match = normalizedValue.match(/^(\d{4})\s*(?:\/|-)\s*(\d{1,2})\s*(?:\/|-)\s*(\d{1,2})$/);
+  if (!match) {
+    return normalizedValue;
+  }
+  const [, year, month, day] = match;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+function formatVolunteerServiceDateInput(value) {
+  const normalizedValue = String(value || "").trim();
+  const match = normalizedValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[1]} / ${match[2]} / ${match[3]}` : normalizedValue;
+}
+
+function getVolunteerServiceRow(rowId) {
+  return volunteerServiceRows.find((row) => row.id === rowId) || null;
+}
+
+function updateVolunteerServiceRow(rowData) {
+  const updatedRow = normalizeVolunteerServiceCertRow(rowData);
+  volunteerServiceRows = volunteerServiceRows.map((row) =>
+    row.id === updatedRow.id ? updatedRow : row
+  );
+  return updatedRow;
+}
+
+function removeVolunteerServiceRow(rowId) {
+  volunteerServiceRows = volunteerServiceRows.filter((row) => row.id !== rowId);
+}
+
+function clearVolunteerServiceEditFeedback() {
+  if (volunteerServiceEditFeedback instanceof HTMLElement) {
+    volunteerServiceEditFeedback.textContent = "";
+    volunteerServiceEditFeedback.hidden = true;
+  }
+}
+
+function showVolunteerServiceEditFeedback(message) {
+  if (volunteerServiceEditFeedback instanceof HTMLElement) {
+    volunteerServiceEditFeedback.textContent = message;
+    volunteerServiceEditFeedback.hidden = false;
+  }
+}
+
+function setVolunteerServiceEditInputValue(element, value) {
+  if (element instanceof HTMLInputElement) {
+    element.value = value;
+  }
+}
+
+function getVolunteerServiceEditInputValue(element) {
+  return element instanceof HTMLInputElement ? element.value.trim() : "";
+}
+
+function openVolunteerServiceEditDialog(rowData) {
+  if (!volunteerServiceEditDialog) {
+    return;
+  }
+
+  volunteerServiceEditRowId = rowData.id;
+  volunteerServiceEditPreviousFocus = document.activeElement;
+  clearVolunteerServiceEditFeedback();
+  setVolunteerServiceEditInputValue(volunteerServiceEditName, rowData.name);
+  setVolunteerServiceEditInputValue(
+    volunteerServiceEditOrganization,
+    rowData.serviceOrganization
+  );
+  setVolunteerServiceEditInputValue(
+    volunteerServiceEditStartDate,
+    formatVolunteerServiceDateInput(rowData.serviceStartDate)
+  );
+  setVolunteerServiceEditInputValue(
+    volunteerServiceEditEndDate,
+    formatVolunteerServiceDateInput(rowData.serviceEndDate)
+  );
+  setVolunteerServiceEditInputValue(volunteerServiceEditHours, rowData.serviceHours);
+
+  volunteerServiceEditDialog.hidden = false;
+  document.body.classList.add("has-event-dialog");
+  volunteerServiceEditName?.focus?.();
+}
+
+function closeVolunteerServiceEditDialog() {
+  if (!volunteerServiceEditDialog) {
+    return;
+  }
+
+  volunteerServiceEditDialog.hidden = true;
+  volunteerServiceEditRowId = "";
+  clearVolunteerServiceEditFeedback();
+  document.body.classList.remove("has-event-dialog");
+
+  if (volunteerServiceEditPreviousFocus instanceof HTMLElement) {
+    volunteerServiceEditPreviousFocus.focus();
+  }
 }
 
 function updateVolunteerServiceTicketSettingsSaveState() {
@@ -288,9 +407,264 @@ function renderVolunteerServiceCertRows(rows) {
         row.append(cell);
       });
       row.insertBefore(renderVolunteerServiceDownloadSwitch(rowData), row.children[5] ?? null);
+      row.append(renderVolunteerServiceActions(rowData));
       return row;
     })
   );
+}
+
+function renderVolunteerServiceActions(rowData) {
+  const cell = document.createElement("td");
+  const actionContainer = document.createElement("span");
+  const isIssued = rowData.certStatus === "issued";
+
+  actionContainer.className = "document-row-actions";
+
+  if (isIssued) {
+    const downloadButton = document.createElement("button");
+    downloadButton.className = "secondary-button document-download-button";
+    downloadButton.type = "button";
+    downloadButton.textContent = "下載";
+    downloadButton.addEventListener("click", () => {
+      void downloadVolunteerServiceCert(rowData, downloadButton);
+    });
+
+    const revokeButton = document.createElement("button");
+    revokeButton.className = "secondary-button document-revoke-button";
+    revokeButton.type = "button";
+    revokeButton.textContent = "撤銷";
+    revokeButton.addEventListener("click", () => {
+      void revokeVolunteerServiceCert(rowData, revokeButton);
+    });
+
+    actionContainer.append(downloadButton, revokeButton);
+  } else {
+    const editButton = document.createElement("button");
+    editButton.className = "secondary-button document-edit-button";
+    editButton.type = "button";
+    editButton.textContent = "修改";
+    editButton.addEventListener("click", () => {
+      openVolunteerServiceEditDialog(rowData);
+    });
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "secondary-button document-delete-button";
+    deleteButton.type = "button";
+    deleteButton.textContent = "刪除";
+    deleteButton.addEventListener("click", () => {
+      void deleteVolunteerServiceCert(rowData, deleteButton);
+    });
+
+    actionContainer.append(editButton, deleteButton);
+  }
+
+  cell.append(actionContainer);
+  return cell;
+}
+
+function downloadVolunteerServiceBlob(fileBlob, filename) {
+  const objectUrl = window.URL.createObjectURL(fileBlob);
+  const downloadLink = document.createElement("a");
+  downloadLink.href = objectUrl;
+  downloadLink.download = filename;
+  document.body.append(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(objectUrl);
+  }, 1000);
+}
+
+function resolveVolunteerServiceDownloadFilename(response) {
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/i);
+  return match?.[1] || "volunteer-service-certificate.pdf";
+}
+
+async function downloadVolunteerServiceCert(rowData, button) {
+  if (button instanceof HTMLButtonElement) {
+    button.disabled = true;
+    button.textContent = "下載中...";
+  }
+
+  try {
+    const response = await fetch(
+      `${adminVolunteerServiceCertsApiPath}/${encodeURIComponent(rowData.id)}/download?eventId=${encodeURIComponent(rowData.eventId)}`,
+      {
+        headers: { Accept: "application/pdf, application/json" },
+      }
+    );
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error?.message || "志工服務證明下載失敗。");
+    }
+    downloadVolunteerServiceBlob(
+      await response.blob(),
+      resolveVolunteerServiceDownloadFilename(response)
+    );
+  } catch (error) {
+    showVolunteerServicePageAlert({
+      dismissDelay: 6000,
+      message: error instanceof Error ? error.message : "志工服務證明下載失敗。",
+      title: "下載失敗",
+      tone: "error",
+    });
+  } finally {
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = false;
+      button.textContent = "下載";
+    }
+  }
+}
+
+async function updateVolunteerServiceCert(rowData, updates) {
+  const response = await fetch(
+    `${adminVolunteerServiceCertsApiPath}/${encodeURIComponent(rowData.id)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Portal-CSRF-Token": portalCsrfToken,
+      },
+      body: JSON.stringify({
+        ...updates,
+        eventId: rowData.eventId,
+      }),
+    }
+  );
+  if (handlePortalUnauthorizedResponse(response)) {
+    return null;
+  }
+
+  const responsePayload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(responsePayload?.error?.message || "志工服務證明資料更新失敗。");
+  }
+
+  return updateVolunteerServiceRow(responsePayload.volunteerServiceCert);
+}
+
+async function revokeVolunteerServiceCert(rowData, button) {
+  const rowLabel = rowData.name || rowData.number || "此筆志工服務證明";
+  if (!window.confirm(`確定要撤銷 ${rowLabel} 的志工服務證明發行狀態？`)) {
+    return;
+  }
+
+  if (button instanceof HTMLButtonElement) {
+    button.disabled = true;
+  }
+
+  try {
+    await updateVolunteerServiceCert(rowData, { certStatus: "notIssued" });
+    renderVolunteerServiceCertRows(volunteerServiceRows);
+    showVolunteerServicePageAlert({
+      message: "志工服務證明已撤銷，狀態已退回未發行。",
+      title: "撤銷成功",
+      tone: "success",
+    });
+  } catch (error) {
+    showVolunteerServicePageAlert({
+      dismissDelay: 6000,
+      message: error instanceof Error ? error.message : "志工服務證明撤銷失敗。",
+      title: "撤銷失敗",
+      tone: "error",
+    });
+  } finally {
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = false;
+    }
+  }
+}
+
+async function deleteVolunteerServiceCert(rowData, button) {
+  const rowLabel = rowData.name || rowData.number || "此筆志工服務證明";
+  if (!window.confirm(`確定要從志工服務證明刪除 ${rowLabel}，並恢復來源完訓證明可下載嗎？`)) {
+    return;
+  }
+
+  if (button instanceof HTMLButtonElement) {
+    button.disabled = true;
+  }
+
+  try {
+    const response = await fetch(
+      `${adminVolunteerServiceCertsApiPath}/${encodeURIComponent(rowData.id)}?eventId=${encodeURIComponent(rowData.eventId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          Accept: "application/json",
+          "X-Portal-CSRF-Token": portalCsrfToken,
+        },
+      }
+    );
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+    const responsePayload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(responsePayload?.error?.message || "志工服務證明刪除失敗。");
+    }
+
+    removeVolunteerServiceRow(rowData.id);
+    renderVolunteerServiceCertRows(volunteerServiceRows);
+    showVolunteerServicePageAlert({
+      message: "志工服務證明已刪除，來源完訓證明已恢復可下載流程。",
+      title: "刪除成功",
+      tone: "success",
+    });
+  } catch (error) {
+    showVolunteerServicePageAlert({
+      dismissDelay: 6000,
+      message: error instanceof Error ? error.message : "志工服務證明刪除失敗。",
+      title: "刪除失敗",
+      tone: "error",
+    });
+  } finally {
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = false;
+    }
+  }
+}
+
+async function submitVolunteerServiceEditDialog() {
+  const rowData = getVolunteerServiceRow(volunteerServiceEditRowId);
+  if (!rowData || !(volunteerServiceEditSubmit instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  volunteerServiceEditSubmit.disabled = true;
+  clearVolunteerServiceEditFeedback();
+  try {
+    await updateVolunteerServiceCert(rowData, {
+      name: getVolunteerServiceEditInputValue(volunteerServiceEditName),
+      serviceEndDate: normalizeVolunteerServiceDateInput(
+        getVolunteerServiceEditInputValue(volunteerServiceEditEndDate)
+      ),
+      serviceHours: getVolunteerServiceEditInputValue(volunteerServiceEditHours),
+      serviceOrganization: getVolunteerServiceEditInputValue(
+        volunteerServiceEditOrganization
+      ),
+      serviceStartDate: normalizeVolunteerServiceDateInput(
+        getVolunteerServiceEditInputValue(volunteerServiceEditStartDate)
+      ),
+    });
+    renderVolunteerServiceCertRows(volunteerServiceRows);
+    closeVolunteerServiceEditDialog();
+    showVolunteerServicePageAlert({
+      message: "志工服務證明資料已更新。",
+      title: "更新成功",
+      tone: "success",
+    });
+  } catch (error) {
+    showVolunteerServiceEditFeedback(
+      error instanceof Error ? error.message : "志工服務證明資料更新失敗。"
+    );
+  } finally {
+    volunteerServiceEditSubmit.disabled = false;
+  }
 }
 
 async function updateVolunteerServiceDownloadEnabled(rowData, downloadEnabled, input) {
@@ -370,9 +744,11 @@ async function loadVolunteerServiceCertsForSelectedEvent() {
           normalizeVolunteerServiceCertRow(rowData)
         )
       : [];
+    volunteerServiceRows = rows;
     renderVolunteerServiceTicketSettings(responsePayload.settings);
-    renderVolunteerServiceCertRows(rows);
+    renderVolunteerServiceCertRows(volunteerServiceRows);
   } catch (error) {
+    volunteerServiceRows = [];
     renderVolunteerServiceTicketSettings();
     renderVolunteerServiceEmptyRow(
       error instanceof Error ? error.message : "志工服務證明資料載入失敗。"
@@ -743,9 +1119,22 @@ volunteerServiceTicketSettingsForm?.addEventListener("submit", (event) => {
   void saveVolunteerServiceTicketSettings();
 });
 
+volunteerServiceEditCancel?.addEventListener("click", () => {
+  closeVolunteerServiceEditDialog();
+});
+
+volunteerServiceEditSubmit?.addEventListener("click", () => {
+  void submitVolunteerServiceEditDialog();
+});
+
 document.addEventListener("click", (event) => {
   if (event.target === volunteerServiceTicketSettingsDialog) {
     closeVolunteerServiceTicketSettingsDialog();
+    return;
+  }
+
+  if (event.target === volunteerServiceEditDialog) {
+    closeVolunteerServiceEditDialog();
     return;
   }
 
@@ -764,6 +1153,14 @@ document.addEventListener("keydown", (event) => {
     !volunteerServiceTicketSettingsDialog.hidden
   ) {
     closeVolunteerServiceTicketSettingsDialog();
+  }
+
+  if (
+    event.key === "Escape" &&
+    volunteerServiceEditDialog &&
+    !volunteerServiceEditDialog.hidden
+  ) {
+    closeVolunteerServiceEditDialog();
   }
 });
 

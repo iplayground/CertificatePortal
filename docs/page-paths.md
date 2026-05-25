@@ -924,7 +924,8 @@ Response JSON example:
 
 ### `PUT /api/v1/admin/volunteer-service-certs/{certid}`
 
-- 更新單筆志工服務證明管理欄位；目前支援 `downloadEnabled`
+- 更新單筆志工服務證明管理欄位；未發行時支援 `downloadEnabled`、`name`、`email`、`serviceOrganization`、`serviceStartDate`、`serviceEndDate` 與 `serviceHours`
+- 已發行資料只可送出 `{"eventId":"...","certStatus":"notIssued"}` 撤銷發行狀態；後端會將 `certStatus` 退回 `notIssued`，並清空 `issuedPdfBlobName`、`verificationTokenHash`、`issuedAt` 與證書顯示設定
 - 只接受已登入且通過授權的管理者 session
 - 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
 - `eventId` 必須與該筆文件 partition key 一致
@@ -935,6 +936,11 @@ Request JSON example:
 ```json
 {
   "eventId": "evt_20260425_ipg",
+  "name": "王小明",
+  "serviceOrganization": "iPlayground",
+  "serviceStartDate": "2026-07-24",
+  "serviceEndDate": "2026-07-25",
+  "serviceHours": 16,
   "downloadEnabled": true
 }
 ```
@@ -960,6 +966,37 @@ Response JSON example:
   }
 }
 ```
+
+### `DELETE /api/v1/admin/volunteer-service-certs/{certid}?eventId={eventId}`
+
+- 刪除尚未發行的志工服務證明，並反轉來源完訓證明的轉移狀態
+- 只接受已登入且通過授權的管理者 session
+- 必須是同源管理平台頁面送出的請求，並帶 `X-Portal-CSRF-Token` header
+- 已發行的志工服務證明不可刪除，需先撤銷發行狀態
+- 後端會刪除 `volunteerServiceCerts` 文件，將來源 `completionCerts.certStatus` 改回 `notIssued`，並清空來源完訓證明的 `transferredToDocumentType`、`transferredToDocumentId`、`transferredAt` 與 `transferredBy`；不會把志工服務證明中的姓名、單位、服務日期或時數寫回完訓證明
+
+Response JSON example:
+
+```json
+{
+  "deleted": true,
+  "completionCert": {
+    "id": "ccert_8f2f0a3b-3e4f-5a21-9c0b-1d9f7f8a0001",
+    "eventId": "evt_20260425_ipg",
+    "certStatus": "notIssued",
+    "transferredToDocumentType": null,
+    "transferredToDocumentId": null,
+    "transferredAt": null
+  }
+}
+```
+
+### `GET /api/v1/admin/volunteer-service-certs/{certid}/download?eventId={eventId}`
+
+- 下載已發行的志工服務證明 PDF
+- 只接受已登入且通過授權的管理者 session
+- 只有 `certStatus = issued` 且 `issuedPdfBlobName` 有值時可下載
+- Response 直接串流 `application/pdf`，下載檔名固定為 `volunteer-service-certificate.pdf`
 
 ### `POST /api/v1/admin/volunteer-service-certs/transfers`
 

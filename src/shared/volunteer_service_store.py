@@ -18,6 +18,9 @@ class VolunteerServiceContainer(Protocol):
     def create_item(self, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         raise NotImplementedError
 
+    def delete_item(self, item: str, partition_key: str, **kwargs: Any) -> None:
+        raise NotImplementedError
+
     def read_item(self, item: str, partition_key: str, **kwargs: Any) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -156,7 +159,8 @@ def list_volunteer_service_cert_documents(
                     "c.kktixId, c.badgeName, c.name, c.email, "
                     "c.serviceOrganization, c.serviceHours, c.serviceStartDate, "
                     "c.serviceEndDate, c.downloadEnabled, c.certStatus, "
-                    "c.createdAt FROM c WHERE c.eventId = @eventId "
+                    "c.issuedPdfBlobName, c.issuedAt, c.createdAt FROM c "
+                    "WHERE c.eventId = @eventId "
                     "ORDER BY c.number ASC"
                 ),
                 parameters=[{"name": "@eventId", "value": event_id}],
@@ -215,6 +219,25 @@ def replace_volunteer_service_cert_document(
         if _is_cosmos_forbidden_error(exc):
             raise VolunteerServiceStoreOperationError(
                 "目前身分沒有 Cosmos DB 志工服務證明容器寫入權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Contributor 權限。"
+            ) from exc
+        raise
+
+
+def delete_volunteer_service_cert_document(
+    *,
+    cert_id: str,
+    container: VolunteerServiceContainer,
+    event_id: str,
+) -> None:
+    try:
+        container.delete_item(item=cert_id, partition_key=event_id)
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise VolunteerServiceStoreOperationError("找不到指定志工服務證明資料。") from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise VolunteerServiceStoreOperationError(
+                "目前身分沒有 Cosmos DB 志工服務證明容器刪除權限。請確認本機或服務身分"
                 "已具備 Cosmos DB SQL Data Contributor 權限。"
             ) from exc
         raise

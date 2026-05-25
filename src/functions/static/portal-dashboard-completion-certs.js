@@ -1057,10 +1057,7 @@ function resolveCompletionTransferTargetLabel(documentType) {
 }
 
 function isCompletionCertTransferred(rowData) {
-  return (
-    rowData?.certStatus === "transferred" ||
-    Boolean(String(rowData?.transferredToDocumentType || "").trim())
-  );
+  return rowData?.certStatus === "transferred";
 }
 
 function getVisibleCompletionCertRows() {

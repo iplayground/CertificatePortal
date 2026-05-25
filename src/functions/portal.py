@@ -123,6 +123,7 @@ from src.shared.volunteer_service_store import (
     build_volunteer_service_cert_document,
     build_volunteer_service_cert_id,
     create_volunteer_service_cert_document,
+    delete_volunteer_service_cert_document,
     get_volunteer_service_certs_container,
     list_volunteer_service_cert_documents,
     normalize_optional_int,
@@ -188,6 +189,19 @@ PORTAL_COMPLETION_CERT_ALLOWED_ATTENDANCE_STATUSES = frozenset(
     {"checkedIn", "notCheckedIn"}
 )
 PORTAL_COMPLETION_CERT_REVOKE_FIELDS = frozenset({"certStatus"})
+PORTAL_VOLUNTEER_SERVICE_CERT_MUTABLE_FIELDS = frozenset(
+    {
+        "certStatus",
+        "downloadEnabled",
+        "email",
+        "name",
+        "serviceEndDate",
+        "serviceHours",
+        "serviceOrganization",
+        "serviceStartDate",
+    }
+)
+PORTAL_VOLUNTEER_SERVICE_CERT_REVOKE_FIELDS = frozenset({"certStatus"})
 PORTAL_COMPLETION_CERT_REQUEST_ALLOWED_REVIEW_STATUSES = frozenset(
     {"approved", "rejected", "transferred"}
 )
@@ -877,8 +891,20 @@ def normalize_volunteer_service_cert_for_api(document: dict[str, Any]) -> dict[s
         "serviceEndDate": document.get("serviceEndDate"),
         "downloadEnabled": document.get("downloadEnabled") is True,
         "certStatus": str(document.get("certStatus", "")).strip() or "notIssued",
+        "issuedPdfBlobName": document.get("issuedPdfBlobName"),
+        "issuedAt": document.get("issuedAt"),
         "createdAt": str(document.get("createdAt", "")).strip(),
     }
+
+
+def read_issued_certs_container_name() -> str:
+    container_name = os.getenv("BLOB_ISSUED_CERT_CONTAINER", "").strip()
+    if not container_name:
+        raise BlobStoreConfigurationError(
+            "Blob Storage issued certificate container is not configured. "
+            "Set BLOB_ISSUED_CERT_CONTAINER."
+        )
+    return container_name
 
 
 def build_volunteer_service_defaults_for_api(event: dict[str, Any] | None) -> dict[str, Any]:
@@ -1189,6 +1215,71 @@ def parse_completion_cert_update_payload(
 
     if cert_status == "notIssued" and set(updates) != PORTAL_COMPLETION_CERT_REVOKE_FIELDS:
         return None, "撤銷發行請求不可同時修改其他完訓證明資料。"
+
+    return {"eventId": event_id, "updates": updates}, None
+
+
+def parse_volunteer_service_cert_update_payload(
+    payload: Any,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(payload, dict):
+        return None, "請提供 JSON 物件。"
+
+    event_id = str(payload.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return None, "活動識別碼不合法。"
+
+    updates: dict[str, Any] = {}
+    for field_name in PORTAL_VOLUNTEER_SERVICE_CERT_MUTABLE_FIELDS:
+        if field_name not in payload:
+            continue
+        if field_name == "downloadEnabled":
+            if not isinstance(payload.get(field_name), bool):
+                return None, "請提供可否下載的布林值。"
+            updates[field_name] = payload[field_name]
+        elif field_name == "serviceHours":
+            service_hours = normalize_event_completion_hours(payload.get(field_name))
+            if service_hours is None:
+                return None, "服務時數必須是大於 0 的整數。"
+            updates[field_name] = service_hours
+        elif field_name in {"serviceStartDate", "serviceEndDate"}:
+            field_label = "服務開始日期" if field_name == "serviceStartDate" else "服務結束日期"
+            raw_date_value = "-".join(
+                part.strip()
+                for part in str(payload.get(field_name, ""))
+                .strip()
+                .replace("/", "-")
+                .split("-")
+            )
+            parsed_date, date_error = parse_event_date_payload(
+                raw_date_value,
+                field_label=field_label,
+            )
+            if parsed_date is None:
+                return None, date_error
+            updates[field_name] = parsed_date.isoformat()
+        else:
+            updates[field_name] = str(payload.get(field_name, "")).strip()
+
+    if not updates:
+        return None, "請提供要修改的志工服務證明資料。"
+
+    cert_status = updates.get("certStatus")
+    if cert_status is not None and cert_status != "notIssued":
+        return None, "志工服務證明狀態不合法。"
+
+    if (
+        cert_status == "notIssued"
+        and set(updates) != PORTAL_VOLUNTEER_SERVICE_CERT_REVOKE_FIELDS
+    ):
+        return None, "撤銷發行請求不可同時修改其他志工服務證明資料。"
+
+    if (
+        "serviceStartDate" in updates
+        and "serviceEndDate" in updates
+        and updates["serviceEndDate"] < updates["serviceStartDate"]
+    ):
+        return None, "服務結束日期不可早於服務開始日期。"
 
     return {"eventId": event_id, "updates": updates}, None
 
@@ -2696,12 +2787,15 @@ def portal_admin_volunteer_service_certs_list_api(
 @blueprint.function_name(name="portal_admin_volunteer_service_cert_update_api")
 @blueprint.route(
     route="api/v1/admin/volunteer-service-certs/{certid}",
-    methods=["PUT"],
+    methods=["PUT", "DELETE"],
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 def portal_admin_volunteer_service_cert_update_api(
     req: func.HttpRequest,
 ) -> func.HttpResponse:
+    if req.method == "DELETE":
+        return portal_admin_volunteer_service_cert_delete_api(req)
+
     access = require_portal_api_access(req)
     if isinstance(access, func.HttpResponse):
         return access
@@ -2719,24 +2813,15 @@ def portal_admin_volunteer_service_cert_update_api(
     except ValueError:
         return build_portal_api_error_response(400, "invalid_json", "請提供合法 JSON。")
 
-    if not isinstance(payload, dict):
+    update_payload, payload_error = parse_volunteer_service_cert_update_payload(payload)
+    if update_payload is None:
         return build_portal_api_error_response(
             400,
             "invalid_volunteer_service_cert_payload",
-            "請提供 JSON 物件。",
+            payload_error or "志工服務證明資料格式不合法。",
         )
 
-    event_id = str(payload.get("eventId", "")).strip()
-    if not event_id.startswith("evt_"):
-        return build_portal_api_error_response(400, "invalid_event_id", "活動識別碼不合法。")
-
-    if "downloadEnabled" not in payload or not isinstance(payload.get("downloadEnabled"), bool):
-        return build_portal_api_error_response(
-            400,
-            "invalid_download_enabled",
-            "請提供可否下載的布林值。",
-        )
-
+    event_id = update_payload["eventId"]
     try:
         container = get_volunteer_service_certs_container()
         document = read_volunteer_service_cert_document(
@@ -2744,14 +2829,46 @@ def portal_admin_volunteer_service_cert_update_api(
             container=container,
             event_id=event_id,
         )
+        updates = update_payload["updates"]
+        current_cert_status = str(document.get("certStatus", "")).strip() or "notIssued"
+        if (
+            current_cert_status == "issued"
+            and set(updates) != PORTAL_VOLUNTEER_SERVICE_CERT_REVOKE_FIELDS
+        ):
+            return build_portal_api_error_response(
+                409,
+                "volunteer_service_cert_already_issued",
+                "已發行的志工服務證明不可修改資料，請先撤銷發行狀態。",
+            )
+
+        if (
+            updates.get("certStatus") == "notIssued"
+            and current_cert_status != "issued"
+        ):
+            return build_portal_api_error_response(
+                409,
+                "volunteer_service_cert_revoke_not_allowed",
+                "只有已發行的志工服務證明可撤銷發行狀態。",
+            )
+
+        updated_document = {
+            **document,
+            **updates,
+            "updatedAt": utc_now_iso(),
+            "updatedBy": get_portal_api_actor(access),
+        }
+        if updates.get("certStatus") == "notIssued":
+            updated_document["issuedPdfBlobName"] = None
+            updated_document["verificationTokenHash"] = None
+            updated_document["issuedAt"] = None
+            updated_document["certificateDisplayName"] = None
+            updated_document["certificateDisplayOrganization"] = None
+            updated_document["certificateNameDisplay"] = None
+            updated_document["certificateLocale"] = None
+
         saved_document = replace_volunteer_service_cert_document(
             container=container,
-            document={
-                **document,
-                "downloadEnabled": payload["downloadEnabled"],
-                "updatedAt": utc_now_iso(),
-                "updatedBy": get_portal_api_actor(access),
-            },
+            document=updated_document,
         )
     except VolunteerServiceStoreConfigurationError as exc:
         return build_portal_api_error_response(
@@ -2771,6 +2888,210 @@ def portal_admin_volunteer_service_cert_update_api(
     return build_portal_api_json_response(
         {"volunteerServiceCert": normalize_volunteer_service_cert_for_api(saved_document)},
         status_code=200,
+    )
+
+
+def portal_admin_volunteer_service_cert_delete_api(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    access = require_portal_api_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    cert_id = str(req.route_params.get("certid", "")).strip()
+    if not cert_id.startswith("vscert_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_volunteer_service_cert_id",
+            "志工服務證明資料識別碼不合法。",
+        )
+
+    event_id = str(req.params.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return build_portal_api_error_response(400, "invalid_event_id", "活動識別碼不合法。")
+
+    try:
+        volunteer_container = get_volunteer_service_certs_container()
+        volunteer_document = read_volunteer_service_cert_document(
+            cert_id=cert_id,
+            container=volunteer_container,
+            event_id=event_id,
+        )
+        current_cert_status = str(volunteer_document.get("certStatus", "")).strip() or "notIssued"
+        if current_cert_status == "issued":
+            return build_portal_api_error_response(
+                409,
+                "volunteer_service_cert_already_issued",
+                "已發行的志工服務證明不可刪除，請先撤銷發行狀態。",
+            )
+
+        completion_cert_id = str(
+            volunteer_document.get("sourceCompletionCertId", "")
+        ).strip()
+        if not completion_cert_id.startswith("ccert_"):
+            return build_portal_api_error_response(
+                409,
+                "volunteer_service_source_missing",
+                "志工服務證明缺少來源完訓證明資料，無法反轉轉移。",
+            )
+
+        completion_container = get_completion_records_container()
+        completion_document = read_completion_cert_document(
+            cert_id=completion_cert_id,
+            container=completion_container,
+            event_id=event_id,
+        )
+        transferred_document_id = str(
+            completion_document.get("transferredToDocumentId", "")
+        ).strip()
+        if transferred_document_id and transferred_document_id != cert_id:
+            return build_portal_api_error_response(
+                409,
+                "volunteer_service_source_mismatch",
+                "來源完訓證明資料與此志工服務證明不一致。",
+            )
+
+        restored_completion_document = {
+            **completion_document,
+            "certStatus": "notIssued",
+            "transferredToDocumentType": None,
+            "transferredToDocumentId": None,
+            "transferredAt": None,
+            "transferredBy": None,
+        }
+        saved_completion_document = replace_completion_cert_document(
+            container=completion_container,
+            document=restored_completion_document,
+        )
+        delete_volunteer_service_cert_document(
+            cert_id=cert_id,
+            container=volunteer_container,
+            event_id=event_id,
+        )
+    except CompletionStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_not_configured",
+            str(exc),
+        )
+    except VolunteerServiceStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "volunteer_service_store_not_configured",
+            str(exc),
+        )
+    except CompletionStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定完訓證明資料。" else 503,
+            "completion_cert_not_found"
+            if str(exc) == "找不到指定完訓證明資料。"
+            else "completion_store_unavailable",
+            str(exc),
+        )
+    except VolunteerServiceStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定志工服務證明資料。" else 503,
+            "volunteer_service_cert_not_found"
+            if str(exc) == "找不到指定志工服務證明資料。"
+            else "volunteer_service_store_unavailable",
+            str(exc),
+        )
+
+    return build_portal_api_json_response(
+        {
+            "completionCert": normalize_completion_cert_for_api(saved_completion_document),
+            "deleted": True,
+        },
+        status_code=200,
+    )
+
+
+@blueprint.function_name(name="portal_admin_volunteer_service_cert_download_api")
+@blueprint.route(
+    route="api/v1/admin/volunteer-service-certs/{certid}/download",
+    methods=["GET"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_volunteer_service_cert_download_api(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    access = require_portal_api_read_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    cert_id = str(req.route_params.get("certid", "")).strip()
+    if not cert_id.startswith("vscert_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_volunteer_service_cert_id",
+            "志工服務證明資料識別碼不合法。",
+        )
+
+    event_id = str(req.params.get("eventId", "")).strip()
+    if not event_id.startswith("evt_"):
+        return build_portal_api_error_response(400, "invalid_event_id", "活動識別碼不合法。")
+
+    try:
+        document = read_volunteer_service_cert_document(
+            cert_id=cert_id,
+            container=get_volunteer_service_certs_container(),
+            event_id=event_id,
+        )
+        if str(document.get("certStatus", "")).strip() != "issued":
+            return build_portal_api_error_response(
+                409,
+                "volunteer_service_cert_not_issued",
+                "志工服務證明尚未發行，無法下載。",
+            )
+
+        blob_name = str(document.get("issuedPdfBlobName") or "").strip()
+        if not blob_name:
+            return build_portal_api_error_response(
+                409,
+                "volunteer_service_cert_file_missing",
+                "志工服務證明缺少已發行檔案，無法下載。",
+            )
+
+        pdf_bytes = download_blob_bytes(
+            container_name=read_issued_certs_container_name(),
+            blob_name=blob_name,
+        )
+    except VolunteerServiceStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "volunteer_service_store_not_configured",
+            str(exc),
+        )
+    except VolunteerServiceStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定志工服務證明資料。" else 503,
+            "volunteer_service_cert_not_found"
+            if str(exc) == "找不到指定志工服務證明資料。"
+            else "volunteer_service_store_unavailable",
+            str(exc),
+        )
+    except BlobStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "blob_store_not_configured",
+            str(exc),
+        )
+    except BlobStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "blob_store_unavailable",
+            str(exc),
+        )
+
+    return func.HttpResponse(
+        pdf_bytes,
+        status_code=200,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="volunteer-service-certificate.pdf"'
+            )
+        },
     )
 
 

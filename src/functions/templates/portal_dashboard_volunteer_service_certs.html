@@ -46,16 +46,66 @@
                   <th scope="col">服務時數</th>
                   <th scope="col">可否下載</th>
                   <th scope="col">狀態</th>
+                  <th scope="col">操作</th>
                 </tr>
               </thead>
               <tbody>
                 <tr class="document-empty-row">
-                  <td colspan="7">志工服務證明資料尚未建立。</td>
+                  <td colspan="8">志工服務證明資料尚未建立。</td>
                 </tr>
               </tbody>
             </table>
           </div>
         </section>
+
+        <div
+          class="event-dialog-backdrop"
+          id="volunteer-service-edit-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="volunteer-service-edit-title"
+          hidden
+        >
+          <section class="event-dialog">
+            <header class="event-dialog-header">
+              <h2 id="volunteer-service-edit-title">修改志工服務證明資料</h2>
+            </header>
+
+            <form class="event-form" aria-label="修改志工服務證明資料">
+              <label class="field">
+                <span class="field-label">姓名</span>
+                <input id="volunteer-service-edit-name" name="volunteerServiceName" type="text" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other">
+              </label>
+
+              <label class="field">
+                <span class="field-label">所屬單位</span>
+                <input id="volunteer-service-edit-organization" name="volunteerServiceOrganization" type="text" autocomplete="organization">
+              </label>
+
+              <div class="completion-edit-identity-row volunteer-service-edit-date-row">
+                <label class="field">
+                  <span class="field-label">開始日期</span>
+                  <input id="volunteer-service-edit-start-date" name="volunteerServiceStartDate" class="form-datetime-input" type="text" inputmode="numeric" placeholder="---- / -- / --" autocomplete="off">
+                </label>
+                <label class="field">
+                  <span class="field-label">結束日期</span>
+                  <input id="volunteer-service-edit-end-date" name="volunteerServiceEndDate" class="form-datetime-input" type="text" inputmode="numeric" placeholder="---- / -- / --" autocomplete="off">
+                </label>
+                <label class="field">
+                  <span class="field-label">服務時數</span>
+                  <input id="volunteer-service-edit-hours" name="volunteerServiceHours" class="form-datetime-input document-type-hours-input" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+              </div>
+
+              <div class="form-feedback is-error" id="volunteer-service-edit-feedback" role="status" aria-live="polite" hidden></div>
+
+              <div class="event-form-actions">
+                <button class="secondary-button event-cancel-button" id="volunteer-service-edit-cancel" type="button">取消</button>
+                <button class="submit-button" id="volunteer-service-edit-submit" type="button">儲存修改</button>
+              </div>
+            </form>
+          </section>
+        </div>
 
         <div
           class="event-dialog-backdrop"

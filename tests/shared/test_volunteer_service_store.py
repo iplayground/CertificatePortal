@@ -6,6 +6,7 @@ from src.shared.volunteer_service_store import (
     build_volunteer_service_cert_document,
     build_volunteer_service_cert_id,
     create_volunteer_service_cert_document,
+    delete_volunteer_service_cert_document,
     list_volunteer_service_cert_documents,
 )
 
@@ -107,6 +108,11 @@ class FakeVolunteerContainer:
         assert document["eventId"] == partition_key
         return document
 
+    def delete_item(self, item: str, partition_key: str) -> None:
+        document = self.items[item]
+        assert document["eventId"] == partition_key
+        del self.items[item]
+
     def query_items(
         self,
         query: str,
@@ -170,8 +176,26 @@ def test_list_volunteer_service_cert_documents_queries_event_partition() -> None
     assert documents == [{"id": "vscert_1", "eventId": "evt_1", "number": 1}]
     assert "c.serviceOrganization" in container.last_query
     assert "c.downloadEnabled" in container.last_query
+    assert "c.issuedPdfBlobName" in container.last_query
     assert "c.ticketName" not in container.last_query
     assert "WHERE c.eventId = @eventId" in container.last_query
     assert container.last_parameters == [{"name": "@eventId", "value": "evt_1"}]
     assert container.last_partition_key == "evt_1"
     assert container.last_enable_cross_partition_query is False
+
+
+def test_delete_volunteer_service_cert_document_deletes_event_partition_item() -> None:
+    container = FakeVolunteerContainer()
+    container.items["vscert_1"] = {
+        "id": "vscert_1",
+        "eventId": "evt_1",
+        "number": 1,
+    }
+
+    delete_volunteer_service_cert_document(
+        cert_id="vscert_1",
+        container=container,
+        event_id="evt_1",
+    )
+
+    assert container.items == {}

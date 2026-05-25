@@ -976,11 +976,15 @@ def build_public_certificate_application_type_options(
     *,
     cert_document: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    cert_status = str(cert_document.get("certStatus", "")).strip()
     transferred_to_document_type = str(
         cert_document.get("transferredToDocumentType", "")
     ).strip()
     disabled_application_types = set()
-    if transferred_to_document_type == "volunteerServiceCert":
+    if (
+        cert_status == "transferred"
+        and transferred_to_document_type == "volunteerServiceCert"
+    ):
         disabled_application_types.add("completionCert")
 
     return [
