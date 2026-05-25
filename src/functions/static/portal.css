@@ -342,6 +342,36 @@ form {
   color: var(--theme-feedback-success-color);
 }
 
+.document-settings-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.document-settings-panel[hidden] {
+  display: none;
+}
+
+.document-settings-form,
+.document-checkbox-list {
+  display: grid;
+  gap: 12px;
+}
+
+.document-settings-summary {
+  margin: 0;
+  color: var(--theme-content-muted);
+  line-height: 1.7;
+}
+
+.volunteer-service-settings-action {
+  flex: 0 0 auto;
+}
+
+.volunteer-service-list-view {
+  display: grid;
+  gap: 20px;
+}
+
 .panel.admin-workspace {
   width: min(100%, 1320px);
   min-height: 0;

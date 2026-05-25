@@ -761,6 +761,9 @@ def normalize_portal_event_for_api(event: dict[str, Any]) -> dict[str, Any]:
         "name": str(event.get("name", "")).strip(),
         "status": event_status if event_status in PORTAL_ALLOWED_EVENT_STATUSES else "unlisted",
         "documentTypes": normalize_portal_event_document_types(event.get("documentTypes")),
+        "volunteerServiceTicketNames": normalize_portal_volunteer_service_ticket_names(
+            event.get("volunteerServiceTicketNames")
+        ),
         "eventStartDate": str(event.get("eventStartDate") or "").strip(),
         "eventEndDate": str(event.get("eventEndDate") or "").strip(),
         "completionHours": normalize_event_completion_hours(
@@ -770,6 +773,31 @@ def normalize_portal_event_for_api(event: dict[str, Any]) -> dict[str, Any]:
             event.get("completionCertDownloadStartsAt") or ""
         ).strip(),
     }
+
+
+def normalize_portal_volunteer_service_ticket_names(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    ticket_names: list[str] = []
+    for item in value:
+        ticket_name = str(item).strip()
+        if ticket_name and ticket_name not in ticket_names:
+            ticket_names.append(ticket_name)
+    return ticket_names
+
+
+def resolve_completion_ticket_names_for_event(event_id: str) -> list[str]:
+    documents = list_completion_cert_documents(
+        container=get_completion_records_container(),
+        event_id=event_id,
+    )
+    ticket_names = {
+        str(document.get("ticketName", "")).strip()
+        for document in documents
+        if str(document.get("ticketName", "")).strip()
+    }
+    return sorted(ticket_names)
 
 
 def normalize_completion_cert_for_api(document: dict[str, Any]) -> dict[str, Any]:
@@ -1730,6 +1758,15 @@ def parse_create_event_payload(payload: Any) -> tuple[dict[str, Any] | None, str
     elif completion_starts_at and parse_utc_iso_datetime(completion_starts_at) is None:
         return None, "完訓證明開放下載時間必須使用 UTC ISO 8601 格式。"
 
+    volunteer_service_ticket_names: list[str] | None = None
+    if "volunteerServiceTicketNames" in payload:
+        ticket_names_payload = payload.get("volunteerServiceTicketNames")
+        if not isinstance(ticket_names_payload, list):
+            return None, "志工服務證明票種格式不合法。"
+        volunteer_service_ticket_names = normalize_portal_volunteer_service_ticket_names(
+            ticket_names_payload
+        )
+
     return (
         {
             "name": name,
@@ -1739,6 +1776,7 @@ def parse_create_event_payload(payload: Any) -> tuple[dict[str, Any] | None, str
             "eventEndDate": event_end_date.isoformat(),
             "completionHours": completion_hours,
             "completionCertDownloadStartsAt": completion_starts_at or None,
+            "volunteerServiceTicketNames": volunteer_service_ticket_names,
         },
         None,
     )
@@ -2037,6 +2075,7 @@ def portal_admin_events_create_api(req: func.HttpRequest) -> func.HttpResponse:
         completion_cert_download_starts_at=event_payload[
             "completionCertDownloadStartsAt"
         ],
+        volunteer_service_ticket_names=event_payload["volunteerServiceTicketNames"] or [],
     )
     try:
         event, was_created = create_event_document(
@@ -2131,6 +2170,7 @@ def portal_admin_events_update_api(req: func.HttpRequest) -> func.HttpResponse:
             event_start_date=event_payload["eventStartDate"],
             name=event_payload["name"],
             status=event_payload["status"],
+            volunteer_service_ticket_names=event_payload["volunteerServiceTicketNames"],
         )
     except EventStoreConfigurationError as exc:
         return build_portal_api_error_response(
@@ -2146,6 +2186,87 @@ def portal_admin_events_update_api(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     return build_portal_api_json_response({"event": event}, status_code=200)
+
+
+@blueprint.function_name(name="portal_admin_event_volunteer_service_ticket_names_update_api")
+@blueprint.route(
+    route="api/v1/admin/events/{event_id}/volunteer-service-ticket-names",
+    methods=["PUT"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def portal_admin_event_volunteer_service_ticket_names_update_api(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    access = require_portal_api_access(req)
+    if isinstance(access, func.HttpResponse):
+        return access
+
+    event_id = str(req.route_params.get("event_id", "")).strip()
+    if not event_id.startswith("evt_"):
+        return build_portal_api_error_response(
+            400,
+            "invalid_event_id",
+            "活動識別碼不合法。",
+        )
+
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return build_portal_api_error_response(400, "invalid_json", "請提供合法 JSON。")
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("ticketNames"), list):
+        return build_portal_api_error_response(
+            400,
+            "invalid_volunteer_service_ticket_names",
+            "請提供志工服務證明支援票種清單。",
+        )
+
+    ticket_names = normalize_portal_volunteer_service_ticket_names(
+        payload.get("ticketNames")
+    )
+
+    try:
+        container = get_events_container()
+        event = container.read_item(item=event_id, partition_key=event_id)
+        if "volunteerServiceCert" not in normalize_portal_event_document_types(
+            event.get("documentTypes")
+        ):
+            return build_portal_api_error_response(
+                400,
+                "volunteer_service_cert_not_enabled",
+                "此活動未開放志工服務證明。",
+            )
+        updated_event = {
+            **event,
+            "volunteerServiceTicketNames": ticket_names,
+            "updatedAt": utc_now_iso(),
+            "updatedBy": get_portal_api_actor(access),
+        }
+        saved_event = container.replace_item(item=event_id, body=updated_event)
+    except EventStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "event_store_not_configured",
+            str(exc),
+        )
+    except Exception as exc:
+        status_code = getattr(exc, "status_code", None)
+        if status_code == 404:
+            return build_portal_api_error_response(
+                404,
+                "event_not_found",
+                "找不到指定活動。",
+            )
+        return build_portal_api_error_response(
+            503,
+            "event_store_unavailable",
+            "活動資料暫時無法更新。",
+        )
+
+    return build_portal_api_json_response(
+        {"event": normalize_portal_event_for_api(saved_event)},
+        status_code=200,
+    )
 
 
 def portal_admin_events_list_api(req: func.HttpRequest) -> func.HttpResponse:
@@ -2426,9 +2547,37 @@ def portal_admin_volunteer_service_certs_list_api(
         )
 
     try:
+        event = read_portal_event(event_id)
+        available_ticket_names = resolve_completion_ticket_names_for_event(event_id)
         documents = list_volunteer_service_cert_documents(
             container=get_volunteer_service_certs_container(),
             event_id=event_id,
+        )
+    except CompletionStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_not_configured",
+            str(exc),
+        )
+    except CompletionStoreOperationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "completion_store_unavailable",
+            str(exc),
+        )
+    except EventStoreConfigurationError as exc:
+        return build_portal_api_error_response(
+            503,
+            "event_store_not_configured",
+            str(exc),
+        )
+    except EventStoreOperationError as exc:
+        return build_portal_api_error_response(
+            404 if str(exc) == "找不到指定活動。" else 503,
+            "event_not_found"
+            if str(exc) == "找不到指定活動。"
+            else "event_store_unavailable",
+            str(exc),
         )
     except VolunteerServiceStoreConfigurationError as exc:
         return build_portal_api_error_response(
@@ -2445,6 +2594,12 @@ def portal_admin_volunteer_service_certs_list_api(
 
     return build_portal_api_json_response(
         {
+            "settings": {
+                "availableTicketNames": available_ticket_names,
+                "supportedTicketNames": normalize_portal_volunteer_service_ticket_names(
+                    event.get("volunteerServiceTicketNames")
+                ),
+            },
             "volunteerServiceCerts": [
                 normalize_volunteer_service_cert_for_api(document)
                 for document in documents

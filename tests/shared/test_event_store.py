@@ -154,6 +154,7 @@ def test_build_event_document_uses_utc_timestamps_and_actor() -> None:
         "eventEndDate": "2026-07-25",
         "completionHours": 16,
         "completionCertDownloadStartsAt": "2026-04-27T12:38:00Z",
+        "volunteerServiceTicketNames": [],
         "metrics": {
             "completionCert": {
                 "totalCount": 0,
@@ -303,7 +304,8 @@ def test_list_event_documents_queries_events_by_created_at_desc() -> None:
     assert container.query == (
         "SELECT c.id, c.name, c.status, c.documentTypes, "
         "c.eventStartDate, c.eventEndDate, c.completionHours, "
-        "c.completionCertDownloadStartsAt, c.metrics "
+        "c.completionCertDownloadStartsAt, "
+        "c.volunteerServiceTicketNames, c.metrics "
         "FROM c ORDER BY c.createdAt DESC"
     )
     assert container.enable_cross_partition_query is True

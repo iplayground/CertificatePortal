@@ -8,6 +8,9 @@ const pageLoadingOverlay = document.getElementById("page-loading-overlay");
 const certificateOptionsView = document.getElementById("certificate-options-view");
 const certificateOptionsTitle = document.getElementById("certificate-options-title");
 const certificateOptionsSubtitle = document.getElementById("certificate-options-subtitle");
+const certificateApplicationTypeField = document.getElementById("certificate-application-type-field");
+const certificateApplicationTypeLabel = document.getElementById("certificate-application-type-label");
+const certificateApplicationTypeOptions = document.getElementById("certificate-application-type-options");
 const certificateNameOptionsLabel = document.getElementById("certificate-name-options-label");
 const certificateNameOptions = document.getElementById("certificate-name-options");
 const certificateCompanyOptionField = document.getElementById("certificate-company-option-field");
@@ -156,6 +159,7 @@ let isTaxReceiptDownloadInProgress = false;
 let certificateOptionsChangeRequestStatus = null;
 let currentCertificateDocument = null;
 let currentTaxReceiptDocument = null;
+let currentCertificateApplicationType = "completionCert";
 let certificatePreviewImageRequestId = 0;
 let eventNameLoadingAnimationTimer = null;
 let eventNameLoadingAnimationBaseText = "";
@@ -587,6 +591,100 @@ function normalizeLookupDocumentText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeCertificateApplicationTypes(documentData) {
+  return normalizeCertificateApplicationTypeOptions(documentData).map((option) => option.type);
+}
+
+function normalizeCertificateApplicationTypeOptions(documentData) {
+  const supportedTypes = new Set(["completionCert", "volunteerServiceCert"]);
+  const rawOptions = Array.isArray(documentData?.certificateApplicationTypeOptions)
+    ? documentData.certificateApplicationTypeOptions
+    : null;
+  const rawTypes = rawOptions === null && Array.isArray(documentData?.certificateApplicationTypes)
+    ? documentData.certificateApplicationTypes
+    : ["completionCert"];
+  const normalizedOptions = [];
+  const seenTypes = new Set();
+
+  (rawOptions ?? rawTypes).forEach((item) => {
+    const type = rawOptions === null
+      ? String(item ?? "").trim()
+      : String(item?.type ?? "").trim();
+    if (!supportedTypes.has(type) || seenTypes.has(type)) {
+      return;
+    }
+
+    seenTypes.add(type);
+    normalizedOptions.push({
+      disabled: rawOptions !== null && item?.disabled === true,
+      type,
+    });
+  });
+
+  return normalizedOptions.length > 0
+    ? normalizedOptions
+    : [{ disabled: false, type: "completionCert" }];
+}
+
+function resolveCertificateApplicationTypeLabel(applicationType) {
+  const labelByType = {
+    completionCert: resolveCertificateOptionCopy(
+      "certificate_application_type_completion_cert",
+      "完訓證明",
+    ),
+    volunteerServiceCert: resolveCertificateOptionCopy(
+      "certificate_application_type_volunteer_service_cert",
+      "志工服務證明",
+    ),
+  };
+
+  return labelByType[applicationType] || applicationType;
+}
+
+function renderCertificateApplicationTypeOptions(documentData) {
+  if (!certificateApplicationTypeField || !certificateApplicationTypeOptions) {
+    return;
+  }
+
+  const applicationTypeOptions = normalizeCertificateApplicationTypeOptions(documentData);
+  const enabledTypes = applicationTypeOptions
+    .filter((option) => !option.disabled)
+    .map((option) => option.type);
+  const allTypes = applicationTypeOptions.map((option) => option.type);
+  const selectedType = enabledTypes.includes(currentCertificateApplicationType)
+    ? currentCertificateApplicationType
+    : (enabledTypes[0] ?? allTypes[0]);
+  currentCertificateApplicationType = selectedType;
+  certificateApplicationTypeField.hidden = applicationTypeOptions.length < 2;
+  certificateApplicationTypeOptions.replaceChildren();
+
+  applicationTypeOptions.forEach((applicationTypeOption) => {
+    const applicationType = applicationTypeOption.type;
+    const option = document.createElement("label");
+    option.className = "certificate-choice-option";
+
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "certificateApplicationType";
+    input.value = applicationType;
+    input.checked = applicationType === selectedType;
+    input.dataset.optionDisabled = applicationTypeOption.disabled ? "true" : "false";
+    input.disabled = applicationTypeOption.disabled;
+    input.addEventListener("change", () => {
+      if (input.disabled) {
+        return;
+      }
+      currentCertificateApplicationType = applicationType;
+    });
+
+    const label = document.createElement("span");
+    label.textContent = resolveCertificateApplicationTypeLabel(applicationType);
+
+    option.append(input, label);
+    certificateApplicationTypeOptions.append(option);
+  });
+}
+
 function buildCertificateNameChoices(documentData) {
   const name = normalizeLookupDocumentText(documentData?.name);
   const badgeName = normalizeLookupDocumentText(documentData?.badgeName);
@@ -638,6 +736,11 @@ function renderCertificateNameOptions(documentData) {
 }
 
 function setCertificateDisplayControlsLocked(isLocked) {
+  certificateApplicationTypeOptions
+    ?.querySelectorAll('input[name="certificateApplicationType"]')
+    .forEach((input) => {
+      input.disabled = isLocked || input.dataset.optionDisabled === "true";
+    });
   certificateNameOptions
     ?.querySelectorAll('input[name="certificateNameDisplay"]')
     .forEach((input) => {
@@ -1159,6 +1262,8 @@ function showCertificateOptions(documentData) {
   currentTaxReceiptDocument = null;
   clearCertificateOptionsChangeRequestStatus();
   resetCertificateIssuePreview();
+  currentCertificateApplicationType = normalizeCertificateApplicationTypes(documentData)[0];
+  renderCertificateApplicationTypeOptions(documentData);
   renderCertificateNameOptions(documentData);
   renderCertificateCompanyOption(documentData);
   renderCertificateOptionsStatus(documentData);
@@ -1469,6 +1574,7 @@ function showDocumentLookupForm() {
   taxReceiptResultsToggleSelectionAction = null;
   currentCertificateDocument = null;
   currentTaxReceiptDocument = null;
+  currentCertificateApplicationType = "completionCert";
   clearTaxReceiptDownloadFeedback();
   updateTaxReceiptDownloadActionState();
   clearCertificateOptionsChangeRequestStatus();
@@ -1672,7 +1778,7 @@ function clearLookupFeedback() {
 }
 
 function shouldShowCertificateOptions(documentData) {
-  return ["notIssued", "changeRequested", "issued"].includes(documentData?.certStatus);
+  return ["notIssued", "changeRequested", "issued", "transferred"].includes(documentData?.certStatus);
 }
 
 function readClientLookupBlockedUntil() {
@@ -1929,6 +2035,7 @@ function applyHomePageLocale(nextLocale) {
     generatedAtHelpImage.alt = homePageCopy.generated_at_help_image_alt;
   }
   updateTextContent(previewAction, homePageCopy.preview_action_label);
+  updateTextContent(certificateApplicationTypeLabel, homePageCopy.certificate_application_type_label);
   updateTextContent(certificateOptionsTitle, homePageCopy.certificate_options_title);
   updateTextContent(certificateOptionsSubtitle, homePageCopy.certificate_options_subtitle);
   updateTextContent(certificateNameOptionsLabel, homePageCopy.certificate_name_options_label);
@@ -1990,6 +2097,7 @@ function applyHomePageLocale(nextLocale) {
   }
 
   if (currentCertificateDocument && !certificateOptionsView.hidden) {
+    renderCertificateApplicationTypeOptions(currentCertificateDocument);
     renderCertificateCompanyOption(currentCertificateDocument);
     renderCertificateOptionsStatus(currentCertificateDocument);
   }

@@ -18,40 +18,86 @@
             <h1 class="embedded-page-title">志工服務證明</h1>
             <p class="embedded-page-lead">管理活動志工服務證明資料與後續文件發行流程。</p>
           </div>
+          <button
+            class="submit-button event-create-button volunteer-service-settings-action"
+            id="volunteer-service-settings-open"
+            type="button"
+            aria-controls="volunteer-service-ticket-settings-dialog"
+          >票種設定</button>
         </div>
 
-        <form class="document-filter-form" aria-label="志工服務證明資料篩選">
-          <div class="field">
-            <span class="field-label" id="volunteer-service-event-filter-label">活動</span>
-            <input id="volunteer-service-event-filter" name="eventName" type="hidden" value="">
-            <div class="field-static-value" id="volunteer-service-event-filter-value">尚無活動資料</div>
-          </div>
-        </form>
+        <section class="volunteer-service-list-view" id="volunteer-service-list-view">
+          <form class="document-filter-form" aria-label="志工服務證明資料篩選">
+            <div class="field">
+              <span class="field-label" id="volunteer-service-event-filter-label">活動</span>
+              <input id="volunteer-service-event-filter" name="eventName" type="hidden" value="">
+              <div class="field-static-value" id="volunteer-service-event-filter-value">尚無活動資料</div>
+            </div>
+          </form>
 
-        <div class="document-table-wrap">
-          <table class="document-list-table" aria-label="志工服務證明清單">
-            <thead>
-              <tr>
-                <th scope="col">姓名</th>
-                <th scope="col">所屬單位</th>
-                <th scope="col">開始日期</th>
-                <th scope="col">結束日期</th>
-                <th scope="col">服務時數</th>
-                <th scope="col">可否下載</th>
-                <th scope="col">狀態</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr class="document-empty-row">
-                <td colspan="7">志工服務證明資料尚未建立。</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="document-table-wrap">
+            <table class="document-list-table" aria-label="志工服務證明清單">
+              <thead>
+                <tr>
+                  <th scope="col">姓名</th>
+                  <th scope="col">所屬單位</th>
+                  <th scope="col">開始日期</th>
+                  <th scope="col">結束日期</th>
+                  <th scope="col">服務時數</th>
+                  <th scope="col">可否下載</th>
+                  <th scope="col">狀態</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="document-empty-row">
+                  <td colspan="7">志工服務證明資料尚未建立。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div
+          class="event-dialog-backdrop"
+          id="volunteer-service-ticket-settings-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="volunteer-service-ticket-settings-title"
+          hidden
+        >
+          <section class="event-dialog">
+            <header class="event-dialog-header">
+              <h2 id="volunteer-service-ticket-settings-title">支援志工服務證明的票種</h2>
+            </header>
+
+            <form id="volunteer-service-ticket-settings-form" class="document-settings-form" aria-label="支援志工服務證明的票種">
+              <p class="document-settings-summary">選擇此活動中可由申請人產出志工服務證明的票種。</p>
+              <div
+                id="volunteer-service-ticket-options"
+                class="document-checkbox-list"
+                aria-live="polite"
+              >請先選擇活動。</div>
+              <div class="event-form-actions">
+                <button
+                  class="secondary-button event-cancel-button"
+                  id="volunteer-service-ticket-settings-cancel"
+                  type="button"
+                >取消</button>
+                <button
+                  class="submit-button"
+                  id="volunteer-service-ticket-settings-save"
+                  type="submit"
+                  disabled
+                >儲存票種設定</button>
+              </div>
+            </form>
+          </section>
         </div>
       </section>
     </main>
 
     <script src="{{asset_portal_event_cache_js_url}}"></script>
+    <script src="{{asset_page_alert_js_url}}"></script>
     <script src="{{asset_portal_dashboard_volunteer_service_certs_js_url}}"></script>
   </body>
 </html>

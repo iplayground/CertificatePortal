@@ -23,6 +23,7 @@ from src.functions.portal import (
     portal_admin_completion_cert_change_requests_review_api,
     portal_admin_events_create_api,
     portal_admin_events_update_api,
+    portal_admin_event_volunteer_service_ticket_names_update_api,
     portal_admin_volunteer_service_certs_list_api,
     portal_admin_volunteer_service_cert_update_api,
     portal_admin_volunteer_service_cert_transfer_api,
@@ -1520,6 +1521,27 @@ def test_portal_admin_volunteer_service_cert_transfer_api_rejects_issued_cert(
 def test_portal_admin_volunteer_service_certs_list_api_returns_event_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_1"] = {
+        "id": "evt_1",
+        "name": "Volunteer Event",
+        "status": "open",
+        "documentTypes": ["completionCert", "volunteerServiceCert"],
+        "volunteerServiceTicketNames": ["志工票"],
+    }
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "ticketName": "一般票",
+    }
+    fake_completion_container.items["ccert_2"] = {
+        "id": "ccert_2",
+        "eventId": "evt_1",
+        "number": 2,
+        "ticketName": "志工票",
+    }
     fake_volunteer_container = FakeVolunteerServiceCertsContainer()
     fake_volunteer_container.items["vscert_2"] = {
         "id": "vscert_2",
@@ -1554,6 +1576,14 @@ def test_portal_admin_volunteer_service_certs_list_api_returns_event_rows(
         "createdAt": "2026-05-25T03:00:00Z",
     }
     monkeypatch.setattr(
+        "src.functions.portal.get_events_container",
+        lambda: fake_events_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
         "src.functions.portal.get_volunteer_service_certs_container",
         lambda: fake_volunteer_container,
     )
@@ -1580,7 +1610,42 @@ def test_portal_admin_volunteer_service_certs_list_api_returns_event_rows(
     assert '"serviceStartDate":"2026-07-24"' in body
     assert '"serviceEndDate":"2026-07-25"' in body
     assert '"downloadEnabled":true' in body
+    assert '"settings":{"availableTicketNames":["一般票","志工票"],"supportedTicketNames":["志工票"]}' in body
     assert '"ticketName"' not in body
+
+
+def test_portal_admin_event_volunteer_service_ticket_names_update_api_updates_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_events_container = FakeEventsContainer()
+    fake_events_container.items["evt_1"] = {
+        "id": "evt_1",
+        "name": "Volunteer Event",
+        "status": "open",
+        "documentTypes": ["completionCert", "volunteerServiceCert"],
+        "volunteerServiceTicketNames": [],
+        "createdAt": "2026-04-27T12:00:00Z",
+        "createdBy": "creator@example.com",
+    }
+    monkeypatch.setattr("src.functions.portal.get_events_container", lambda: fake_events_container)
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps({"ticketNames": ["志工票", "志工票", "工作人員"]}).encode("utf-8"),
+        method="PUT",
+        route_params={"event_id": "evt_1"},
+        url="http://localhost:7075/api/v1/admin/events/evt_1/volunteer-service-ticket-names",
+    )
+
+    response = portal_admin_event_volunteer_service_ticket_names_update_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert '"volunteerServiceTicketNames":["志工票","工作人員"]' in body
+    assert fake_events_container.items["evt_1"]["volunteerServiceTicketNames"] == [
+        "志工票",
+        "工作人員",
+    ]
+    assert fake_events_container.items["evt_1"]["updatedBy"] == "admin@iplayground.io"
 
 
 def test_portal_admin_volunteer_service_cert_update_api_updates_download_enabled(
@@ -4576,6 +4641,26 @@ def test_portal_dashboard_volunteer_service_certs_page_returns_html_when_user_is
     assert "志工服務證明" in body
     assert "志工服務證明清單" in body
     assert "管理活動志工服務證明資料與後續文件發行流程。" in body
+    assert 'id="volunteer-service-settings-open"' in body
+    assert 'class="submit-button event-create-button volunteer-service-settings-action"' in body
+    assert "票種設定" in body
+    assert 'class="volunteer-service-list-view" id="volunteer-service-list-view"' in body
+    assert 'id="volunteer-service-ticket-settings-dialog"' in body
+    assert 'class="event-dialog-backdrop"' in body
+    assert 'role="dialog"' in body
+    assert 'aria-modal="true"' in body
+    assert "支援志工服務證明的票種" in body
+    assert "選擇此活動中可由申請人產出志工服務證明的票種。" in body
+    assert 'id="volunteer-service-ticket-settings-form"' in body
+    assert 'id="volunteer-service-ticket-options"' in body
+    assert 'id="volunteer-service-ticket-settings-cancel"' in body
+    assert 'id="volunteer-service-ticket-settings-save"' in body
+    assert 'id="volunteer-service-ticket-settings-feedback"' not in body
+    assert "取消" in body
+    assert "儲存票種設定" in body
+    assert body.index('id="volunteer-service-settings-open"') < body.index(
+        'id="volunteer-service-list-view"'
+    )
     assert 'class="document-filter-form"' in body
     assert 'aria-label="志工服務證明資料篩選"' in body
     assert 'id="volunteer-service-event-filter"' in body
@@ -4595,8 +4680,12 @@ def test_portal_dashboard_volunteer_service_certs_page_returns_html_when_user_is
     assert 'colspan="7"' in body
     assert "志工服務證明資料尚未建立。" in body
     assert 'src="/assets/portal-event-cache.js?v=' in body
+    assert 'src="/assets/page-alert.js?v=' in body
     assert 'src="/assets/portal-dashboard-volunteer-service-certs.js?v=' in body
     assert body.index('src="/assets/portal-event-cache.js?v=') < body.index(
+        'src="/assets/page-alert.js?v='
+    )
+    assert body.index('src="/assets/page-alert.js?v=') < body.index(
         'src="/assets/portal-dashboard-volunteer-service-certs.js?v='
     )
 
@@ -4766,6 +4855,11 @@ def test_portal_css_asset_returns_expected_content_type() -> None:
     assert ".metric-panel" in body
     assert ".metric-section-heading" in body
     assert ".event-management-card" in body
+    assert ".document-settings-panel" in body
+    assert ".document-checkbox-list" in body
+    assert ".document-settings-summary" in body
+    assert ".volunteer-service-settings-action" in body
+    assert ".volunteer-service-list-view" in body
     assert ".custom-select-trigger" in theme_body
     assert ".custom-select.is-single-option .custom-select-trigger" in theme_body
     assert ".custom-select-menu" in theme_body
@@ -5772,6 +5866,17 @@ def test_portal_dashboard_volunteer_service_certs_js_asset_returns_expected_cont
     assert "renderVolunteerServiceEventSelect" in body
     assert "loadVolunteerServiceEvents" in body
     assert "loadVolunteerServiceCertsForSelectedEvent" in body
+    assert "openVolunteerServiceTicketSettingsDialog" in body
+    assert "closeVolunteerServiceTicketSettingsDialog" in body
+    assert "renderVolunteerServiceTicketSettings" in body
+    assert "saveVolunteerServiceTicketSettings" in body
+    assert "showVolunteerServicePageAlert" in body
+    assert "window.iPlaygroundPageAlert?.show" in body
+    assert "票種設定已儲存。" in body
+    assert "設定儲存失敗" in body
+    assert "volunteer-service-ticket-settings-feedback" not in body
+    assert "volunteer-service-ticket-names" in body
+    assert "volunteerServiceTicketName" in body
     assert "volunteerServiceCerts" in body
     assert "serviceOrganization" in body
     assert "downloadEnabled" in body

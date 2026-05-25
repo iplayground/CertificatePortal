@@ -100,7 +100,14 @@ PUBLIC_LOOKUP_STORE_EXECUTOR = ThreadPoolExecutor(
 )
 
 HOME_PAGE_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "home.html"
-HOME_ALLOWED_DOCUMENT_TYPES = frozenset({"completionCert", "taxReceipt"})
+HOME_LOOKUP_ALLOWED_DOCUMENT_TYPES = frozenset({"completionCert", "taxReceipt"})
+HOME_PARTICIPATION_SOURCE_DOCUMENT_TYPES = frozenset(
+    {"completionCert", "volunteerServiceCert"}
+)
+HOME_CERTIFICATE_APPLICATION_TYPES = ("completionCert", "volunteerServiceCert")
+HOME_PUBLIC_EVENT_DOCUMENT_TYPES = HOME_PARTICIPATION_SOURCE_DOCUMENT_TYPES | frozenset(
+    {"taxReceipt"}
+)
 COMPLETION_CERT_SEAL_BLOB_NAME = "completion-cert/organization-seal.png"
 COMPLETION_CERT_PREVIEW_BLOB_PREFIX = "completion-cert/previews/png"
 COMPLETION_CERT_PREVIEW_IDS = frozenset(
@@ -281,7 +288,7 @@ def parse_document_lookup_payload(req: func.HttpRequest) -> dict[str, Any] | Non
         return None
 
     document_type = str(payload.get("documentType", "")).strip()
-    if document_type not in HOME_ALLOWED_DOCUMENT_TYPES:
+    if document_type not in HOME_LOOKUP_ALLOWED_DOCUMENT_TYPES:
         return None
 
     event_id = str(payload.get("eventId", "")).strip()
@@ -928,6 +935,62 @@ def is_completion_cert_lookup_available(payload: dict[str, Any]) -> bool | None:
     return parsed_download_starts_at <= datetime.now(timezone.utc)
 
 
+def resolve_public_certificate_application_types(
+    *,
+    cert_document: dict[str, Any],
+    event_document: dict[str, Any],
+) -> list[str]:
+    document_types = event_document.get("documentTypes")
+    if not isinstance(document_types, list):
+        return ["completionCert"]
+
+    application_types: list[str] = []
+    if "completionCert" in document_types:
+        application_types.append("completionCert")
+
+    supported_ticket_names = event_document.get("volunteerServiceTicketNames")
+    cert_ticket_name = str(cert_document.get("ticketName", "")).strip()
+    if (
+        "volunteerServiceCert" in document_types
+        and cert_ticket_name
+        and isinstance(supported_ticket_names, list)
+        and cert_ticket_name
+        in {
+            str(ticket_name).strip()
+            for ticket_name in supported_ticket_names
+            if str(ticket_name).strip()
+        }
+    ):
+        application_types.append("volunteerServiceCert")
+
+    return [
+        application_type
+        for application_type in HOME_CERTIFICATE_APPLICATION_TYPES
+        if application_type in application_types
+    ] or ["completionCert"]
+
+
+def build_public_certificate_application_type_options(
+    application_types: list[str],
+    *,
+    cert_document: dict[str, Any],
+) -> list[dict[str, Any]]:
+    transferred_to_document_type = str(
+        cert_document.get("transferredToDocumentType", "")
+    ).strip()
+    disabled_application_types = set()
+    if transferred_to_document_type == "volunteerServiceCert":
+        disabled_application_types.add("completionCert")
+
+    return [
+        {
+            "type": application_type,
+            "disabled": application_type in disabled_application_types,
+        }
+        for application_type in application_types
+    ]
+
+
 def build_document_lookup_not_found_response(req: func.HttpRequest) -> func.HttpResponse:
     return build_home_api_error_response(
         404,
@@ -1307,8 +1370,10 @@ def normalize_home_event_document_types(document_types: Any) -> list[str]:
     normalized_document_types: list[str] = []
     for document_type in document_types:
         normalized_document_type = str(document_type).strip()
+        if normalized_document_type in HOME_PARTICIPATION_SOURCE_DOCUMENT_TYPES:
+            normalized_document_type = "completionCert"
         if (
-            normalized_document_type in HOME_ALLOWED_DOCUMENT_TYPES
+            normalized_document_type in HOME_PUBLIC_EVENT_DOCUMENT_TYPES
             and normalized_document_type not in normalized_document_types
         ):
             normalized_document_types.append(normalized_document_type)
@@ -1389,7 +1454,7 @@ def build_home_document_type_options_html(
     available_document_types: list[str] | None,
 ) -> str:
     options = [
-        ("completionCert", "document_type_completion_cert"),
+        ("completionCert", "document_type_participation_cert"),
         ("taxReceipt", "document_type_tax_receipt"),
     ]
     options_html: list[str] = []
@@ -1419,7 +1484,7 @@ def resolve_home_document_type_label(document_type: str, copy: dict[str, str]) -
     if document_type == "taxReceipt":
         return copy["document_type_tax_receipt"]
 
-    return copy["document_type_completion_cert"]
+    return copy["document_type_participation_cert"]
 
 
 def _build_absolute_url(req: func.HttpRequest, path: str) -> str:
@@ -1651,9 +1716,22 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     completed_change_request = read_public_document_completed_change_request(document)
+    event_document = read_public_event_document(
+        container=get_events_container(),
+        event_id=payload["eventId"],
+    )
+    certificate_application_types = resolve_public_certificate_application_types(
+        cert_document=document,
+        event_document=event_document or {},
+    )
     document_payload = {
         "status": "found",
         "documentType": payload["documentType"],
+        "certificateApplicationTypes": certificate_application_types,
+        "certificateApplicationTypeOptions": build_public_certificate_application_type_options(
+            certificate_application_types,
+            cert_document=document,
+        ),
         "badgeName": str(document.get("badgeName", "")).strip(),
         "canRequestChanges": can_public_document_request_changes(document),
         "certStatus": str(document.get("certStatus", "")).strip()

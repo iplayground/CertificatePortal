@@ -22,6 +22,27 @@ const portalCsrfToken = document.body?.dataset.portalCsrfToken || "";
 const emptyVolunteerServiceEventName = "尚無活動資料";
 let volunteerServiceEventsSignature = "";
 const volunteerServiceTableBody = document.querySelector(".document-list-table tbody");
+const volunteerServiceListView = document.getElementById("volunteer-service-list-view");
+const volunteerServiceSettingsOpen = document.getElementById("volunteer-service-settings-open");
+const volunteerServiceTicketSettingsDialog = document.getElementById(
+  "volunteer-service-ticket-settings-dialog"
+);
+const volunteerServiceTicketSettingsForm = document.getElementById(
+  "volunteer-service-ticket-settings-form"
+);
+const volunteerServiceTicketSettingsCancel = document.getElementById(
+  "volunteer-service-ticket-settings-cancel"
+);
+const volunteerServiceTicketOptions = document.getElementById(
+  "volunteer-service-ticket-options"
+);
+const volunteerServiceTicketSettingsSave = document.getElementById(
+  "volunteer-service-ticket-settings-save"
+);
+let volunteerServiceTicketSettingsAvailable = [];
+let volunteerServiceTicketSettingsSupported = [];
+let isSavingVolunteerServiceTicketSettings = false;
+let volunteerServiceTicketSettingsPreviousFocus = null;
 
 function handlePortalUnauthorizedResponse(response) {
   return window.iPlaygroundPortalAuth?.handleUnauthorizedResponse?.(response) === true;
@@ -29,8 +50,14 @@ function handlePortalUnauthorizedResponse(response) {
 
 function normalizeVolunteerServiceEvent(eventData) {
   return {
+    documentTypes: Array.isArray(eventData?.documentTypes)
+      ? eventData.documentTypes.filter((documentType) => typeof documentType === "string")
+      : [],
     id: typeof eventData?.id === "string" ? eventData.id : "",
     name: typeof eventData?.name === "string" ? eventData.name.trim() : "",
+    volunteerServiceTicketNames: Array.isArray(eventData?.volunteerServiceTicketNames)
+      ? eventData.volunteerServiceTicketNames.filter((ticketName) => typeof ticketName === "string")
+      : [],
   };
 }
 
@@ -133,6 +160,102 @@ function renderVolunteerServiceEmptyRow(message) {
   cell.textContent = message;
   row.append(cell);
   volunteerServiceTableBody.replaceChildren(row);
+}
+
+function openVolunteerServiceTicketSettingsDialog() {
+  if (!volunteerServiceTicketSettingsDialog) {
+    return;
+  }
+
+  volunteerServiceTicketSettingsPreviousFocus = document.activeElement;
+  volunteerServiceTicketSettingsDialog.hidden = false;
+  document.body.classList.add("has-event-dialog");
+  volunteerServiceTicketSettingsCancel?.focus?.();
+}
+
+function closeVolunteerServiceTicketSettingsDialog() {
+  if (!volunteerServiceTicketSettingsDialog) {
+    return;
+  }
+
+  volunteerServiceTicketSettingsDialog.hidden = true;
+  document.body.classList.remove("has-event-dialog");
+
+  if (volunteerServiceTicketSettingsPreviousFocus instanceof HTMLElement) {
+    volunteerServiceTicketSettingsPreviousFocus.focus();
+  }
+}
+
+function showVolunteerServicePageAlert({ dismissDelay = 3000, message, title, tone }) {
+  window.iPlaygroundPageAlert?.show({
+    dismissDelay,
+    message,
+    title,
+    tone,
+  });
+}
+
+function updateVolunteerServiceTicketSettingsSaveState() {
+  if (!(volunteerServiceTicketSettingsSave instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  volunteerServiceTicketSettingsSave.disabled =
+    isSavingVolunteerServiceTicketSettings ||
+    volunteerServiceTicketSettingsAvailable.length === 0 ||
+    !(
+      volunteerServiceEventFilter instanceof HTMLInputElement &&
+      volunteerServiceEventFilter.value.trim()
+    );
+}
+
+function getSelectedVolunteerServiceTicketNames() {
+  return Array.from(
+    volunteerServiceTicketOptions?.querySelectorAll('input[name="volunteerServiceTicketName"]:checked') ?? []
+  )
+    .map((input) => input.value.trim())
+    .filter(Boolean);
+}
+
+function renderVolunteerServiceTicketSettings(settings = {}) {
+  if (!volunteerServiceTicketOptions) {
+    return;
+  }
+
+  const availableTicketNames = Array.isArray(settings.availableTicketNames)
+    ? settings.availableTicketNames.map((item) => String(item).trim()).filter(Boolean)
+    : [];
+  const supportedTicketNames = Array.isArray(settings.supportedTicketNames)
+    ? settings.supportedTicketNames.map((item) => String(item).trim()).filter(Boolean)
+    : [];
+  volunteerServiceTicketSettingsAvailable = Array.from(new Set(availableTicketNames));
+  volunteerServiceTicketSettingsSupported = Array.from(new Set(supportedTicketNames));
+  volunteerServiceTicketOptions.replaceChildren();
+
+  if (volunteerServiceTicketSettingsAvailable.length === 0) {
+    volunteerServiceTicketOptions.textContent = "此活動尚無可設定的票種。";
+    updateVolunteerServiceTicketSettingsSaveState();
+    return;
+  }
+
+  volunteerServiceTicketSettingsAvailable.forEach((ticketName) => {
+    const label = document.createElement("label");
+    label.className = "form-checkbox-option volunteer-service-ticket-option";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.name = "volunteerServiceTicketName";
+    input.value = ticketName;
+    input.checked = volunteerServiceTicketSettingsSupported.includes(ticketName);
+
+    const text = document.createElement("span");
+    text.textContent = ticketName;
+
+    label.append(input, text);
+    volunteerServiceTicketOptions.append(label);
+  });
+
+  updateVolunteerServiceTicketSettingsSaveState();
 }
 
 function renderVolunteerServiceCertRows(rows) {
@@ -247,11 +370,75 @@ async function loadVolunteerServiceCertsForSelectedEvent() {
           normalizeVolunteerServiceCertRow(rowData)
         )
       : [];
+    renderVolunteerServiceTicketSettings(responsePayload.settings);
     renderVolunteerServiceCertRows(rows);
   } catch (error) {
+    renderVolunteerServiceTicketSettings();
     renderVolunteerServiceEmptyRow(
       error instanceof Error ? error.message : "志工服務證明資料載入失敗。"
     );
+  }
+}
+
+async function saveVolunteerServiceTicketSettings() {
+  const eventId =
+    volunteerServiceEventFilter instanceof HTMLInputElement
+      ? volunteerServiceEventFilter.value.trim()
+      : "";
+  if (!eventId || isSavingVolunteerServiceTicketSettings) {
+    return;
+  }
+
+  isSavingVolunteerServiceTicketSettings = true;
+  updateVolunteerServiceTicketSettingsSaveState();
+  try {
+    const response = await fetch(
+      `${adminEventsApiPath}/${encodeURIComponent(eventId)}/volunteer-service-ticket-names`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Portal-CSRF-Token": portalCsrfToken,
+        },
+        body: JSON.stringify({
+          ticketNames: getSelectedVolunteerServiceTicketNames(),
+        }),
+      }
+    );
+    if (handlePortalUnauthorizedResponse(response)) {
+      return;
+    }
+
+    const responsePayload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(responsePayload?.error?.message || "票種設定儲存失敗。");
+    }
+
+    const savedTicketNames = Array.isArray(responsePayload?.event?.volunteerServiceTicketNames)
+      ? responsePayload.event.volunteerServiceTicketNames
+      : getSelectedVolunteerServiceTicketNames();
+    renderVolunteerServiceTicketSettings({
+      availableTicketNames: volunteerServiceTicketSettingsAvailable,
+      supportedTicketNames: savedTicketNames,
+    });
+    closeVolunteerServiceTicketSettingsDialog();
+    window.requestAnimationFrame(() => {
+      showVolunteerServicePageAlert({
+        message: "票種設定已儲存。",
+        title: "設定已儲存",
+        tone: "success",
+      });
+    });
+  } catch (error) {
+    showVolunteerServicePageAlert({
+      dismissDelay: 6000,
+      message: error instanceof Error ? error.message : "票種設定儲存失敗。",
+      title: "設定儲存失敗",
+      tone: "error",
+    });
+  } finally {
+    isSavingVolunteerServiceTicketSettings = false;
+    updateVolunteerServiceTicketSettingsSaveState();
   }
 }
 
@@ -543,12 +730,40 @@ volunteerServiceFilterForm?.addEventListener("submit", (event) => {
   event.preventDefault();
 });
 
+volunteerServiceSettingsOpen?.addEventListener("click", () => {
+  openVolunteerServiceTicketSettingsDialog();
+});
+
+volunteerServiceTicketSettingsCancel?.addEventListener("click", () => {
+  closeVolunteerServiceTicketSettingsDialog();
+});
+
+volunteerServiceTicketSettingsForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void saveVolunteerServiceTicketSettings();
+});
+
 document.addEventListener("click", (event) => {
+  if (event.target === volunteerServiceTicketSettingsDialog) {
+    closeVolunteerServiceTicketSettingsDialog();
+    return;
+  }
+
   if (
     volunteerServiceEventFilterSelect instanceof HTMLElement &&
     !volunteerServiceEventFilterSelect.contains(event.target)
   ) {
     closeVolunteerServiceEventFilterSelect();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (
+    event.key === "Escape" &&
+    volunteerServiceTicketSettingsDialog &&
+    !volunteerServiceTicketSettingsDialog.hidden
+  ) {
+    closeVolunteerServiceTicketSettingsDialog();
   }
 });
 

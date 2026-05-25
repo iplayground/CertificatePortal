@@ -45,6 +45,7 @@ partition key: /id
 | `eventEndDate` | string | 活動結束日期，純日期，格式 `yyyy-MM-dd` |
 | `completionHours` | int | 完訓總時數，單位小時，由管理者填入，不由系統計算 |
 | `completionCertDownloadStartsAt` | string \| null | 完訓證明開放下載時間，UTC ISO 8601；未開放完訓證明時為 null |
+| `volunteerServiceTicketNames` | string[] | 此活動支援由申請人產出志工服務證明的票種；未設定時為空陣列 |
 | `metrics.completionCert.totalCount` | int | 此活動完訓名單總人數，包含尚未申請完訓證明的人數 |
 | `metrics.completionCert.downloadableCount` | int | 此活動已可下載的完訓證明數量 |
 | `metrics.completionCert.downloadCount` | int | 此活動完訓證明累計下載人次；同一位重複下載會重複計次 |
@@ -70,6 +71,8 @@ taxReceipt
 ```
 
 `documentTypes` 可為空陣列。空陣列表示活動本身可公開顯示，但目前沒有可申請文件；公開首頁應顯示該活動，並在文件類型欄位提示尚無可申請文件，而不是隱藏活動。
+
+`volunteerServiceTicketNames` 只影響首頁「參與證明」流程中哪些票種可產出志工服務證明；票種值來自完訓名單匯入後的 `completionCerts.ticketName`，不應由公開端任意宣告。公開查詢成功時，後端只會依活動文件與完訓名單權威資料回傳可申請種類代碼與可選狀態，不會輸出 `volunteerServiceTicketNames` 或使用者的 `ticketName`。若來源完訓資料已轉移為志工服務證明，公開查詢回應應保留志工服務證明選項，並將完訓證明選項標記為不可選。
 
 `eventStartDate` 與 `eventEndDate` 是活動日曆日期，不是時間點；後端與前端都不得把它們轉成 UTC datetime。UI 可顯示為 `yyyy / MM / dd`，但 API 與 DB 權威值固定使用 `yyyy-MM-dd`。`completionHours` 單位為小時，由管理者填入，不從活動日期自動計算。
 
@@ -133,7 +136,8 @@ def build_event_id(idempotency_key: str, *, actor: str) -> str:
 ```sql
 SELECT c.id, c.name, c.status, c.documentTypes,
        c.eventStartDate, c.eventEndDate, c.completionHours,
-       c.completionCertDownloadStartsAt, c.metrics
+       c.completionCertDownloadStartsAt,
+       c.volunteerServiceTicketNames, c.metrics
 FROM c
 ORDER BY c.createdAt DESC
 ```
@@ -151,7 +155,7 @@ WHERE c.status = 'open'
 ORDER BY c.createdAt DESC
 ```
 
-公開首頁只讀取狀態為 `open` 的活動，並只投影會眾選擇活動與文件類型所需欄位；`documentTypes` 可以是空陣列，代表首頁應顯示活動但提示尚無可申請文件。不得在公開頁面輸出管理端稽核欄位或其他不必要的個人資料。
+公開首頁只讀取狀態為 `open` 的活動，並只投影會眾選擇活動與文件類型所需欄位；`documentTypes` 可以是空陣列，代表首頁應顯示活動但提示尚無可申請文件。公開首頁會把 `completionCert` 與 `volunteerServiceCert` 正規化為同一個 `completionCert` 選項，畫面顯示為「參與證明」。不得在公開活動清單輸出管理端稽核欄位、`volunteerServiceTicketNames` 或其他不必要的個人資料；公開查詢單筆證明時也只能輸出最小化的 `certificateApplicationTypes` 與 `certificateApplicationTypeOptions`。
 
 單筆活動讀取：
 

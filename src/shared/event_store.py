@@ -72,6 +72,7 @@ def build_event_document(
     name: str,
     status: str,
     completion_cert_download_starts_at: str | None,
+    volunteer_service_ticket_names: list[str] | None = None,
     now: str | None = None,
 ) -> dict[str, Any]:
     timestamp = now or utc_now_iso()
@@ -84,6 +85,7 @@ def build_event_document(
         "eventEndDate": event_end_date,
         "completionHours": completion_hours,
         "completionCertDownloadStartsAt": completion_cert_download_starts_at,
+        "volunteerServiceTicketNames": volunteer_service_ticket_names or [],
         "metrics": {"completionCert": empty_completion_metrics()},
         "createdAt": timestamp,
         "createdBy": actor,
@@ -128,6 +130,7 @@ def update_event_document(
     event_start_date: str,
     name: str,
     status: str,
+    volunteer_service_ticket_names: list[str] | None = None,
 ) -> dict[str, Any]:
     try:
         existing_event = container.read_item(item=event_id, partition_key=event_id)
@@ -144,6 +147,8 @@ def update_event_document(
             "updatedAt": utc_now_iso(),
             "updatedBy": actor,
         }
+        if volunteer_service_ticket_names is not None:
+            updated_event["volunteerServiceTicketNames"] = volunteer_service_ticket_names
         return container.replace_item(item=event_id, body=updated_event)
     except Exception as exc:
         if _is_cosmos_not_found_error(exc):
@@ -263,7 +268,8 @@ def list_event_documents(*, container: EventContainer) -> list[dict[str, Any]]:
                 query=(
                     "SELECT c.id, c.name, c.status, c.documentTypes, "
                     "c.eventStartDate, c.eventEndDate, c.completionHours, "
-                    "c.completionCertDownloadStartsAt, c.metrics "
+                    "c.completionCertDownloadStartsAt, "
+                    "c.volunteerServiceTicketNames, c.metrics "
                     "FROM c ORDER BY c.createdAt DESC"
                 ),
                 enable_cross_partition_query=True,

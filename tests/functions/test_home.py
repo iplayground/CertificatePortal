@@ -104,6 +104,9 @@ class FakeCompletionCertsContainer:
         }
         if "SELECT TOP 1" in query:
             assert "c.badgeName" in query
+            assert "c.ticketName" in query
+            assert "c.transferredToDocumentType" in query
+            assert "AND NOT IS_DEFINED(c.transferredToDocumentType)" not in query
             assert "c.name" in query
             assert "c.organization" in query
             assert "LOWER(c.email)" not in query
@@ -498,7 +501,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert "文件類型" in body
     assert "文件類型載入中" in body
     assert "尚無可申請文件" in body
-    assert "完訓證明" in body
+    assert "參與證明" in body
     assert "營業稅繳稅證明" in body
     assert "查詢文件" in body
     assert "選擇證明顯示方式" in body
@@ -545,6 +548,10 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'id="certificate-generate-action"' in body
     assert 'id="certificate-options-step-label"' not in body
     assert 'id="certificate-options-view" hidden tabindex="-1"' in body
+    assert 'id="certificate-application-type-field" hidden' in body
+    assert 'id="certificate-application-type-label"' in body
+    assert "申請種類" in body
+    assert 'id="certificate-application-type-options"' in body
     assert 'id="certificate-name-options"' in body
     assert 'id="certificate-company-visible" type="checkbox"' in body
     assert "返回查詢" in body
@@ -555,7 +562,7 @@ def test_home_page_returns_html_with_expected_fields() -> None:
     assert 'id="document-type-select"' in body
     assert 'id="document-type" name="documentType" type="hidden" value="completionCert"' in body
     assert 'data-value="completionCert"' in body
-    assert 'data-label-key="document_type_completion_cert"' in body
+    assert 'data-label-key="document_type_participation_cert"' in body
     assert 'data-value="taxReceipt"' in body
     assert 'data-label-key="document_type_tax_receipt"' in body
     assert "本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有" in body
@@ -622,7 +629,7 @@ def test_home_page_uses_accept_language_when_no_cookie_is_present() -> None:
     assert "No available documents" in body
     assert "Loading events" in body
     assert "No available events" in body
-    assert "Completion Certificate" in body
+    assert "Participation Certificate" in body
     assert "407 Tax Receipt" in body
     assert '<div class="field" id="document-type-field" hidden>' in body
     assert '<span id="document-type-value" class="custom-select-value">Loading document types</span>' in body
@@ -734,7 +741,7 @@ def test_public_events_list_api_allows_anonymous_cross_origin_reads(
                 "id": "evt_2026",
                 "name": "iPlayground 2026",
                 "status": "open",
-                "documentTypes": ["completionCert", "taxReceipt"],
+                "documentTypes": ["completionCert", "volunteerServiceCert", "taxReceipt"],
                 "createdBy": "admin@iplayground.io",
                 "updatedBy": "admin@iplayground.io",
             },
@@ -742,6 +749,11 @@ def test_public_events_list_api_allows_anonymous_cross_origin_reads(
                 "id": "evt_hidden",
                 "name": "Broken Event",
                 "documentTypes": [],
+            },
+            {
+                "id": "evt_volunteer",
+                "name": "Volunteer Event",
+                "documentTypes": ["volunteerServiceCert"],
             },
         ],
     )
@@ -760,7 +772,9 @@ def test_public_events_list_api_allows_anonymous_cross_origin_reads(
     assert body == (
         '{"events":[{"id":"evt_2026","name":"iPlayground 2026",'
         '"documentTypes":["completionCert","taxReceipt"]},'
-        '{"id":"evt_hidden","name":"Broken Event","documentTypes":[]}]}'
+        '{"id":"evt_hidden","name":"Broken Event","documentTypes":[]},'
+        '{"id":"evt_volunteer","name":"Volunteer Event",'
+        '"documentTypes":["completionCert"]}]}'
     )
     assert "admin@iplayground.io" not in body
 
@@ -1162,10 +1176,152 @@ def test_public_document_lookup_api_does_not_block_success_on_attempt_store_fail
     assert response.status_code == 200
     assert body == (
         '{"document":{"status":"found","documentType":"completionCert",'
+        '"certificateApplicationTypes":["completionCert"],'
+        '"certificateApplicationTypeOptions":[{"type":"completionCert","disabled":false}],'
         '"badgeName":"Ming","canRequestChanges":false,'
         '"certStatus":"issued","name":"王小明",'
         '"organization":"iPlayground"}}'
     )
+
+
+def test_public_document_lookup_api_returns_volunteer_application_type_for_supported_ticket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        FailingLookupAttemptsContainer,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_events_container",
+        lambda: FakeEventsContainer(
+            {
+                "evt_1": {
+                    "id": "evt_1",
+                    "name": "iPlayground 2026",
+                    "status": "open",
+                    "documentTypes": ["completionCert", "volunteerServiceCert"],
+                    "eventStartDate": "2026-04-25",
+                    "eventEndDate": "2026-04-26",
+                    "completionHours": 12,
+                    "completionCertDownloadStartsAt": None,
+                    "volunteerServiceTicketNames": ["工作人員票"],
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(
+            [
+                {
+                    "id": "ccert_1",
+                    "eventId": "evt_1",
+                    "number": 100,
+                    "email": "Ming@example.com",
+                    "badgeName": "Ming",
+                    "ticketName": "工作人員票",
+                    "name": "王小明",
+                    "organization": "iPlayground",
+                    "certStatus": "notIssued",
+                    "issuedPdfBlobName": None,
+                }
+            ]
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    payload = json.loads(response.get_body().decode("utf-8"))
+
+    assert response.status_code == 200
+    assert payload["document"]["certificateApplicationTypes"] == [
+        "completionCert",
+        "volunteerServiceCert",
+    ]
+    assert payload["document"]["certificateApplicationTypeOptions"] == [
+        {"type": "completionCert", "disabled": False},
+        {"type": "volunteerServiceCert", "disabled": False},
+    ]
+    assert "ticketName" not in payload["document"]
+
+
+def test_public_document_lookup_api_can_find_completion_cert_transferred_to_volunteer_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        FailingLookupAttemptsContainer,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_events_container",
+        lambda: FakeEventsContainer(
+            {
+                "evt_1": {
+                    "id": "evt_1",
+                    "name": "iPlayground 2026",
+                    "status": "open",
+                    "documentTypes": ["completionCert", "volunteerServiceCert"],
+                    "eventStartDate": "2026-04-25",
+                    "eventEndDate": "2026-04-26",
+                    "completionHours": 12,
+                    "completionCertDownloadStartsAt": None,
+                    "volunteerServiceTicketNames": ["工作人員票"],
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(
+            [
+                {
+                    "id": "ccert_1",
+                    "eventId": "evt_1",
+                    "number": 14,
+                    "email": "kylelin930501@gmail.com",
+                    "badgeName": "Kyle",
+                    "ticketName": "工作人員票",
+                    "name": "林楷祐",
+                    "organization": "iPlayground",
+                    "certStatus": "transferred",
+                    "transferredToDocumentType": "volunteerServiceCert",
+                    "transferredToDocumentId": "vscert_1",
+                    "issuedPdfBlobName": None,
+                }
+            ]
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "14",
+                "email": "kylelin930501@gmail.com",
+            },
+        )
+    )
+    payload = json.loads(response.get_body().decode("utf-8"))
+
+    assert response.status_code == 200
+    assert payload["document"]["certStatus"] == "transferred"
+    assert payload["document"]["certificateApplicationTypes"] == [
+        "completionCert",
+        "volunteerServiceCert",
+    ]
+    assert payload["document"]["certificateApplicationTypeOptions"] == [
+        {"type": "completionCert", "disabled": True},
+        {"type": "volunteerServiceCert", "disabled": False},
+    ]
 
 
 def test_public_document_lookup_api_returns_all_tax_receipts_for_matched_tax_id(
@@ -1361,6 +1517,8 @@ def test_public_document_lookup_api_marks_not_generated_completion_cert(
     assert response.status_code == 200
     assert body == (
         '{"document":{"status":"found","documentType":"completionCert",'
+        '"certificateApplicationTypes":["completionCert"],'
+        '"certificateApplicationTypeOptions":[{"type":"completionCert","disabled":false}],'
         '"badgeName":"Ming","canRequestChanges":true,'
         '"certStatus":"notIssued","name":"王小明",'
         '"organization":"iPlayground"}}'
@@ -1429,6 +1587,8 @@ def test_public_document_lookup_api_marks_completed_change_request_as_not_reques
     assert response.status_code == 200
     assert body == (
         '{"document":{"status":"found","documentType":"completionCert",'
+        '"certificateApplicationTypes":["completionCert"],'
+        '"certificateApplicationTypeOptions":[{"type":"completionCert","disabled":false}],'
         '"badgeName":"Ming","canRequestChanges":false,'
         '"certStatus":"notIssued","name":"王小明",'
         '"organization":"iPlayground",'
@@ -1499,6 +1659,8 @@ def test_public_document_lookup_api_returns_rejected_change_request_review_statu
     assert response.status_code == 200
     assert body == (
         '{"document":{"status":"found","documentType":"completionCert",'
+        '"certificateApplicationTypes":["completionCert"],'
+        '"certificateApplicationTypeOptions":[{"type":"completionCert","disabled":false}],'
         '"badgeName":"Ming","canRequestChanges":false,'
         '"certStatus":"notIssued","name":"王小明",'
         '"organization":"iPlayground",'
@@ -1548,6 +1710,8 @@ def test_public_document_lookup_api_returns_change_requested_cert_status(
     assert response.status_code == 200
     assert body == (
         '{"document":{"status":"found","documentType":"completionCert",'
+        '"certificateApplicationTypes":["completionCert"],'
+        '"certificateApplicationTypeOptions":[{"type":"completionCert","disabled":false}],'
         '"badgeName":"Ming","canRequestChanges":false,'
         '"certStatus":"changeRequested","name":"王小明",'
         '"organization":"iPlayground"}}'
@@ -1928,6 +2092,8 @@ def test_public_document_lookup_api_resets_failures_after_success(
     assert response.status_code == 200
     assert body == (
         '{"document":{"status":"found","documentType":"completionCert",'
+        '"certificateApplicationTypes":["completionCert"],'
+        '"certificateApplicationTypeOptions":[{"type":"completionCert","disabled":false}],'
         '"badgeName":"Ming","canRequestChanges":false,'
         '"certStatus":"issued","name":"王小明",'
         '"organization":"iPlayground"}}'
@@ -2228,9 +2394,16 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert "shouldShowCertificateOptions" in body
     assert "setDocumentLookupFieldsLocked" in body
     assert 'documentRequestForm.classList.toggle("is-certificate-options-active", isLocked)' in body
+    assert "normalizeCertificateApplicationTypes" in body
+    assert "normalizeCertificateApplicationTypeOptions" in body
+    assert "renderCertificateApplicationTypeOptions" in body
+    assert 'input.name = "certificateApplicationType"' in body
+    assert 'input.dataset.optionDisabled = applicationTypeOption.disabled ? "true" : "false"' in body
+    assert 'input.disabled = isLocked || input.dataset.optionDisabled === "true"' in body
+    assert "certificate_application_type_volunteer_service_cert" in body
     assert "buildCertificateNameChoices" in body
     assert "showCertificateOptions" in body
-    assert '["notIssued", "changeRequested", "issued"].includes(documentData?.certStatus)' in body
+    assert '["notIssued", "changeRequested", "issued", "transferred"].includes(documentData?.certStatus)' in body
     assert "renderCertificateOptionsStatus" in body
     assert "certificateChangeRequestProcessingFeedback" in body
     assert "documentData?.canRequestChanges" in body

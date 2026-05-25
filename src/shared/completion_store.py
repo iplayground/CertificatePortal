@@ -200,10 +200,11 @@ def find_completion_cert_document_for_public_lookup(
             container.query_items(
                 query=(
                     "SELECT TOP 1 c.id, c.eventId, c.number, c.email, c.badgeName, "
-                    "c.name, c.organization, c.certStatus, c.issuedPdfBlobName "
+                    "c.ticketName, c.name, c.organization, c.certStatus, "
+                    "c.issuedPdfBlobName, c.transferredToDocumentType, "
+                    "c.transferredToDocumentId "
                     "FROM c WHERE c.eventId = @eventId "
                     "AND c.number = @number "
-                    "AND NOT IS_DEFINED(c.transferredToDocumentType) "
                     "AND (NOT IS_DEFINED(c.documentType) OR c.documentType = @documentType)"
                 ),
                 parameters=[
