@@ -675,6 +675,9 @@ function renderCertificateApplicationTypeOptions(documentData) {
         return;
       }
       currentCertificateApplicationType = applicationType;
+      if (!certificatePreview?.hidden) {
+        renderCertificateIssuePreview();
+      }
     });
 
     const label = document.createElement("span");
@@ -946,7 +949,10 @@ function buildCertificateIssuePayload() {
 function buildCertificatePreviewImageId() {
   const nameDisplay = getSelectedCertificateNameDisplay();
   const organizationDisplay = certificateCompanyVisible?.checked ? "org" : "no-org";
-  return `${currentLocale}-${nameDisplay}-${organizationDisplay}.png`;
+  const imageId = `${currentLocale}-${nameDisplay}-${organizationDisplay}.png`;
+  return currentCertificateApplicationType === "volunteerServiceCert"
+    ? `volunteerServiceCert-${imageId}`
+    : imageId;
 }
 
 function renderCertificateIssuePreview() {

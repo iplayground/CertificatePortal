@@ -200,9 +200,13 @@ def build_completion_certificate_overlay(
     )
 
     if data.organization.strip():
+        organization_text = data.organization.strip()
+        organization_label = copy["organization_label"].strip()
+        if organization_label:
+            organization_text = f"{organization_label}: {organization_text}"
         draw_centered_text(
             overlay,
-            f"{copy['organization_label']}: {data.organization.strip()}",
+            organization_text,
             FIELD_POSITIONS["organization"],
             16,
             font_name,

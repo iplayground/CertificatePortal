@@ -11,6 +11,7 @@ from src.functions import assets
 from src.functions.assets import static_asset
 from src.functions.home import (
     build_document_lookup_blocked_message,
+    download_organization_seal_to_path,
     home_page,
     public_completion_cert_change_request_api,
     public_completion_cert_issue_api,
@@ -20,6 +21,7 @@ from src.functions.home import (
     resolve_public_lookup_client_ip,
 )
 from src.shared.event_store import EventStoreOperationError
+from src.shared.blob_store import BlobStoreOperationError
 from src.shared.public_lookup_store import (
     PublicLookupStoreOperationError,
     build_public_lookup_attempt_id,
@@ -2400,6 +2402,9 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert 'input.name = "certificateApplicationType"' in body
     assert 'input.dataset.optionDisabled = applicationTypeOption.disabled ? "true" : "false"' in body
     assert 'input.disabled = isLocked || input.dataset.optionDisabled === "true"' in body
+    assert 'currentCertificateApplicationType === "volunteerServiceCert"' in body
+    assert "volunteerServiceCert-${imageId}" in body
+    assert "renderCertificateIssuePreview();" in body
     assert "certificate_application_type_volunteer_service_cert" in body
     assert "buildCertificateNameChoices" in body
     assert "showCertificateOptions" in body
@@ -2611,7 +2616,7 @@ def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
 
     def fake_download_blob_to_path(*, container_name: str, blob_name: str, output_path) -> object:
         assert container_name == "document-assets"
-        assert blob_name == "completion-cert/organization-seal.png"
+        assert blob_name == "shared/organization-seal.png"
         output_path.write_bytes(b"seal")
         return output_path
 
@@ -2799,6 +2804,52 @@ def test_public_completion_cert_issue_api_cancels_pending_change_request(
     )
 
 
+def test_download_organization_seal_uses_shared_blob(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    downloaded_blobs: list[str] = []
+
+    def fake_download_blob_to_path(*, container_name: str, blob_name: str, output_path) -> object:
+        assert container_name == "document-assets"
+        downloaded_blobs.append(blob_name)
+        output_path.write_bytes(b"seal")
+        return output_path
+
+    monkeypatch.delenv("CERTIFICATE_ORGANIZATION_SEAL_BLOB_NAME", raising=False)
+    monkeypatch.setattr("src.functions.home.download_blob_to_path", fake_download_blob_to_path)
+
+    output_path = download_organization_seal_to_path(
+        container_name="document-assets",
+        output_path=tmp_path / "organization-seal.png",
+    )
+
+    assert output_path.read_bytes() == b"seal"
+    assert downloaded_blobs == ["shared/organization-seal.png"]
+
+
+def test_download_organization_seal_uses_configured_blob_without_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    downloaded_blobs: list[str] = []
+
+    def fake_download_blob_to_path(*, container_name: str, blob_name: str, output_path) -> object:
+        downloaded_blobs.append(blob_name)
+        raise BlobStoreOperationError("configured seal missing")
+
+    monkeypatch.setenv("CERTIFICATE_ORGANIZATION_SEAL_BLOB_NAME", "custom/seal.png")
+    monkeypatch.setattr("src.functions.home.download_blob_to_path", fake_download_blob_to_path)
+
+    with pytest.raises(BlobStoreOperationError):
+        download_organization_seal_to_path(
+            container_name="document-assets",
+            output_path=tmp_path / "organization-seal.png",
+        )
+
+    assert downloaded_blobs == ["custom/seal.png"]
+
+
 def test_public_completion_cert_issue_api_downloads_existing_issued_pdf(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2914,6 +2965,38 @@ def test_public_completion_cert_preview_api_returns_png(
     assert captured == {
         "container_name": "document-assets",
         "blob_name": "completion-cert/previews/png/zh-TW-name-org.png",
+    }
+
+
+def test_public_completion_cert_preview_api_returns_volunteer_service_png(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+    monkeypatch.setenv("BLOB_DOCUMENT_ASSETS_CONTAINER", "document-assets")
+
+    def fake_download_blob_bytes(*, container_name: str, blob_name: str) -> bytes:
+        captured["container_name"] = container_name
+        captured["blob_name"] = blob_name
+        return b"volunteer-png-bytes"
+
+    monkeypatch.setattr(
+        "src.functions.home.download_blob_bytes",
+        fake_download_blob_bytes,
+    )
+
+    response = public_completion_cert_preview_api(
+        build_request(
+            "http://localhost:7075/api/v1/completion-cert-previews/volunteerServiceCert-zh-TW-name-org.png",
+            route_params={"preview_id": "volunteerServiceCert-zh-TW-name-org.png"},
+        )
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    assert response.get_body() == b"volunteer-png-bytes"
+    assert captured == {
+        "container_name": "document-assets",
+        "blob_name": "volunteer-service-cert/previews/png/zh-TW-name-org.png",
     }
 
 

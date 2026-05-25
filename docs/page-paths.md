@@ -57,7 +57,7 @@
 - 公開驗證頁面為 QRCode 掃描後的公開入口，會以 QRCode 內的驗證 token 查詢已發證的完訓證明紀錄，並只顯示驗證所需的最低限度資料
 - 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓證明 CSV 由後端解析、驗證並寫入 Cosmos DB；營業稅繳稅證明由後端驗證 metadata、將檔案寫入 Blob Storage，並將權威 metadata 寫入 Cosmos DB
 - 完訓證明頁目前已有後端 CSV 匯入、活動篩選、清單載入與單筆資料修改流程
-- 完訓證明 PDF 合成邏輯已建立於 `src/shared/completion_certificate_pdf.py`，模板檔跟隨 git 版控，單位印章圖預設位於 Azure Storage `document-assets/completion-cert/organization-seal.png`；跨平台嵌入字體由部署 workflow 從 private `document-assets/completion-cert/fonts/` 下載後放進 Function App 部署包；首頁確認後會發證、以 Cool tier 上傳 PDF 至 `issued-certs/completionCert/{eventId}/{certId}.pdf`，已發證資料再次查詢時會下載既有 PDF
+- 完訓證明 PDF 合成邏輯已建立於 `src/shared/completion_certificate_pdf.py`，模板檔跟隨 git 版控，單位印章圖預設位於 Azure Storage `document-assets/shared/organization-seal.png`；跨平台嵌入字體由部署 workflow 從 private `document-assets/shared/fonts/` 下載後放進 Function App 部署包；首頁確認後會發證、以 Cool tier 上傳 PDF 至 `issued-certs/completionCert/{eventId}/{certId}.pdf`，已發證資料再次查詢時會下載既有 PDF
 - 營業稅繳稅證明頁目前支援單筆 PDF、PNG 或 JPG/JPEG 新增、拖曳上傳、清單讀取、修改、下載與刪除；目前不支援 WebP
 - 首頁完訓證明查詢成功且 `certStatus` 為 `notIssued`、`changeRequested`、`issued` 或 `transferred` 時，會顯示「選擇證明顯示方式」區塊；若該筆資料符合活動的志工服務證明票種設定，會在其上方顯示「申請種類」讓使用者選擇完訓證明或志工服務證明；已轉移為志工服務證明時，完訓證明選項會停用；`notIssued` 時「提出修改申請」會切換到首頁同卡片內的修改申請流程，送出後會寫入 Cosmos DB `completionCertRequests` 並將對應完訓證明狀態改為 `changeRequested`；同一張完訓證明已有 `approved` 或 `rejected` 修改申請時，公開 API 會拒絕再次提出，首頁並顯示已通過或已駁回的審核結果；`changeRequested` 時不再顯示「提出修改申請」，改顯示修改申請處理中提示；`issued` 時再次按下產生按鈕會下載既有 PDF，不重新合成
 

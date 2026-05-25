@@ -108,9 +108,12 @@ HOME_CERTIFICATE_APPLICATION_TYPES = ("completionCert", "volunteerServiceCert")
 HOME_PUBLIC_EVENT_DOCUMENT_TYPES = HOME_PARTICIPATION_SOURCE_DOCUMENT_TYPES | frozenset(
     {"taxReceipt"}
 )
-COMPLETION_CERT_SEAL_BLOB_NAME = "completion-cert/organization-seal.png"
+SHARED_ORGANIZATION_SEAL_BLOB_NAME = "shared/organization-seal.png"
+CERTIFICATE_ORGANIZATION_SEAL_BLOB_NAME_ENV = "CERTIFICATE_ORGANIZATION_SEAL_BLOB_NAME"
 COMPLETION_CERT_PREVIEW_BLOB_PREFIX = "completion-cert/previews/png"
-COMPLETION_CERT_PREVIEW_IDS = frozenset(
+VOLUNTEER_SERVICE_CERT_PREVIEW_BLOB_PREFIX = "volunteer-service-cert/previews/png"
+VOLUNTEER_SERVICE_CERT_PREVIEW_ID_PREFIX = "volunteerServiceCert-"
+CERTIFICATE_PREVIEW_BASE_IDS = frozenset(
     {
         f"{locale}-{name_display}-{organization_display}.png"
         for locale in ("zh-TW", "en-US")
@@ -624,11 +627,9 @@ def issue_completion_cert_pdf(payload: dict[str, Any], req: func.HttpRequest) ->
     blob_name = build_issued_completion_cert_blob_name(cert_document)
     with tempfile.TemporaryDirectory(prefix="ipg-cert-") as temp_dir:
         temp_path = Path(temp_dir)
-        seal_path = temp_path / "organization-seal.png"
-        download_blob_to_path(
+        seal_path = download_organization_seal_to_path(
             container_name=_read_document_assets_container_name(),
-            blob_name=_read_completion_cert_seal_blob_name(),
-            output_path=seal_path,
+            output_path=temp_path / "organization-seal.png",
         )
         output_path = temp_path / "completion-certificate.pdf"
         render_completion_certificate_pdf(
@@ -1151,14 +1152,27 @@ def build_completion_cert_preview_image_response(image_bytes: bytes) -> func.Htt
     )
 
 
-def read_completion_cert_preview_image(preview_id: str) -> bytes:
+def resolve_certificate_preview_blob_name(preview_id: str) -> str:
     normalized_preview_id = preview_id.strip()
-    if normalized_preview_id not in COMPLETION_CERT_PREVIEW_IDS:
+    blob_prefix = COMPLETION_CERT_PREVIEW_BLOB_PREFIX
+    asset_id = normalized_preview_id
+    if normalized_preview_id.startswith(VOLUNTEER_SERVICE_CERT_PREVIEW_ID_PREFIX):
+        blob_prefix = VOLUNTEER_SERVICE_CERT_PREVIEW_BLOB_PREFIX
+        asset_id = normalized_preview_id.removeprefix(
+            VOLUNTEER_SERVICE_CERT_PREVIEW_ID_PREFIX
+        )
+
+    if asset_id not in CERTIFICATE_PREVIEW_BASE_IDS:
         raise LookupError("completion certificate preview was not found")
 
+    return f"{blob_prefix}/{asset_id}"
+
+
+def read_completion_cert_preview_image(preview_id: str) -> bytes:
+    blob_name = resolve_certificate_preview_blob_name(preview_id)
     return download_blob_bytes(
         container_name=_read_document_assets_container_name(),
-        blob_name=f"{COMPLETION_CERT_PREVIEW_BLOB_PREFIX}/{normalized_preview_id}",
+        blob_name=blob_name,
     )
 
 
@@ -1532,10 +1546,22 @@ def _read_issued_certs_container_name() -> str:
 
 
 def _read_completion_cert_seal_blob_name() -> str:
-    return os.getenv(
-        "COMPLETION_CERT_SEAL_BLOB_NAME",
-        COMPLETION_CERT_SEAL_BLOB_NAME,
-    ).strip() or COMPLETION_CERT_SEAL_BLOB_NAME
+    return (
+        os.getenv(CERTIFICATE_ORGANIZATION_SEAL_BLOB_NAME_ENV, "").strip()
+        or SHARED_ORGANIZATION_SEAL_BLOB_NAME
+    )
+
+
+def download_organization_seal_to_path(
+    *,
+    container_name: str,
+    output_path: Path,
+) -> Path:
+    return download_blob_to_path(
+        container_name=container_name,
+        blob_name=_read_completion_cert_seal_blob_name(),
+        output_path=output_path,
+    )
 
 
 def _resolve_forwarded_value(req: func.HttpRequest, header_name: str) -> str | None:

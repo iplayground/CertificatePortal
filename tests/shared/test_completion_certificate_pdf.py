@@ -82,6 +82,52 @@ def test_render_completion_certificate_pdf_supports_english_copy(
     assert "Issue Date" not in output_text
 
 
+def test_render_completion_certificate_pdf_can_print_organization_without_label(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output_path = tmp_path / "volunteer-service-certificate.pdf"
+
+    monkeypatch.setattr(
+        "src.shared.completion_certificate_pdf.resolve_completion_certificate_copy",
+        lambda _locale: {
+            "title": "志工服務證明",
+            "number_label": "證明編號",
+            "organization_label": "",
+            "statement_prefix": "茲證明於「",
+            "statement_suffix": "」擔任志工服務，特發此證明。",
+            "event_period_label": "服務期間",
+            "completion_hours_label": "服務時數",
+            "completion_hours_unit": "小時",
+            "font_name": "STSong-Light",
+            "latin_font_name": "Helvetica",
+            "title_font_name": "IPG-HeitiTC-Medium",
+            "title_latin_font_name": "Helvetica-Bold",
+            "title_font_size": "40",
+        },
+    )
+
+    render_completion_certificate_pdf(
+        CompletionCertificatePdfData(
+            certificate_number=format_completion_certificate_number(1, "KKTIX-001"),
+            recipient_name="王小明",
+            organization="社群組",
+            event_name="iPlayground",
+            event_period_text="2026 / 05 / 03 - 2026 / 05 / 04",
+            completion_hours=6,
+            issued_date_text="2026 / 05 / 11",
+            verification_url="https://cert.iplayground.io/",
+        ),
+        output_path,
+    )
+
+    output_text = PdfReader(str(output_path)).pages[0].extract_text()
+
+    assert "社群組" in output_text
+    assert "任職" not in output_text
+    assert ": 社群組" not in output_text
+
+
 def test_resolve_completion_certificate_copy_uses_locale_catalog() -> None:
     copy = resolve_completion_certificate_copy("en-US")
 

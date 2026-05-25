@@ -9,9 +9,11 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.shared.completion_certificate_pdf import (
     CompletionCertificatePdfData,
-    format_completion_certificate_number,
     render_completion_certificate_pdf,
 )
+
+
+PREVIEW_CERTIFICATE_NUMBER = "000000000-00"
 
 
 def main() -> None:
@@ -20,7 +22,7 @@ def main() -> None:
         (
             Path("/private/tmp/ipg_completion_certificate_sample_zh-TW.pdf"),
             CompletionCertificatePdfData(
-                certificate_number=format_completion_certificate_number(1, "KKTIX-001"),
+                certificate_number=PREVIEW_CERTIFICATE_NUMBER,
                 recipient_name="王小明",
                 organization="好玩公司",
                 event_name="iPlayground 2026",
@@ -35,7 +37,7 @@ def main() -> None:
         (
             Path("/private/tmp/ipg_completion_certificate_sample_en-US.pdf"),
             CompletionCertificatePdfData(
-                certificate_number=format_completion_certificate_number(1, "KKTIX-001"),
+                certificate_number=PREVIEW_CERTIFICATE_NUMBER,
                 recipient_name="Ming Wang",
                 organization="Fun Software Co.",
                 event_name="iPlayground 2026",

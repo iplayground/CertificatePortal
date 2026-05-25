@@ -99,6 +99,19 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Sync certificate asset app settings
+        shell: bash
+        env:
+          CERTIFICATE_ORGANIZATION_SEAL_BLOB_NAME: ${{ vars.CERTIFICATE_ORGANIZATION_SEAL_BLOB_NAME || 'shared/organization-seal.png' }}
+        run: |
+          set -euo pipefail
+
+          az functionapp config appsettings set \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_FUNCTIONAPP_NAME }}" \
+            --settings "CERTIFICATE_ORGANIZATION_SEAL_BLOB_NAME=${CERTIFICATE_ORGANIZATION_SEAL_BLOB_NAME}" \
+            --output none
+
       - name: Download PDF fonts
         shell: bash
         env:
@@ -113,20 +126,15 @@ jobs:
           fi
 
           mkdir -p src/shared/pdf_fonts
-          az storage blob download \
-            --account-name "${STORAGE_ACCOUNT_NAME}" \
-            --container-name "${DOCUMENT_ASSETS_CONTAINER}" \
-            --name completion-cert/fonts/STHeiti-Light.ttc \
-            --file src/shared/pdf_fonts/STHeiti-Light.ttc \
-            --auth-mode login \
-            --overwrite true
-          az storage blob download \
-            --account-name "${STORAGE_ACCOUNT_NAME}" \
-            --container-name "${DOCUMENT_ASSETS_CONTAINER}" \
-            --name completion-cert/fonts/STHeiti-Medium.ttc \
-            --file src/shared/pdf_fonts/STHeiti-Medium.ttc \
-            --auth-mode login \
-            --overwrite true
+          for font_name in STHeiti-Light.ttc STHeiti-Medium.ttc; do
+            az storage blob download \
+              --account-name "${STORAGE_ACCOUNT_NAME}" \
+              --container-name "${DOCUMENT_ASSETS_CONTAINER}" \
+              --name "shared/fonts/${font_name}" \
+              --file "src/shared/pdf_fonts/${font_name}" \
+              --auth-mode login \
+              --overwrite true
+          done
 
       - name: Deploy function code with remote build
         id: deploy-code
@@ -250,20 +258,15 @@ jobs:
           fi
 
           mkdir -p src/shared/pdf_fonts
-          az storage blob download \
-            --account-name "${STORAGE_ACCOUNT_NAME}" \
-            --container-name "${DOCUMENT_ASSETS_CONTAINER}" \
-            --name completion-cert/fonts/STHeiti-Light.ttc \
-            --file src/shared/pdf_fonts/STHeiti-Light.ttc \
-            --auth-mode login \
-            --overwrite true
-          az storage blob download \
-            --account-name "${STORAGE_ACCOUNT_NAME}" \
-            --container-name "${DOCUMENT_ASSETS_CONTAINER}" \
-            --name completion-cert/fonts/STHeiti-Medium.ttc \
-            --file src/shared/pdf_fonts/STHeiti-Medium.ttc \
-            --auth-mode login \
-            --overwrite true
+          for font_name in STHeiti-Light.ttc STHeiti-Medium.ttc; do
+            az storage blob download \
+              --account-name "${STORAGE_ACCOUNT_NAME}" \
+              --container-name "${DOCUMENT_ASSETS_CONTAINER}" \
+              --name "shared/fonts/${font_name}" \
+              --file "src/shared/pdf_fonts/${font_name}" \
+              --auth-mode login \
+              --overwrite true
+          done
 
       - name: Roll back function code with remote build
         if: failure() && (steps.deploy-code.outcome == 'failure' || steps.health.outcome == 'failure') && steps.rollback-ref.outputs.rollback_ref != ''

@@ -91,6 +91,7 @@ var deploymentContainerName = 'function-releases'
 var documentAssetsContainerName = 'document-assets'
 var issuedCertsContainerName = 'issued-certs'
 var taxReceiptsContainerName = 'tax-receipts'
+var certificateOrganizationSealBlobName = 'shared/organization-seal.png'
 var blobContainers = [
   deploymentContainerName
   documentAssetsContainerName
@@ -439,6 +440,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'BLOB_TAX_RECEIPTS_CONTAINER'
           value: taxReceiptsContainerName
+        }
+        {
+          name: 'CERTIFICATE_ORGANIZATION_SEAL_BLOB_NAME'
+          value: certificateOrganizationSealBlobName
         }
         {
           name: 'PORTAL_GOOGLE_CLIENT_ID'
