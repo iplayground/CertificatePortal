@@ -1038,6 +1038,7 @@ def build_volunteer_service_cert_pdf_data(
     certificate_number = format_completion_certificate_number(
         volunteer_document.get("number", payload["registrationNumber"]),
         str(volunteer_document.get("kktixId", "")).strip(),
+        prefix="vs",
     )
     service_period_text = format_completion_cert_event_period(
         event_document={

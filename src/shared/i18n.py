@@ -169,6 +169,9 @@ VERIFY_PAGE_COPY_KEYS = frozenset(
         "status_valid",
         "status_invalid",
         "status_unavailable",
+        "certificate_type_label",
+        "certificate_type_completion_cert",
+        "certificate_type_volunteer_service_cert",
         "certificate_number_label",
         "recipient_name_label",
         "organization_label",
@@ -176,6 +179,7 @@ VERIFY_PAGE_COPY_KEYS = frozenset(
         "issued_at_label",
         "empty_value",
         "cert_id_label",
+        "copyright_notice",
         "privacy_note",
         "home_action_label",
     }

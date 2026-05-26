@@ -22,9 +22,9 @@ iPlayground 完訓證明系統。
 ## 目前頁面基線
 
 - 首頁與公開驗證頁支援 `zh-TW` 與 `en-US`，並以 `ipg_locale` cookie 搭配 `Accept-Language` 決定語系
-- 語系切換器共用 `/assets/locale-switcher.js` 與 `/assets/theme.css` 內的共用樣式；首頁 `/` 切換時由前端直接更新文案，不會整頁重新整理，公開驗證頁 `/verify/{certId}` 切換時會寫入 `ipg_locale` cookie 並重新載入同一個 QRCode URL
+- 語系切換器共用 `/assets/locale-switcher.js` 與 `/assets/theme.css` 內的共用樣式；首頁 `/` 與公開驗證頁 `/verify/{certId}` 切換時都由前端直接更新文案，不會整頁重新整理
 - 首頁文件查詢期間會顯示全 window 黑色半透明遮罩，中央使用純白 loading panel 顯示查詢中狀態，並阻擋語系切換與表單操作
-- 公開驗證頁會依 QRCode 內的驗證 token 查詢已發證完訓證明或志工服務證明，只顯示驗證狀態、證明編號、活動、證明姓名、依證書顯示設定決定是否顯示任職單位，以及本地化發證時間；發證時間以可讀 UTC fallback 輸出，瀏覽器端再依使用者語系與時區本地化
+- 公開驗證頁會依 QRCode 內的驗證 token 查詢已發證完訓證明或志工服務證明，只顯示驗證狀態、證明種類、證明編號、活動、持證者姓名、依證書顯示設定決定是否顯示所屬單位，以及本地化發證時間；證明編號依文件種類加上前綴，完訓證明為 `c`，志工服務證明為 `vs`；發證時間以可讀 UTC fallback 輸出，瀏覽器端再依使用者語系與時區本地化，頁尾顯示與首頁相同的版權聲明
 - 完訓證明查詢成功且 `certStatus` 為 `notIssued`、`changeRequested`、`issued` 或 `transferred` 時，首頁會顯示「選擇證明顯示方式」UI；若活動票種支援志工服務證明，會顯示「申請種類」並可切換為志工服務證明，切換後顯示服務開始日期、結束日期、服務時數與可填寫的單位名稱；`notIssued` 可進入「修改申請」並寫入 Cosmos DB，`changeRequested` 會顯示處理中提示並隱藏「提出修改申請」；若已有已完成審核的修改申請，首頁會顯示通過或駁回結果，並在有審核備註時以第二行顯示 `審核備註`
 - 管理平台固定使用繁體中文，入口與子路徑統一收斂在 `/portal...`，不納入 i18n 範圍
 - 共用 alert 元件已支援 i18n；若頁面本身未接入 i18n，alert 文案預設使用 `zh-TW`

@@ -57,6 +57,8 @@ body::after {
   position: relative;
   z-index: 1;
   display: grid;
+  grid-template-rows: auto auto;
+  gap: 22px;
   min-height: 100vh;
   padding: 2rem 1rem;
   place-items: center;
@@ -238,6 +240,19 @@ h1 {
   box-shadow:
     0 0 0 5px var(--theme-focus-ring),
     0 12px 24px var(--theme-focus-shadow);
+}
+
+.site-footer {
+  width: min(100%, 760px);
+  text-align: center;
+  color: var(--theme-footer-text);
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+
+.site-footer small {
+  display: inline-block;
+  padding: 0 12px;
 }
 
 @media (max-width: 38rem) {

@@ -149,7 +149,11 @@ def build_verify_page_result(*, verification_token: str) -> dict[str, Any]:
 
     return {
         "kind": "valid",
-        "certificateNumber": _format_certificate_number(cert_document),
+        "documentType": document_type,
+        "certificateNumber": _format_certificate_number(
+            cert_document,
+            document_type=document_type,
+        ),
         "recipientName": str(cert_document.get("certificateDisplayName") or "").strip(),
         "organization": str(
             cert_document.get("certificateDisplayOrganization") or ""
@@ -359,8 +363,19 @@ def build_verification_details_html(
         )
 
     if result_kind == "valid":
+        document_type = str(result.get("documentType") or "").strip()
+        certificate_type = (
+            copy["certificate_type_volunteer_service_cert"]
+            if document_type == "volunteerServiceCert"
+            else copy["certificate_type_completion_cert"]
+        )
         rows.extend(
             [
+                (
+                    "certificateType",
+                    copy["certificate_type_label"],
+                    certificate_type,
+                ),
                 (
                     "certificateNumber",
                     copy["certificate_number_label"],
@@ -445,11 +460,17 @@ def _read_display_value(
     return value or empty_value
 
 
-def _format_certificate_number(cert_document: dict[str, Any]) -> str:
+def _format_certificate_number(
+    cert_document: dict[str, Any],
+    *,
+    document_type: str,
+) -> str:
+    prefix = "vs" if document_type == "volunteerServiceCert" else "c"
     try:
         return format_completion_certificate_number(
             cert_document.get("number", ""),
             str(cert_document.get("kktixId") or "").strip(),
+            prefix=prefix,
         )
     except ValueError:
         return ""

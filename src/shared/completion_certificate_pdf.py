@@ -149,12 +149,15 @@ def render_completion_certificate_pdf(
 def format_completion_certificate_number(
     registration_number: int | str,
     registration_id: str,
+    *,
+    prefix: str = "c",
 ) -> str:
     normalized_number = str(registration_number).strip()
     normalized_id = registration_id.strip()
-    if not normalized_number or not normalized_id:
-        raise ValueError("Certificate number requires registration number and ID.")
-    return f"{normalized_id}-{normalized_number}"
+    normalized_prefix = prefix.strip()
+    if not normalized_number or not normalized_id or not normalized_prefix:
+        raise ValueError("Certificate number requires prefix, registration number, and ID.")
+    return f"{normalized_prefix}{normalized_id}-{normalized_number}"
 
 
 def build_completion_certificate_overlay(

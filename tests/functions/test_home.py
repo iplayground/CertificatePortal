@@ -2808,7 +2808,7 @@ def test_public_completion_cert_issue_api_generates_uploads_and_returns_pdf(
             "standard_blob_tier": "Cool",
         }
     ]
-    assert rendered_data[0].certificate_number == "KKTIX-987-12"
+    assert rendered_data[0].certificate_number == "cKKTIX-987-12"
     assert rendered_data[0].recipient_name == "王小明 (Ming)"
     assert rendered_data[0].organization == "iPlayground"
     assert rendered_data[0].event_name == "iPlayground 2026"
@@ -3064,7 +3064,7 @@ def test_public_completion_cert_issue_api_transfers_and_issues_volunteer_service
     assert volunteer_document["certificateDisplayName"] == "王小明 (Ming)"
     assert volunteer_document["certificateDisplayOrganization"] == "iPlayground 志工隊"
     assert volunteer_document["certificateLocale"] == "zh-TW"
-    assert rendered_data[0].certificate_number == "KKTIX-987-12"
+    assert rendered_data[0].certificate_number == "vsKKTIX-987-12"
     assert rendered_data[0].recipient_name == "王小明 (Ming)"
     assert rendered_data[0].organization == "iPlayground 志工隊"
     assert rendered_data[0].event_name == "iPlayground 2026"

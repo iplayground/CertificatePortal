@@ -106,6 +106,8 @@ def test_verify_page_defaults_to_traditional_chinese(
     assert response.headers["Cache-Control"] == "no-store"
     assert "<html lang=\"zh-TW\">" in body
     assert "無法驗證此證明" in body
+    assert "找不到有效的證明紀錄，或此證明尚未完成發行。" in body
+    assert "找不到有效的完訓證明紀錄" not in body
     assert 'class="verify-page verify-page--invalid"' in body
     assert 'data-current-locale="zh-TW"' in body
     assert 'class="brand-row"' in body
@@ -118,12 +120,12 @@ def test_verify_page_defaults_to_traditional_chinese(
     assert '<script id="verify-page-i18n" type="application/json">' in body
     assert '<p class="status-label">驗證狀態</p>' not in body
     assert "證明編號" in body
-    assert "證明姓名" in body
+    assert "持證者姓名" in body
     assert "活動" in body
     assert "發證時間" in body
     assert 'data-detail-key="organization"' not in body
     assert body.count('<dd class="verification-detail-value">未顯示</dd>') == 4
-    assert body.index("證明編號") < body.index("活動") < body.index("證明姓名")
+    assert body.index("證明編號") < body.index("活動") < body.index("持證者姓名")
     assert 'class="home-action" id="home-action" href="/"' in body
     assert "support@iplayground.io" in body
     assert "尚未串接實際驗證資料" not in body
@@ -231,14 +233,23 @@ def test_verify_page_renders_valid_completion_certificate(
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
-    assert "此完訓證明有效" in body
+    assert "此證明有效" in body
+    assert "此完訓證明有效" not in body
     assert 'class="verify-page verify-page--valid"' in body
     assert '<p class="status-label">驗證狀態</p>' not in body
-    assert "KKTIX-001-12" in body
+    assert "cKKTIX-001-12" in body
     assert "王小明" in body
     assert "iPlayground 2026" in body
-    assert body.index("證明編號") < body.index("活動") < body.index("證明姓名")
+    assert "所屬單位" in body
+    assert "任職單位" not in body
+    assert "證明種類" in body
+    assert "完訓證明" in body
+    assert body.index("證明種類") < body.index("證明編號") < body.index("活動") < body.index("持證者姓名")
+    assert 'data-detail-key="certificateType"' in body
     assert "發證時間" in body
+    assert "本網站內容與相關資料之著作權均屬社團法人台北市頂尖軟體開發者協會(77212283)所有" in body
+    assert '<footer class="site-footer">' in body
+    assert '<small id="copyright-notice">' in body
     assert '<script src="/assets/locale-switcher.js?v=' in body
     assert '<script src="/assets/verify.js?v=' in body
     assert 'data-detail-key="status"' in body
@@ -305,8 +316,10 @@ def test_verify_page_renders_valid_volunteer_service_certificate(
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
-    assert "此完訓證明有效" in body
-    assert "KKTIX-001-12" in body
+    assert "此證明有效" in body
+    assert "志工服務證明" in body
+    assert body.index("證明種類") < body.index("證明編號")
+    assert "vsKKTIX-001-12" in body
     assert "王小明" in body
     assert "iPlayground 志工隊" in body
     assert volunteer_container.documents[0]["verificationCount"] == 3
@@ -369,7 +382,7 @@ def test_verify_page_hides_organization_when_certificate_did_not_show_it(
     body = response.get_body().decode("utf-8")
 
     assert response.status_code == 200
-    assert "此完訓證明有效" in body
+    assert "此證明有效" in body
     assert 'data-detail-key="organization"' not in body
     assert "發證時間" in body
 

@@ -14,6 +14,7 @@
   const verifySummary = document.getElementById("verify-summary");
   const statusLabel = document.getElementById("status-label");
   const privacyNote = document.getElementById("privacy-note");
+  const copyrightNotice = document.getElementById("copyright-notice");
   const homeAction = document.getElementById("home-action");
   const verifyPageI18n = parseVerifyPageI18n();
   const resultKind = resolveResultKind();
@@ -73,6 +74,7 @@
 
   function updateDetailLabels(copy) {
     const labelByKey = {
+      certificateType: copy.certificate_type_label,
       certificateNumber: copy.certificate_number_label,
       eventName: copy.event_name_label,
       issuedAt: copy.issued_at_label,
@@ -155,6 +157,7 @@
     updateStatusValue(copy);
     updateInvalidEmptyValues(copy);
     updateTextContent(privacyNote, copy.privacy_note);
+    updateTextContent(copyrightNotice, copy.copyright_notice);
     updateTextContent(homeAction, copy.home_action_label);
     formatLocalDateTimes(nextLocale);
   }
