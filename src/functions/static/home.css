@@ -347,6 +347,28 @@ form.is-certificate-options-active .field-static-value {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.volunteer-service-summary-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.volunteer-service-summary-list[hidden] {
+  display: none;
+}
+
+.certificate-summary-list.volunteer-service-summary-list div {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.certificate-summary-list.volunteer-service-summary-list dt {
+  justify-self: start;
+}
+
+.certificate-summary-list.volunteer-service-summary-list dd {
+  justify-self: end;
+  text-align: right;
+}
+
 .tax-receipt-results-view .certificate-summary-list div {
   grid-template-columns: auto minmax(0, 1fr);
 }
@@ -962,6 +984,14 @@ form.is-certificate-options-active .field-static-value {
 
   .tax-receipt-results-view .certificate-summary-list {
     grid-template-columns: 1fr;
+  }
+
+  .volunteer-service-summary-list {
+    grid-template-columns: 1fr;
+  }
+
+  .certificate-summary-list.volunteer-service-summary-list div {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .tax-receipt-results-tools {

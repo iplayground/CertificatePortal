@@ -47,6 +47,14 @@ from src.shared.i18n import (
     resolve_locale,
 )
 from src.shared.templates import render_html_template
+from src.shared.volunteer_service_store import (
+    VolunteerServiceStoreConfigurationError,
+    VolunteerServiceStoreOperationError,
+    find_issued_volunteer_service_cert_document_by_verification_token,
+    get_volunteer_service_certs_container,
+    read_volunteer_service_cert_document,
+    replace_volunteer_service_cert_document,
+)
 
 blueprint = func.Blueprint()
 LOGGER = logging.getLogger(__name__)
@@ -98,13 +106,33 @@ def build_verify_page_result(*, verification_token: str) -> dict[str, Any]:
     except (CompletionStoreConfigurationError, CompletionStoreOperationError):
         return {"kind": "unavailable"}
 
+    document_type = "completionCert"
+    if cert_document is None:
+        try:
+            volunteer_container = get_volunteer_service_certs_container()
+            cert_document = find_issued_volunteer_service_cert_document_by_verification_token(
+                container=volunteer_container,
+                verification_token=verification_token,
+            )
+            document_type = "volunteerServiceCert"
+        except VolunteerServiceStoreConfigurationError:
+            return {"kind": "invalid"}
+        except VolunteerServiceStoreOperationError:
+            return {"kind": "unavailable"}
+
     if cert_document is None:
         return {"kind": "invalid"}
 
-    cert_document = record_completion_cert_verification(
-        container=records_container,
-        cert_document=cert_document,
-    )
+    if document_type == "volunteerServiceCert":
+        cert_document = record_volunteer_service_cert_verification(
+            container=volunteer_container,
+            cert_document=cert_document,
+        )
+    else:
+        cert_document = record_completion_cert_verification(
+            container=records_container,
+            cert_document=cert_document,
+        )
 
     event_name = ""
     event_id = str(cert_document.get("eventId") or "").strip()
@@ -162,6 +190,36 @@ def record_completion_cert_verification(
         return full_document
     except CompletionStoreOperationError:
         LOGGER.warning("Completion certificate verification count update failed.", exc_info=True)
+        return cert_document
+
+
+def record_volunteer_service_cert_verification(
+    *,
+    container: Any,
+    cert_document: dict[str, Any],
+) -> dict[str, Any]:
+    event_id = str(cert_document.get("eventId") or "").strip()
+    cert_id = str(cert_document.get("id") or "").strip()
+    if not event_id or not cert_id:
+        return cert_document
+
+    try:
+        full_document = read_volunteer_service_cert_document(
+            cert_id=cert_id,
+            container=container,
+            event_id=event_id,
+        )
+        full_document["verificationCount"] = read_non_negative_counter(
+            full_document.get("verificationCount")
+        ) + 1
+        full_document["updatedAt"] = utc_now_iso()
+        replace_volunteer_service_cert_document(
+            container=container,
+            document=full_document,
+        )
+        return full_document
+    except VolunteerServiceStoreOperationError:
+        LOGGER.warning("Volunteer service certificate verification count update failed.", exc_info=True)
         return cert_document
 
 

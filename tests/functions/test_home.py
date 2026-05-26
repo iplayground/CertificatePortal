@@ -28,6 +28,7 @@ from src.shared.public_lookup_store import (
     clear_public_lookup_local_block,
     remember_public_lookup_block,
 )
+from src.shared.volunteer_service_store import build_volunteer_service_cert_id
 
 
 @pytest.fixture(autouse=True)
@@ -268,6 +269,38 @@ class FakeTaxReceiptsContainer:
 
         self.items.append(body)
         return body
+
+
+class FakeVolunteerServiceCertsContainer:
+    def __init__(self, items: list[dict[str, Any]] | None = None) -> None:
+        self.items = items or []
+
+    def create_item(self, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        if any(document["id"] == body["id"] for document in self.items):
+            error = RuntimeError("conflict")
+            setattr(error, "status_code", 409)
+            raise error
+        self.items.append(body.copy())
+        return body.copy()
+
+    def read_item(self, item: str, partition_key: str, **_: Any) -> dict[str, Any]:
+        for document in self.items:
+            if document["id"] == item and document["eventId"] == partition_key:
+                return document.copy()
+
+        error = RuntimeError("not found")
+        setattr(error, "status_code", 404)
+        raise error
+
+    def replace_item(self, item: str, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        for index, document in enumerate(self.items):
+            if document["id"] == item:
+                self.items[index] = body.copy()
+                return self.items[index]
+
+        error = RuntimeError("not found")
+        setattr(error, "status_code", 404)
+        raise error
 
 
 class FakeEventsContainer:
@@ -1252,7 +1285,102 @@ def test_public_document_lookup_api_returns_volunteer_application_type_for_suppo
         {"type": "completionCert", "disabled": False},
         {"type": "volunteerServiceCert", "disabled": False},
     ]
+    assert payload["document"]["volunteerServiceDetails"] == {
+        "source": "eventDefault",
+        "serviceOrganization": "iPlayground",
+        "serviceStartDate": "2026-04-25",
+        "serviceEndDate": "2026-04-26",
+        "serviceHours": 12,
+    }
     assert "ticketName" not in payload["document"]
+
+
+def test_public_document_lookup_api_returns_existing_volunteer_service_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.functions.home.get_public_lookup_attempts_container",
+        FailingLookupAttemptsContainer,
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_events_container",
+        lambda: FakeEventsContainer(
+            {
+                "evt_1": {
+                    "id": "evt_1",
+                    "name": "iPlayground 2026",
+                    "status": "open",
+                    "documentTypes": ["completionCert", "volunteerServiceCert"],
+                    "eventStartDate": "2026-04-25",
+                    "eventEndDate": "2026-04-26",
+                    "completionHours": 12,
+                    "completionCertDownloadStartsAt": None,
+                    "volunteerServiceTicketNames": ["工作人員票"],
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_completion_records_container",
+        lambda: FakeCompletionCertsContainer(
+            [
+                {
+                    "id": "ccert_1",
+                    "eventId": "evt_1",
+                    "number": 100,
+                    "email": "Ming@example.com",
+                    "badgeName": "Ming",
+                    "ticketName": "工作人員票",
+                    "name": "王小明",
+                    "organization": "iPlayground",
+                    "certStatus": "transferred",
+                    "transferredToDocumentType": "volunteerServiceCert",
+                    "issuedPdfBlobName": None,
+                }
+            ]
+        ),
+    )
+    volunteer_cert_id = build_volunteer_service_cert_id(
+        completion_cert_id="ccert_1",
+        event_id="evt_1",
+    )
+    monkeypatch.setattr(
+        "src.functions.home.get_volunteer_service_certs_container",
+        lambda: FakeVolunteerServiceCertsContainer(
+            [
+                {
+                    "id": volunteer_cert_id,
+                    "eventId": "evt_1",
+                    "sourceCompletionCertId": "ccert_1",
+                    "serviceOrganization": "iPlayground 志工隊",
+                    "serviceStartDate": "2026-08-01",
+                    "serviceEndDate": "2026-08-02",
+                    "serviceHours": 20,
+                }
+            ]
+        ),
+    )
+
+    response = public_document_lookup_api(
+        build_document_lookup_request(
+            body={
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "100",
+                "email": "ming@example.com",
+            },
+        )
+    )
+    payload = json.loads(response.get_body().decode("utf-8"))
+
+    assert response.status_code == 200
+    assert payload["document"]["volunteerServiceDetails"] == {
+        "source": "configured",
+        "serviceOrganization": "iPlayground 志工隊",
+        "serviceStartDate": "2026-08-01",
+        "serviceEndDate": "2026-08-02",
+        "serviceHours": 20,
+    }
 
 
 def test_public_document_lookup_api_can_find_completion_cert_transferred_to_volunteer_service(
@@ -2404,6 +2532,10 @@ def test_home_js_asset_returns_expected_content_type() -> None:
     assert 'input.disabled = isLocked || input.dataset.optionDisabled === "true"' in body
     assert 'currentCertificateApplicationType === "volunteerServiceCert"' in body
     assert "volunteerServiceCert-${imageId}" in body
+    assert "volunteerServiceOrganizationField.hidden = !shouldShow" in body
+    assert "volunteerServiceOrganization?.value.trim() ? \"org\" : \"no-org\"" in body
+    assert "volunteerServiceOrganization: volunteerServiceOrganization?.value.trim()" in body
+    assert "certificateApplicationType: currentCertificateApplicationType" in body
     assert "renderCertificateIssuePreview();" in body
     assert "certificate_application_type_volunteer_service_cert" in body
     assert "buildCertificateNameChoices" in body
@@ -2802,6 +2934,143 @@ def test_public_completion_cert_issue_api_cancels_pending_change_request(
     assert requests_container.items["ccreq_1"]["reviewNote"] == (
         "用戶已於修改審核完成前完成發證，系統自動取消本次修改申請。"
     )
+
+
+def test_public_completion_cert_issue_api_transfers_and_issues_volunteer_service_cert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events_container = FakeEventsContainer(
+        {
+            "evt_1": {
+                "id": "evt_1",
+                "name": "iPlayground 2026",
+                "status": "open",
+                "documentTypes": ["completionCert", "volunteerServiceCert"],
+                "eventStartDate": "2026-04-25",
+                "eventEndDate": "2026-04-26",
+                "completionHours": 12,
+                "completionCertDownloadStartsAt": None,
+                "volunteerServiceTicketNames": ["工作人員票"],
+            }
+        }
+    )
+    records_container = FakeCompletionCertsContainer(
+        [
+            {
+                "id": "ccert_1",
+                "eventId": "evt_1",
+                "number": 12,
+                "kktixId": "KKTIX-987",
+                "badgeName": "Ming",
+                "ticketName": "工作人員票",
+                "name": "王小明",
+                "organization": "iPlayground",
+                "email": "ming@example.com",
+                "attendanceStatus": "checkedIn",
+                "certStatus": "notIssued",
+                "issuedPdfBlobName": None,
+                "verificationTokenHash": None,
+                "verificationCount": 0,
+                "issuedAt": None,
+                "createdAt": "2026-04-01T00:00:00Z",
+            }
+        ]
+    )
+    volunteer_container = FakeVolunteerServiceCertsContainer()
+    uploaded_blobs: list[dict[str, Any]] = []
+    rendered_data: list[Any] = []
+    monkeypatch.setattr("src.functions.home.get_events_container", lambda: events_container)
+    monkeypatch.setattr("src.functions.home.get_completion_records_container", lambda: records_container)
+    monkeypatch.setattr("src.functions.home.get_volunteer_service_certs_container", lambda: volunteer_container)
+    monkeypatch.setattr(
+        "src.functions.home.generate_completion_cert_verification_token",
+        lambda: "abcdef1234567890abcdef1234567890",
+    )
+    monkeypatch.setenv("BLOB_DOCUMENT_ASSETS_CONTAINER", "document-assets")
+    monkeypatch.setenv("BLOB_ISSUED_CERT_CONTAINER", "issued-certs")
+
+    def fake_download_blob_to_path(*, container_name: str, blob_name: str, output_path) -> object:
+        output_path.write_bytes(b"seal")
+        return output_path
+
+    def fake_render_completion_certificate_pdf(data, output_path, **_: Any) -> object:
+        rendered_data.append(data)
+        output_path.write_bytes(b"%PDF-1.4\nvolunteer")
+        return output_path
+
+    def fake_upload_pdf_blob(
+        *,
+        container_name: str,
+        blob_name: str,
+        data: bytes,
+        standard_blob_tier: str = "Cool",
+    ) -> str:
+        uploaded_blobs.append(
+            {
+                "container_name": container_name,
+                "blob_name": blob_name,
+                "data": data,
+                "standard_blob_tier": standard_blob_tier,
+            }
+        )
+        return blob_name
+
+    monkeypatch.setattr("src.functions.home.download_blob_to_path", fake_download_blob_to_path)
+    monkeypatch.setattr("src.functions.home.render_completion_certificate_pdf", fake_render_completion_certificate_pdf)
+    monkeypatch.setattr("src.functions.home.upload_pdf_blob", fake_upload_pdf_blob)
+
+    response = public_completion_cert_issue_api(
+        build_completion_cert_issue_request(
+            body={
+                "certificateApplicationType": "volunteerServiceCert",
+                "documentType": "completionCert",
+                "eventId": "evt_1",
+                "registrationNumber": "12",
+                "email": "ming@example.com",
+                "locale": "zh-TW",
+                "nameDisplay": "nameWithBadge",
+                "showOrganization": False,
+                "volunteerServiceOrganization": "iPlayground 志工隊",
+            },
+            headers={"Origin": "http://localhost:7075"},
+        )
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    assert response.get_body() == b"%PDF-1.4\nvolunteer"
+    assert response.headers["Content-Disposition"] == (
+        'attachment; filename="volunteer-service-certificate.pdf"'
+    )
+    assert len(volunteer_container.items) == 1
+    volunteer_document = volunteer_container.items[0]
+    assert uploaded_blobs == [
+        {
+            "container_name": "issued-certs",
+            "blob_name": f"volunteerServiceCert/evt_1/{volunteer_document['id']}.pdf",
+            "data": b"%PDF-1.4\nvolunteer",
+            "standard_blob_tier": "Cool",
+        }
+    ]
+    assert records_container.items[0]["certStatus"] == "transferred"
+    assert records_container.items[0]["transferredToDocumentType"] == "volunteerServiceCert"
+    assert records_container.items[0]["transferredToDocumentId"] == volunteer_document["id"]
+    assert volunteer_document["certStatus"] == "issued"
+    assert volunteer_document["serviceOrganization"] == "iPlayground 志工隊"
+    assert volunteer_document["issuedPdfBlobName"] == (
+        f"volunteerServiceCert/evt_1/{volunteer_document['id']}.pdf"
+    )
+    assert volunteer_document["verificationTokenHash"] == "abcdef1234567890abcdef1234567890"
+    assert volunteer_document["certificateDisplayName"] == "王小明 (Ming)"
+    assert volunteer_document["certificateDisplayOrganization"] == "iPlayground 志工隊"
+    assert volunteer_document["certificateLocale"] == "zh-TW"
+    assert rendered_data[0].certificate_number == "KKTIX-987-12"
+    assert rendered_data[0].recipient_name == "王小明 (Ming)"
+    assert rendered_data[0].organization == "iPlayground 志工隊"
+    assert rendered_data[0].event_name == "iPlayground 2026"
+    assert rendered_data[0].event_period_text == "2026/04/25 - 2026/04/26"
+    assert rendered_data[0].completion_hours == 12
+    assert rendered_data[0].copy_override["title"] == "志工服務證明"
 
 
 def test_download_organization_seal_uses_shared_blob(

@@ -197,6 +197,9 @@ partition key: /eventId
 container: completionCertRequests
 partition key: /eventId
 
+container: volunteerServiceCerts
+partition key: /eventId
+
 container: taxReceipts
 partition key: /eventId
 
@@ -204,11 +207,11 @@ container: publicLookupAttempts
 partition key: /id
 ```
 
-`completionCerts` 是完訓證明完整清單。名稱沿用活動管理的文件類型代碼 `completionCert`。CSV 匯入資料、簽到狀態、發證狀態、下載檔案 metadata、驗證 token、下載次數與驗證次數都記錄在同一筆資料中。CSV 上傳由 Python API 同步解析與寫入；目前預期單次約數百筆資料可在可接受時間內完成，因此不設計 DB 進度狀態或進度條。CSV 匯入當下尚未產生完訓證明檔案與驗證 token，因此 `issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 預設為 `null`，`downloadCount` 與 `verificationCount` 預設為 `0`，`firstDownloadAt` 與 `lastDownloadAt` 預設為 `null`；等會眾申請完訓證明且系統完成產生檔案後才回填發證檔案，並記錄當次使用的顯示名稱、單位與語系。
+`completionCerts` 是完訓證明完整清單，也是首頁參與證明公開查詢的入口權威資料。名稱沿用活動管理的文件類型代碼 `completionCert`。CSV 匯入資料、簽到狀態、發證狀態、下載檔案 metadata、驗證 token、下載次數與驗證次數都記錄在同一筆資料中。CSV 上傳由 Python API 同步解析與寫入；目前預期單次約數百筆資料可在可接受時間內完成，因此不設計 DB 進度狀態或進度條。CSV 匯入當下尚未產生完訓證明檔案與驗證 token，因此 `issuedPdfBlobName`、`verificationTokenHash` 與 `issuedAt` 預設為 `null`，`downloadCount` 與 `verificationCount` 預設為 `0`，`firstDownloadAt` 與 `lastDownloadAt` 預設為 `null`；等會眾申請完訓證明且系統完成產生檔案後才回填發證檔案，並記錄當次使用的顯示名稱、單位與語系。若會眾在首頁改申請志工服務證明，系統仍先由 `completionCerts` 查到來源資料，再建立或讀取對應 `volunteerServiceCerts` 文件並將來源完訓證明標記為 `transferred`。
 
 `completionCertRequests` 只記錄會眾是否申請資料調整、申請備註、審核狀態與通知狀態。這類資料不是完訓證明權威清單本身，因此獨立存放。
 
-不保留原始 CSV 檔案。完訓證明 PDF 底圖模板跟隨 git 版控，因欄位座標需要與模板版本同步；固定印章圖存放於 Blob Storage `document-assets` container，預設 blob 名稱為 `shared/organization-seal.png`；首頁證明預覽 PNG 也存放於 `document-assets`，完訓證明 blob 名稱格式為 `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`，志工服務證明 blob 名稱格式為 `volunteer-service-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`，預覽 PDF 備份則分別使用 `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 與 `volunteer-service-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並設定為 Archive tier。動態欄位使用的跨平台嵌入字體不提交到 git，部署 workflow 會從 private `document-assets` 下載共用 PDF regular 與 bold 字體素材，再放入 Function App 部署包。產生後 PDF 存放於 Blob Storage `issued-certs/completionCert/{eventId}/{certId}.pdf`，並以 Cool tier 儲存。Cosmos DB 只儲存完訓證明清單資料、狀態、顯示選項與產生後檔案的 blob 名稱，不儲存 CSV 原文、印章圖、預覽圖、字體檔或 PDF 二進位。
+不保留原始 CSV 檔案。完訓證明 PDF 底圖模板跟隨 git 版控，因欄位座標需要與模板版本同步；志工服務證明沿用相同 PDF renderer 並套用志工服務文案。固定印章圖存放於 Blob Storage `document-assets` container，預設 blob 名稱為 `shared/organization-seal.png`；首頁證明預覽 PNG 也存放於 `document-assets`，完訓證明 blob 名稱格式為 `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`，志工服務證明 blob 名稱格式為 `volunteer-service-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`，預覽 PDF 備份則分別使用 `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 與 `volunteer-service-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並設定為 Archive tier。動態欄位使用的跨平台嵌入字體不提交到 git，部署 workflow 會從 private `document-assets` 下載共用 PDF regular 與 bold 字體素材，再放入 Function App 部署包。產生後 PDF 依文件類型存放於 Blob Storage `issued-certs/completionCert/{eventId}/{certId}.pdf` 或 `issued-certs/volunteerServiceCert/{eventId}/{certId}.pdf`，並以 Cool tier 儲存。Cosmos DB 只儲存證明清單資料、狀態、顯示選項與產生後檔案的 blob 名稱，不儲存 CSV 原文、印章圖、預覽圖、字體檔或 PDF 二進位。
 
 `taxReceipts` 是營業稅繳稅證明 metadata 的權威資料來源。管理端逐筆新增時，後端會先驗證活動已開放 `taxReceipt` 文件類型、統編、整數金額、UTC 產製時間與檔案格式，再將 PDF、PNG 或 JPG/JPEG 檔案寫入 Blob Storage `tax-receipts` container，並將 metadata 寫入 Cosmos DB。Cosmos DB 不儲存檔案二進位；`sourceBlobName` 指向對應 Blob。
 
@@ -327,11 +330,11 @@ partition key: /id
 | `transferredToDocumentType` | string | 固定為 `volunteerServiceCert` |
 | `transferredToDocumentId` | string | 對應 `volunteerServiceCerts.id` |
 | `transferredAt` | string | 轉移時間，UTC ISO 8601 |
-| `transferredBy` | string | 執行轉移的管理者識別 |
+| `transferredBy` | string | 執行轉移的識別；管理端為管理者識別，首頁公開發證自動轉移時為 `system:public-issue` |
 
-轉移後來源完訓證明的 `certStatus` 會改為 `transferred`，避免後續流程再將同一筆來源資料視為可發行的完訓證明。
+轉移後來源完訓證明的 `certStatus` 會改為 `transferred`，避免後續流程再將同一筆來源資料視為可發行的完訓證明。轉移可以由管理端明確操作，也可以由首頁公開發證流程在使用者選擇 `volunteerServiceCert` 且尚未有對應志工服務證明文件時自動執行；自動轉移會同時取消同一張完訓證明尚未完成審核的 pending 修改申請。
 
-公開首頁下載完訓證明時，HTTP `Content-Disposition` 的檔名固定為 `certificate.pdf`。此檔名只影響使用者下載，不影響 `issuedPdfBlobName` 儲存的 Blob 名稱。
+公開首頁下載完訓證明時，HTTP `Content-Disposition` 的檔名固定為 `certificate.pdf`。公開首頁下載志工服務證明時檔名固定為 `volunteer-service-certificate.pdf`。此檔名只影響使用者下載，不影響 `issuedPdfBlobName` 儲存的 Blob 名稱。
 
 ### 資料回填
 
@@ -417,7 +420,7 @@ ORDER BY c.number ASC
 
 ## `volunteerServiceCerts` container
 
-`volunteerServiceCerts` container 儲存志工服務證明自己的流程狀態。志工服務證明一定從完訓證明轉移建立，但建立後不再共用 `completionCerts` 文件作為狀態模型。
+`volunteerServiceCerts` container 儲存志工服務證明自己的流程狀態。志工服務證明一定從完訓證明轉移建立，但建立後不再共用 `completionCerts` 文件作為狀態模型。首頁公開查詢尚未轉移的完訓資料時，若活動票種符合志工服務證明設定，回應會用活動 `eventStartDate`、`eventEndDate` 與 `completionHours` 作為志工服務日期與時數預設值；一旦公開發證或管理端轉移建立 `volunteerServiceCerts` 文件，首頁改顯示該文件上的 `serviceStartDate`、`serviceEndDate` 與 `serviceHours`。
 
 ```text
 container: volunteerServiceCerts
@@ -444,11 +447,18 @@ partition key: /eventId
 | `certStatus` | string | 志工服務證明狀態；轉移建立時為 `notIssued` |
 | `issuedPdfBlobName` | string \| null | `issued-certs` 中的 PDF blob 名稱，格式為 `volunteerServiceCert/{eventId}/{certId}.pdf`；發行前或撤銷後為 null |
 | `issuedAt` | string \| null | 志工服務證明發行時間，UTC ISO 8601；發行前或撤銷後為 null |
+| `verificationTokenHash` | string \| null | 公開驗證 token；發證時產生 UUID 去除 dash 的 32 字元小寫十六進位字串，並用於 PDF 左下角 QRCode URL；發行前或撤銷後為 null |
+| `certificateDisplayName` | string \| null | 發證時實際寫入 PDF 的姓名顯示文字；發證後回填 |
+| `certificateDisplayOrganization` | string \| null | 發證時實際寫入 PDF 的志工服務單位文字；未填寫單位時為空字串 |
+| `certificateLocale` | string \| null | 發證時使用的 PDF 語系，例如 `zh-TW` 或 `en-US` |
+| `verificationCount` | int | 公開驗證端點成功驗證此志工服務證明的累計次數；建立時為 0 |
 | `sourceCreatedAt` | string \| null | 來源完訓證明建立時間 |
 | `createdAt` | string | 建立時間，UTC ISO 8601 |
 | `createdBy` | string | 建立者識別 |
 | `updatedAt` | string | 最後更新時間，UTC ISO 8601 |
 | `updatedBy` | string | 最後更新者識別 |
+
+首頁公開發證選擇 `volunteerServiceCert` 時，若對應 `volunteerServiceCerts` 文件已存在，會直接使用該文件產生 PDF；若不存在，會先依來源完訓證明與活動預設值建立文件。使用者送出的 `volunteerServiceOrganization` 若有值，會更新本次志工服務證明的 `serviceOrganization` 並寫入 PDF。發證成功後會回填 `certStatus = issued`、`issuedAt`、`issuedPdfBlobName`、`verificationTokenHash`、`certificateDisplayName`、`certificateDisplayOrganization`、`certificateLocale`、`updatedAt` 與 `updatedBy = system:public-issue`。
 
 管理端志工服務證明清單會依發行狀態切換操作：未發行時提供修改與刪除；刪除會移除 `volunteerServiceCerts` 文件，將來源 `completionCerts.certStatus` 從 `transferred` 恢復為 `notIssued`，並清空來源完訓證明的 `transferredToDocumentType`、`transferredToDocumentId`、`transferredAt` 與 `transferredBy`，讓完訓證明重新回到可申請下載流程；不會把志工服務證明中的姓名、單位、時數或日期寫回完訓證明。已發行時提供下載與撤銷；撤銷會將 `certStatus` 改回 `notIssued`，並清空已發行檔案與發行 metadata。
 

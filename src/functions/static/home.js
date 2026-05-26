@@ -11,6 +11,16 @@ const certificateOptionsSubtitle = document.getElementById("certificate-options-
 const certificateApplicationTypeField = document.getElementById("certificate-application-type-field");
 const certificateApplicationTypeLabel = document.getElementById("certificate-application-type-label");
 const certificateApplicationTypeOptions = document.getElementById("certificate-application-type-options");
+const volunteerServiceSummary = document.getElementById("volunteer-service-summary");
+const volunteerServiceStartDateLabel = document.getElementById("volunteer-service-start-date-label");
+const volunteerServiceStartDateValue = document.getElementById("volunteer-service-start-date-value");
+const volunteerServiceEndDateLabel = document.getElementById("volunteer-service-end-date-label");
+const volunteerServiceEndDateValue = document.getElementById("volunteer-service-end-date-value");
+const volunteerServiceHoursLabel = document.getElementById("volunteer-service-hours-label");
+const volunteerServiceHoursValue = document.getElementById("volunteer-service-hours-value");
+const volunteerServiceOrganizationField = document.getElementById("volunteer-service-organization-field");
+const volunteerServiceOrganizationLabel = document.getElementById("volunteer-service-organization-label");
+const volunteerServiceOrganization = document.getElementById("volunteer-service-organization");
 const certificateNameOptionsLabel = document.getElementById("certificate-name-options-label");
 const certificateNameOptions = document.getElementById("certificate-name-options");
 const certificateCompanyOptionField = document.getElementById("certificate-company-option-field");
@@ -591,6 +601,32 @@ function normalizeLookupDocumentText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function formatVolunteerServiceDate(value) {
+  const normalizedValue = normalizeLookupDocumentText(value);
+  const match = normalizedValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    return `${match[1]} / ${match[2]} / ${match[3]}`;
+  }
+  return normalizedValue || resolveCertificateOptionCopy(
+    "volunteer_service_empty_value",
+    "未設定",
+  );
+}
+
+function formatVolunteerServiceHours(value) {
+  if (value === null || value === undefined || value === "") {
+    return resolveCertificateOptionCopy("volunteer_service_empty_value", "未設定");
+  }
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && numericValue >= 0) {
+    return formatPreviewMessage(
+      resolveCertificateOptionCopy("volunteer_service_hours_value_template", "{hours} 小時"),
+      { hours: String(numericValue) },
+    );
+  }
+  return resolveCertificateOptionCopy("volunteer_service_empty_value", "未設定");
+}
+
 function normalizeCertificateApplicationTypes(documentData) {
   return normalizeCertificateApplicationTypeOptions(documentData).map((option) => option.type);
 }
@@ -675,6 +711,9 @@ function renderCertificateApplicationTypeOptions(documentData) {
         return;
       }
       currentCertificateApplicationType = applicationType;
+      renderVolunteerServiceSummary(currentCertificateDocument);
+      renderVolunteerServiceOrganizationField(currentCertificateDocument);
+      renderCertificateCompanyOption(currentCertificateDocument);
       if (!certificatePreview?.hidden) {
         renderCertificateIssuePreview();
       }
@@ -686,6 +725,60 @@ function renderCertificateApplicationTypeOptions(documentData) {
     option.append(input, label);
     certificateApplicationTypeOptions.append(option);
   });
+  renderVolunteerServiceSummary(documentData);
+  renderVolunteerServiceOrganizationField(documentData);
+}
+
+function renderVolunteerServiceSummary(documentData) {
+  if (!volunteerServiceSummary) {
+    return;
+  }
+
+  const shouldShow = currentCertificateApplicationType === "volunteerServiceCert";
+  volunteerServiceSummary.hidden = !shouldShow;
+  if (!shouldShow) {
+    return;
+  }
+
+  const details = documentData?.volunteerServiceDetails ?? {};
+  updateTextContent(
+    volunteerServiceStartDateValue,
+    formatVolunteerServiceDate(details.serviceStartDate),
+  );
+  updateTextContent(
+    volunteerServiceEndDateValue,
+    formatVolunteerServiceDate(details.serviceEndDate),
+  );
+  updateTextContent(
+    volunteerServiceHoursValue,
+    formatVolunteerServiceHours(details.serviceHours),
+  );
+}
+
+function resolveVolunteerServiceOrganization(documentData) {
+  return normalizeLookupDocumentText(
+    documentData?.volunteerServiceDetails?.serviceOrganization
+      ?? documentData?.organization
+      ?? "",
+  );
+}
+
+function renderVolunteerServiceOrganizationField(documentData) {
+  if (!volunteerServiceOrganizationField || !volunteerServiceOrganization) {
+    return;
+  }
+
+  const shouldShow = currentCertificateApplicationType === "volunteerServiceCert";
+  volunteerServiceOrganizationField.hidden = !shouldShow;
+  if (!shouldShow) {
+    return;
+  }
+
+  if (volunteerServiceOrganization.dataset.lastDocumentOrganization !== resolveVolunteerServiceOrganization(documentData)) {
+    const organization = resolveVolunteerServiceOrganization(documentData);
+    volunteerServiceOrganization.value = organization;
+    volunteerServiceOrganization.dataset.lastDocumentOrganization = organization;
+  }
 }
 
 function buildCertificateNameChoices(documentData) {
@@ -752,6 +845,9 @@ function setCertificateDisplayControlsLocked(isLocked) {
   if (certificateCompanyVisible) {
     certificateCompanyVisible.disabled = isLocked;
   }
+  if (volunteerServiceOrganization) {
+    volunteerServiceOrganization.disabled = isLocked;
+  }
 }
 
 function renderCertificateGenerateAction(documentData) {
@@ -779,7 +875,8 @@ function renderCertificateCompanyOption(documentData) {
     return;
   }
 
-  certificateCompanyOptionField.hidden = !organization;
+  certificateCompanyOptionField.hidden =
+    currentCertificateApplicationType === "volunteerServiceCert" || !organization;
   certificateCompanyVisible.checked = Boolean(organization);
   if (organization) {
     certificateCompanyOptionText.textContent = formatPreviewMessage(
@@ -936,6 +1033,7 @@ function getSelectedCertificateNameDisplay() {
 
 function buildCertificateIssuePayload() {
   return {
+    certificateApplicationType: currentCertificateApplicationType,
     documentType: "completionCert",
     email: email.value.trim(),
     eventId: eventNameInput.dataset.eventId ?? "",
@@ -943,12 +1041,15 @@ function buildCertificateIssuePayload() {
     nameDisplay: getSelectedCertificateNameDisplay(),
     registrationNumber: registrationNumber.value.trim(),
     showOrganization: Boolean(certificateCompanyVisible?.checked),
+    volunteerServiceOrganization: volunteerServiceOrganization?.value.trim() ?? "",
   };
 }
 
 function buildCertificatePreviewImageId() {
   const nameDisplay = getSelectedCertificateNameDisplay();
-  const organizationDisplay = certificateCompanyVisible?.checked ? "org" : "no-org";
+  const organizationDisplay = currentCertificateApplicationType === "volunteerServiceCert"
+    ? (volunteerServiceOrganization?.value.trim() ? "org" : "no-org")
+    : (certificateCompanyVisible?.checked ? "org" : "no-org");
   const imageId = `${currentLocale}-${nameDisplay}-${organizationDisplay}.png`;
   return currentCertificateApplicationType === "volunteerServiceCert"
     ? `volunteerServiceCert-${imageId}`
@@ -2042,6 +2143,10 @@ function applyHomePageLocale(nextLocale) {
   }
   updateTextContent(previewAction, homePageCopy.preview_action_label);
   updateTextContent(certificateApplicationTypeLabel, homePageCopy.certificate_application_type_label);
+  updateTextContent(volunteerServiceStartDateLabel, homePageCopy.volunteer_service_start_date_label);
+  updateTextContent(volunteerServiceEndDateLabel, homePageCopy.volunteer_service_end_date_label);
+  updateTextContent(volunteerServiceHoursLabel, homePageCopy.volunteer_service_hours_label);
+  updateTextContent(volunteerServiceOrganizationLabel, homePageCopy.volunteer_service_organization_label);
   updateTextContent(certificateOptionsTitle, homePageCopy.certificate_options_title);
   updateTextContent(certificateOptionsSubtitle, homePageCopy.certificate_options_subtitle);
   updateTextContent(certificateNameOptionsLabel, homePageCopy.certificate_name_options_label);
@@ -2092,6 +2197,10 @@ function applyHomePageLocale(nextLocale) {
 
   if (typeof homePageCopy.generated_at_placeholder === "string") {
     generatedAt.placeholder = homePageCopy.generated_at_placeholder;
+  }
+
+  if (volunteerServiceOrganization && typeof homePageCopy.volunteer_service_organization_placeholder === "string") {
+    volunteerServiceOrganization.placeholder = homePageCopy.volunteer_service_organization_placeholder;
   }
 
   if (certificateChangeRequestNote && typeof homePageCopy.certificate_change_request_note_placeholder === "string") {
@@ -2511,6 +2620,10 @@ certificateNameOptions?.addEventListener("change", () => {
 });
 
 certificateCompanyVisible?.addEventListener("change", () => {
+  renderCertificateIssuePreview();
+});
+
+volunteerServiceOrganization?.addEventListener("input", () => {
   renderCertificateIssuePreview();
 });
 

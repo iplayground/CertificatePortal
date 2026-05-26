@@ -206,6 +206,72 @@ def read_volunteer_service_cert_document(
     return document
 
 
+def find_volunteer_service_cert_document(
+    *,
+    cert_id: str,
+    container: VolunteerServiceContainer,
+    event_id: str,
+) -> dict[str, Any] | None:
+    try:
+        document = container.read_item(item=cert_id, partition_key=event_id)
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            return None
+        if _is_cosmos_forbidden_error(exc):
+            raise VolunteerServiceStoreOperationError(
+                "目前身分沒有 Cosmos DB 志工服務證明容器讀取權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Reader 或 Data Contributor 權限。"
+            ) from exc
+        raise VolunteerServiceStoreOperationError("志工服務證明資料查詢暫時失敗。") from exc
+
+    if not isinstance(document, dict):
+        raise VolunteerServiceStoreOperationError("志工服務證明資料格式不合法。")
+
+    return document
+
+
+def find_issued_volunteer_service_cert_document_by_verification_token(
+    *,
+    container: VolunteerServiceContainer,
+    verification_token: str,
+) -> dict[str, Any] | None:
+    normalized_token = verification_token.strip()
+    if not normalized_token:
+        return None
+
+    try:
+        documents = list(
+            container.query_items(
+                query=(
+                    "SELECT TOP 1 c.id, c.eventId, c.number, c.kktixId, c.certStatus, "
+                    "c.verificationTokenHash, c.certificateDisplayName, "
+                    "c.certificateDisplayOrganization, c.certificateLocale, c.issuedAt "
+                    "FROM c WHERE c.verificationTokenHash = @verificationToken "
+                    "AND c.certStatus = @issuedStatus"
+                ),
+                parameters=[
+                    {"name": "@verificationToken", "value": normalized_token},
+                    {"name": "@issuedStatus", "value": "issued"},
+                ],
+                enable_cross_partition_query=True,
+            )
+        )
+    except Exception as exc:
+        if _is_cosmos_not_found_error(exc):
+            raise VolunteerServiceStoreOperationError(
+                "Cosmos DB 志工服務證明容器不存在。請確認 "
+                "COSMOS_VOLUNTEER_SERVICE_CERTS_CONTAINER 是否指向已建立的資源。"
+            ) from exc
+        if _is_cosmos_forbidden_error(exc):
+            raise VolunteerServiceStoreOperationError(
+                "目前身分沒有 Cosmos DB 志工服務證明容器讀取權限。請確認本機或服務身分"
+                "已具備 Cosmos DB SQL Data Reader 或 Data Contributor 權限。"
+            ) from exc
+        raise VolunteerServiceStoreOperationError("志工服務證明資料查詢暫時失敗。") from exc
+
+    return documents[0] if documents else None
+
+
 def replace_volunteer_service_cert_document(
     *,
     container: VolunteerServiceContainer,

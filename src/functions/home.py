@@ -89,6 +89,18 @@ from src.shared.tax_receipt_download_ticket import (
     build_tax_receipt_download_subject_key,
     build_tax_receipt_download_ticket,
 )
+from src.shared.volunteer_service_store import (
+    VolunteerServiceStoreConfigurationError,
+    VolunteerServiceStoreOperationError,
+    build_volunteer_service_cert_id,
+    build_volunteer_service_cert_document,
+    create_volunteer_service_cert_document,
+    find_volunteer_service_cert_document,
+    get_volunteer_service_certs_container,
+    normalize_optional_int,
+    normalize_optional_string,
+    replace_volunteer_service_cert_document,
+)
 from src.shared.templates import render_html_template
 
 blueprint = func.Blueprint()
@@ -376,11 +388,25 @@ def parse_completion_cert_issue_payload(
     if locale not in {"zh-TW", "en-US"}:
         locale = "zh-TW"
 
+    certificate_application_type = str(
+        raw_payload.get("certificateApplicationType", "completionCert")
+    ).strip()
+    if certificate_application_type not in HOME_CERTIFICATE_APPLICATION_TYPES:
+        return None
+
+    volunteer_service_organization = str(
+        raw_payload.get("volunteerServiceOrganization", "")
+    ).strip()
+    if len(volunteer_service_organization) > 120:
+        return None
+
     return {
         **lookup_payload,
+        "certificateApplicationType": certificate_application_type,
         "locale": locale,
         "nameDisplay": name_display,
         "showOrganization": bool(raw_payload.get("showOrganization", False)),
+        "volunteerServiceOrganization": volunteer_service_organization,
     }
 
 
@@ -679,6 +705,192 @@ def issue_completion_cert_pdf(payload: dict[str, Any], req: func.HttpRequest) ->
     return pdf_bytes, build_completion_cert_download_filename(cert_document)
 
 
+def issue_public_certificate_pdf(payload: dict[str, Any], req: func.HttpRequest) -> tuple[bytes, str]:
+    if payload["certificateApplicationType"] == "volunteerServiceCert":
+        return issue_volunteer_service_cert_pdf(payload, req)
+
+    return issue_completion_cert_pdf(payload, req)
+
+
+def issue_volunteer_service_cert_pdf(
+    payload: dict[str, Any],
+    req: func.HttpRequest,
+) -> tuple[bytes, str]:
+    records_container = get_completion_records_container()
+    public_document = find_completion_cert_document_for_public_lookup(
+        container=records_container,
+        email=payload["email"],
+        event_id=payload["eventId"],
+        number=payload["registrationNumber"],
+    )
+    if public_document is None:
+        raise LookupError("completion certificate was not found")
+
+    completion_cert_id = str(public_document.get("id", "")).strip()
+    if not completion_cert_id:
+        raise CompletionStoreOperationError("Completion certificate record is missing an id.")
+
+    completion_document = read_completion_cert_document(
+        cert_id=completion_cert_id,
+        container=records_container,
+        event_id=payload["eventId"],
+    )
+    completion_status = str(completion_document.get("certStatus", "")).strip() or "notIssued"
+    if completion_status == "issued":
+        raise PermissionError("issued completion certificate cannot be transferred")
+
+    event_document = read_public_event_document(
+        container=get_events_container(),
+        event_id=payload["eventId"],
+    )
+    if event_document is None:
+        raise LookupError("completion certificate event was not found")
+
+    if "volunteerServiceCert" not in resolve_public_certificate_application_types(
+        cert_document=completion_document,
+        event_document=event_document,
+    ):
+        raise PermissionError("volunteer service certificate cannot be issued")
+
+    volunteer_document = resolve_public_volunteer_service_document_for_issue(
+        completion_document=completion_document,
+        event_document=event_document,
+        payload=payload,
+        records_container=records_container,
+    )
+    if volunteer_document.get("downloadEnabled") is not True:
+        raise PermissionError("volunteer service certificate download is disabled")
+
+    volunteer_status = str(volunteer_document.get("certStatus", "")).strip() or "notIssued"
+    issued_blob_name = str(volunteer_document.get("issuedPdfBlobName") or "").strip()
+    if volunteer_status == "issued" and issued_blob_name:
+        pdf_bytes = download_blob_bytes(
+            container_name=_read_issued_certs_container_name(),
+            blob_name=issued_blob_name,
+        )
+        return pdf_bytes, build_volunteer_service_cert_download_filename(volunteer_document)
+    if volunteer_status != "notIssued":
+        raise PermissionError("volunteer service certificate cannot be issued")
+
+    verification_token = resolve_completion_cert_verification_token(volunteer_document)
+    cert_pdf_data = build_volunteer_service_cert_pdf_data(
+        completion_document=completion_document,
+        event_document=event_document,
+        payload=payload,
+        req=req,
+        verification_token=verification_token,
+        volunteer_document=volunteer_document,
+    )
+    blob_name = build_issued_volunteer_service_cert_blob_name(volunteer_document)
+    with tempfile.TemporaryDirectory(prefix="ipg-vscert-") as temp_dir:
+        temp_path = Path(temp_dir)
+        seal_path = download_organization_seal_to_path(
+            container_name=_read_document_assets_container_name(),
+            output_path=temp_path / "organization-seal.png",
+        )
+        output_path = temp_path / "volunteer-service-certificate.pdf"
+        render_completion_certificate_pdf(
+            CompletionCertificatePdfData(
+                **{
+                    **cert_pdf_data.__dict__,
+                    "seal_image_path": seal_path,
+                }
+            ),
+            output_path,
+        )
+        pdf_bytes = output_path.read_bytes()
+
+    upload_pdf_blob(
+        container_name=_read_issued_certs_container_name(),
+        blob_name=blob_name,
+        data=pdf_bytes,
+    )
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    volunteer_document["certStatus"] = "issued"
+    volunteer_document["issuedAt"] = now
+    volunteer_document["issuedPdfBlobName"] = blob_name
+    volunteer_document["verificationTokenHash"] = verification_token
+    volunteer_document["certificateDisplayName"] = cert_pdf_data.recipient_name
+    volunteer_document["certificateDisplayOrganization"] = cert_pdf_data.organization
+    volunteer_document["certificateLocale"] = cert_pdf_data.locale
+    volunteer_document["updatedAt"] = now
+    volunteer_document["updatedBy"] = "system:public-issue"
+    replace_volunteer_service_cert_document(
+        container=get_volunteer_service_certs_container(),
+        document=volunteer_document,
+    )
+    return pdf_bytes, build_volunteer_service_cert_download_filename(volunteer_document)
+
+
+def resolve_public_volunteer_service_document_for_issue(
+    *,
+    completion_document: dict[str, Any],
+    event_document: dict[str, Any],
+    payload: dict[str, Any],
+    records_container: Any,
+) -> dict[str, Any]:
+    event_id = str(completion_document.get("eventId", "")).strip()
+    completion_cert_id = str(completion_document.get("id", "")).strip()
+    volunteer_cert_id = build_volunteer_service_cert_id(
+        completion_cert_id=completion_cert_id,
+        event_id=event_id,
+    )
+    volunteer_container = get_volunteer_service_certs_container()
+    volunteer_document = find_volunteer_service_cert_document(
+        cert_id=volunteer_cert_id,
+        container=volunteer_container,
+        event_id=event_id,
+    )
+    if volunteer_document is None:
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        volunteer_document = build_volunteer_service_cert_document(
+            actor="system:public-issue",
+            completion_cert=completion_document,
+            event=event_document,
+            now=now,
+            volunteer_service_cert_id=volunteer_cert_id,
+        )
+        volunteer_document, _was_created = create_volunteer_service_cert_document(
+            container=volunteer_container,
+            document=volunteer_document,
+        )
+
+    requested_organization = str(payload.get("volunteerServiceOrganization", "")).strip()
+    if requested_organization:
+        volunteer_document["serviceOrganization"] = requested_organization
+
+    if str(completion_document.get("certStatus", "")).strip() != "transferred":
+        transfer_timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        pending_request_document = None
+        requests_container = None
+        try:
+            requests_container = get_completion_cert_requests_container()
+            pending_request_document = read_pending_completion_cert_request_document(
+                container=requests_container,
+                completion_cert_id=completion_cert_id,
+            )
+        except (CompletionStoreConfigurationError, CompletionStoreOperationError):
+            pending_request_document = None
+        completion_document["certStatus"] = "transferred"
+        completion_document["transferredToDocumentType"] = "volunteerServiceCert"
+        completion_document["transferredToDocumentId"] = volunteer_document["id"]
+        completion_document["transferredAt"] = transfer_timestamp
+        completion_document["transferredBy"] = "system:public-issue"
+        completion_document["updatedAt"] = transfer_timestamp
+        replace_completion_cert_document(
+            container=records_container,
+            document=completion_document,
+        )
+        if requests_container is not None and pending_request_document is not None:
+            cancel_completion_cert_change_request_for_issue(
+                container=requests_container,
+                request_document=pending_request_document,
+                now=transfer_timestamp,
+            )
+
+    return volunteer_document
+
+
 def cancel_completion_cert_change_request_for_issue(
     *,
     container: Any,
@@ -814,6 +1026,75 @@ def build_completion_cert_pdf_data(
     )
 
 
+def build_volunteer_service_cert_pdf_data(
+    *,
+    completion_document: dict[str, Any],
+    event_document: dict[str, Any],
+    payload: dict[str, Any],
+    req: func.HttpRequest,
+    verification_token: str,
+    volunteer_document: dict[str, Any],
+) -> CompletionCertificatePdfData:
+    certificate_number = format_completion_certificate_number(
+        volunteer_document.get("number", payload["registrationNumber"]),
+        str(volunteer_document.get("kktixId", "")).strip(),
+    )
+    service_period_text = format_completion_cert_event_period(
+        event_document={
+            "eventStartDate": str(volunteer_document.get("serviceStartDate") or "").strip(),
+            "eventEndDate": str(volunteer_document.get("serviceEndDate") or "").strip(),
+        },
+        locale=payload["locale"],
+    )
+    organization = str(
+        payload.get("volunteerServiceOrganization")
+        or volunteer_document.get("serviceOrganization")
+        or ""
+    ).strip()
+    return CompletionCertificatePdfData(
+        certificate_number=certificate_number,
+        recipient_name=resolve_completion_cert_display_name(
+            cert_document=completion_document,
+            name_display=payload["nameDisplay"],
+        ),
+        organization=organization,
+        event_name=str(event_document.get("name", "")).strip(),
+        event_period_text=service_period_text,
+        completion_hours=int(volunteer_document.get("serviceHours") or 0),
+        issued_date_text="",
+        verification_url=_build_absolute_url(req, f"/verify/{verification_token}"),
+        locale=payload["locale"],
+        copy_override=resolve_volunteer_service_cert_pdf_copy(payload["locale"]),
+    )
+
+
+def resolve_volunteer_service_cert_pdf_copy(locale: str) -> dict[str, str]:
+    if locale == "en-US":
+        return {
+            "title": "Volunteer Service Certificate",
+            "title_font_size": "38",
+            "number_label": "Certificate No.",
+            "organization_label": "Organization",
+            "statement_prefix": "This certifies volunteer service for \"",
+            "statement_suffix": "\".",
+            "event_period_label": "Service Period",
+            "completion_hours_label": "Service Hours",
+            "completion_hours_unit": "hours",
+        }
+
+    return {
+        "title": "志工服務證明",
+        "title_font_size": "40",
+        "number_label": "證明編號",
+        "organization_label": "",
+        "statement_prefix": "茲證明於「",
+        "statement_suffix": "」擔任志工服務，特發此證明。",
+        "event_period_label": "服務期間",
+        "completion_hours_label": "服務時數",
+        "completion_hours_unit": "小時",
+    }
+
+
 def resolve_completion_cert_verification_token(cert_document: dict[str, Any]) -> str:
     existing_token = str(cert_document.get("verificationTokenHash") or "").strip()
     if existing_token:
@@ -880,8 +1161,18 @@ def build_issued_completion_cert_blob_name(cert_document: dict[str, Any]) -> str
     return f"completionCert/{event_id}/{cert_id}.pdf"
 
 
+def build_issued_volunteer_service_cert_blob_name(cert_document: dict[str, Any]) -> str:
+    event_id = str(cert_document.get("eventId", "")).strip()
+    cert_id = str(cert_document.get("id", "")).strip()
+    return f"volunteerServiceCert/{event_id}/{cert_id}.pdf"
+
+
 def build_completion_cert_download_filename(cert_document: dict[str, Any]) -> str:
     return "certificate.pdf"
+
+
+def build_volunteer_service_cert_download_filename(cert_document: dict[str, Any]) -> str:
+    return "volunteer-service-certificate.pdf"
 
 
 def _can_issue_completion_cert_for_event(event_document: dict[str, Any]) -> bool:
@@ -994,6 +1285,57 @@ def build_public_certificate_application_type_options(
         }
         for application_type in application_types
     ]
+
+
+def build_public_volunteer_service_details(
+    *,
+    cert_document: dict[str, Any],
+    event_document: dict[str, Any],
+) -> dict[str, Any]:
+    event_id = str(cert_document.get("eventId", "")).strip()
+    completion_cert_id = str(cert_document.get("id", "")).strip()
+    volunteer_document = None
+    if event_id and completion_cert_id:
+        volunteer_cert_id = build_volunteer_service_cert_id(
+            completion_cert_id=completion_cert_id,
+            event_id=event_id,
+        )
+        try:
+            volunteer_document = find_volunteer_service_cert_document(
+                cert_id=volunteer_cert_id,
+                container=get_volunteer_service_certs_container(),
+                event_id=event_id,
+            )
+        except (
+            VolunteerServiceStoreConfigurationError,
+            VolunteerServiceStoreOperationError,
+        ):
+            LOGGER.warning("Volunteer service cert lookup is unavailable.", exc_info=True)
+
+    source_document = volunteer_document if volunteer_document is not None else event_document
+    return {
+        "source": "configured" if volunteer_document is not None else "eventDefault",
+        "serviceOrganization": normalize_optional_string(
+            volunteer_document.get("serviceOrganization")
+            if volunteer_document is not None
+            else cert_document.get("organization")
+        ),
+        "serviceStartDate": normalize_optional_string(
+            source_document.get(
+                "serviceStartDate" if volunteer_document is not None else "eventStartDate"
+            )
+        ),
+        "serviceEndDate": normalize_optional_string(
+            source_document.get(
+                "serviceEndDate" if volunteer_document is not None else "eventEndDate"
+            )
+        ),
+        "serviceHours": normalize_optional_int(
+            source_document.get(
+                "serviceHours" if volunteer_document is not None else "completionHours"
+            )
+        ),
+    }
 
 
 def build_document_lookup_not_found_response(req: func.HttpRequest) -> func.HttpResponse:
@@ -1769,6 +2111,11 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
         "name": str(document.get("name", "")).strip(),
         "organization": str(document.get("organization", "")).strip(),
     }
+    if "volunteerServiceCert" in certificate_application_types:
+        document_payload["volunteerServiceDetails"] = build_public_volunteer_service_details(
+            cert_document=document,
+            event_document=event_document or {},
+        )
     if completed_change_request is not None:
         document_payload["changeRequestReview"] = completed_change_request
 
@@ -1832,7 +2179,7 @@ def public_completion_cert_issue_api(req: func.HttpRequest) -> func.HttpResponse
         return build_cert_issue_invalid_response(req)
 
     try:
-        pdf_bytes, filename = issue_completion_cert_pdf(payload, req)
+        pdf_bytes, filename = issue_public_certificate_pdf(payload, req)
     except LookupError:
         return build_document_lookup_not_found_response(req)
     except PermissionError:
@@ -1844,6 +2191,8 @@ def public_completion_cert_issue_api(req: func.HttpRequest) -> func.HttpResponse
         CompletionStoreOperationError,
         EventStoreConfigurationError,
         EventStoreOperationError,
+        VolunteerServiceStoreConfigurationError,
+        VolunteerServiceStoreOperationError,
         ValueError,
     ):
         LOGGER.warning("Completion certificate issue failed.", exc_info=True)

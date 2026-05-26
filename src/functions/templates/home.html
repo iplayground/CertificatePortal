@@ -220,6 +220,34 @@
                 <p class="options-subtitle" id="certificate-options-subtitle">{{certificate_options_subtitle}}</p>
               </div>
 
+              <dl class="certificate-summary-list volunteer-service-summary-list" id="volunteer-service-summary" aria-label="{{volunteer_service_summary_label}}" hidden>
+                <div>
+                  <dt id="volunteer-service-start-date-label">{{volunteer_service_start_date_label}}</dt>
+                  <dd id="volunteer-service-start-date-value"></dd>
+                </div>
+                <div>
+                  <dt id="volunteer-service-end-date-label">{{volunteer_service_end_date_label}}</dt>
+                  <dd id="volunteer-service-end-date-value"></dd>
+                </div>
+                <div>
+                  <dt id="volunteer-service-hours-label">{{volunteer_service_hours_label}}</dt>
+                  <dd id="volunteer-service-hours-value"></dd>
+                </div>
+              </dl>
+
+              <div class="field" id="volunteer-service-organization-field" hidden>
+                <span class="field-label" id="volunteer-service-organization-label">{{volunteer_service_organization_label}}</span>
+                <input
+                  id="volunteer-service-organization"
+                  name="volunteerServiceOrganization"
+                  type="text"
+                  autocomplete="organization"
+                  aria-labelledby="volunteer-service-organization-label"
+                  maxlength="120"
+                  placeholder="{{volunteer_service_organization_placeholder}}"
+                >
+              </div>
+
               <div class="field" id="certificate-name-options-field">
                 <span class="field-label" id="certificate-name-options-label">{{certificate_name_options_label}}</span>
                 <div class="choice-list" id="certificate-name-options" role="radiogroup" aria-labelledby="certificate-name-options-label"></div>

@@ -18,6 +18,7 @@
 | `GET` | `/api/v1/events` | 公開首頁可申請活動清單 | `application/json` |
 | `POST` | `/api/v1/document-lookup` | 公開首頁文件查詢 | `application/json` |
 | `POST` | `/api/v1/completion-cert-change-requests` | 公開首頁完訓證明修改申請 | `application/json` |
+| `POST` | `/api/v1/completion-certs/issue` | 公開首頁依申請種類產生並下載完訓證明或志工服務證明 PDF | `application/pdf` |
 | `GET` | `/api/v1/admin/events` | 查詢活動管理資料 | `application/json` |
 | `POST` | `/api/v1/admin/events` | 建立活動管理資料 | `application/json` |
 | `PUT` | `/api/v1/admin/events/{eventId}` | 更新單筆活動管理資料 | `application/json` |
@@ -35,7 +36,7 @@
 | `PUT` | `/api/v1/admin/tax-receipts/{receiptid}` | 修改單筆營業稅繳稅證明 | `application/json` |
 | `DELETE` | `/api/v1/admin/tax-receipts/{receiptid}` | 刪除單筆營業稅繳稅證明 | `application/json` |
 | `POST` | `/api/v1/tax-receipts/download` | 串流下載單筆或多筆營業稅繳稅證明檔案 | `application/pdf`、`image/png`、`image/jpeg` 或 `application/zip` |
-| `GET` | `/verify/{certId}` | QRCode 入口的公開完訓證明驗證頁面 | `text/html` |
+| `GET` | `/verify/{certId}` | QRCode 入口的公開證明驗證頁面 | `text/html` |
 
 ## 內部導向端點
 
@@ -54,12 +55,12 @@
 目前首頁、公開驗證頁與管理平台都先以 HTML 頁面呈現。管理平台目前已接入 Google Workspace SSO、Google Group 授權檢查與 session cookie；活動管理、首頁公開活動清單、完訓證明 CSV 匯入與營業稅繳稅證明新增流程已串接 Cosmos DB。
 
 - 首頁 HTML 不同步查詢 Cosmos DB；頁面先載入後由前端呼叫 `GET /api/v1/events`，再依狀態為 `open` 的活動顯示活動清單。管理平台的活動管理、完訓證明清單與營業稅繳稅證明清單已串接 Cosmos DB
-- 公開驗證頁面為 QRCode 掃描後的公開入口，會以 QRCode 內的驗證 token 查詢已發證的完訓證明紀錄，並只顯示驗證所需的最低限度資料
+- 公開驗證頁面為 QRCode 掃描後的公開入口，會以 QRCode 內的驗證 token 查詢已發證的完訓證明或志工服務證明紀錄，並只顯示驗證所需的最低限度資料
 - 活動管理已提供 Cosmos DB 的活動新增、查詢與修改；完訓證明 CSV 由後端解析、驗證並寫入 Cosmos DB；營業稅繳稅證明由後端驗證 metadata、將檔案寫入 Blob Storage，並將權威 metadata 寫入 Cosmos DB
 - 完訓證明頁目前已有後端 CSV 匯入、活動篩選、清單載入與單筆資料修改流程
-- 完訓證明 PDF 合成邏輯已建立於 `src/shared/completion_certificate_pdf.py`，模板檔跟隨 git 版控，單位印章圖預設位於 Azure Storage `document-assets/shared/organization-seal.png`；跨平台嵌入字體由部署 workflow 從 private `document-assets/shared/fonts/` 下載後放進 Function App 部署包；首頁確認後會發證、以 Cool tier 上傳 PDF 至 `issued-certs/completionCert/{eventId}/{certId}.pdf`，已發證資料再次查詢時會下載既有 PDF
+- 完訓證明 PDF 合成邏輯已建立於 `src/shared/completion_certificate_pdf.py`，志工服務證明沿用相同 renderer 並套用志工服務文案；模板檔跟隨 git 版控，單位印章圖預設位於 Azure Storage `document-assets/shared/organization-seal.png`；跨平台嵌入字體由部署 workflow 從 private `document-assets/shared/fonts/` 下載後放進 Function App 部署包；首頁確認後會依申請種類發證、以 Cool tier 上傳 PDF 至 `issued-certs/completionCert/{eventId}/{certId}.pdf` 或 `issued-certs/volunteerServiceCert/{eventId}/{certId}.pdf`，已發證資料再次查詢時會下載既有 PDF
 - 營業稅繳稅證明頁目前支援單筆 PDF、PNG 或 JPG/JPEG 新增、拖曳上傳、清單讀取、修改、下載與刪除；目前不支援 WebP
-- 首頁完訓證明查詢成功且 `certStatus` 為 `notIssued`、`changeRequested`、`issued` 或 `transferred` 時，會顯示「選擇證明顯示方式」區塊；若該筆資料符合活動的志工服務證明票種設定，會在其上方顯示「申請種類」讓使用者選擇完訓證明或志工服務證明；已轉移為志工服務證明時，完訓證明選項會停用；`notIssued` 時「提出修改申請」會切換到首頁同卡片內的修改申請流程，送出後會寫入 Cosmos DB `completionCertRequests` 並將對應完訓證明狀態改為 `changeRequested`；同一張完訓證明已有 `approved` 或 `rejected` 修改申請時，公開 API 會拒絕再次提出，首頁並顯示已通過或已駁回的審核結果；`changeRequested` 時不再顯示「提出修改申請」，改顯示修改申請處理中提示；`issued` 時再次按下產生按鈕會下載既有 PDF，不重新合成
+- 首頁完訓證明查詢成功且 `certStatus` 為 `notIssued`、`changeRequested`、`issued` 或 `transferred` 時，會顯示「選擇證明顯示方式」區塊；若該筆資料符合活動的志工服務證明票種設定，會在其上方顯示「申請種類」讓使用者選擇完訓證明或志工服務證明；選擇志工服務證明時會顯示服務開始日期、結束日期、服務時數與可填寫的單位名稱；若 `volunteerServiceCerts` 已有該筆資料，顯示已設定的服務日期與時數，否則顯示來源活動的預設活動日期與完訓時數。已轉移為志工服務證明時，完訓證明選項會停用；`notIssued` 時「提出修改申請」會切換到首頁同卡片內的修改申請流程，送出後會寫入 Cosmos DB `completionCertRequests` 並將對應完訓證明狀態改為 `changeRequested`；同一張完訓證明已有 `approved` 或 `rejected` 修改申請時，公開 API 會拒絕再次提出，首頁並顯示已通過或已駁回的審核結果；`changeRequested` 時不再顯示「提出修改申請」，改顯示修改申請處理中提示；`issued` 時再次按下產生按鈕會下載既有 PDF，不重新合成
 
 ### 表單輸入規則
 
@@ -135,7 +136,8 @@
 - 完訓證明查詢成功時，回應會包含 `badgeName`、`name`、`organization`、`certStatus`、`canRequestChanges`、`certificateApplicationTypes` 與 `certificateApplicationTypeOptions`，供首頁決定是否顯示「申請種類」、「選擇證明顯示方式」及修改申請狀態提示。
 - `certificateApplicationTypes` 只回傳可申請種類代碼，例如 `completionCert` 與 `volunteerServiceCert`。`certificateApplicationTypeOptions` 則回傳同一組種類的可選狀態，例如 `{ "type": "completionCert", "disabled": true }`。後端會以活動文件的 `volunteerServiceTicketNames` 比對該筆完訓資料的 `ticketName`，只有符合時才加入 `volunteerServiceCert`；回應不得包含 `volunteerServiceTicketNames` 或使用者的 `ticketName`。
 - 若來源完訓資料已被管理端轉移到 `volunteerServiceCert`，公開查詢仍應找得到該筆權威來源資料，並以 `certStatus = transferred` 讓首頁進入參與證明流程；不得在查詢階段把這類資料當成不存在。此時 `certificateApplicationTypeOptions` 必須將 `completionCert` 標記為 disabled，避免使用者再選擇完訓證明。
-- `certStatus` 為 `notIssued`、`changeRequested`、`issued` 或 `transferred` 時，首頁會顯示「選擇證明顯示方式」。`issued` 進入下載模式，姓名與公司顯示選項會鎖定，說明文字會合併提示「一旦確認後，將無法更改」，不顯示證書預覽區塊，按鈕文案改為「下載證書」並下載既有 PDF；公開下載回應的檔名固定為 `certificate.pdf`，不包含報名序號、KKTIX ID 或其他個人資料。
+- `certStatus` 為 `notIssued`、`changeRequested`、`issued` 或 `transferred` 時，首頁會顯示「選擇證明顯示方式」。`issued` 進入下載模式，姓名與公司顯示選項會鎖定，說明文字會合併提示「一旦確認後，將無法更改」，不顯示證書預覽區塊，按鈕文案改為「下載證書」並下載既有 PDF；公開下載回應的檔名依申請種類固定為 `certificate.pdf` 或 `volunteer-service-certificate.pdf`，不包含報名序號、KKTIX ID 或其他個人資料。
+- 選擇 `volunteerServiceCert` 時，首頁會顯示服務開始日期、結束日期、服務時數與單位名稱欄位。前三者由公開查詢回應的 `volunteerServiceDetails` 呈現；若 `volunteerServiceCerts` 已有該筆資料則使用該文件值，否則使用活動 `eventStartDate`、`eventEndDate` 與 `completionHours` 作為尚未轉移前的預設值。單位名稱預設帶入志工服務資料的 `serviceOrganization` 或來源完訓證明 `organization`，使用者可在產生志工服務證明前調整。
 - 「選擇證明顯示方式」區塊會依實際 `name` 與 `badgeName` 產生姓名顯示選項：`姓名`、`Badge Name`、`姓名 (Badge Name)`；若其中一個值為空，或兩者相同，只顯示單一有效選項。
 - 若查詢結果有 `organization`，首頁會顯示是否顯示公司名的 checkbox。
 - 顯示「選擇證明顯示方式」時，首頁會隱藏「查詢文件」按鈕，並鎖定活動、文件類型、報名序號與 email，避免使用者在確認顯示方式時修改查詢條件。
@@ -217,6 +219,12 @@ Request JSON 範例：
     "certStatus": "notIssued",
     "name": "王小明",
     "organization": "iPlayground",
+    "volunteerServiceDetails": {
+      "serviceStartDate": "2026-07-24",
+      "serviceEndDate": "2026-07-25",
+      "serviceHours": 16,
+      "serviceOrganization": "iPlayground"
+    },
     "changeRequestReview": {
       "status": "rejected",
       "reviewedAt": "2026-04-30T08:30:00Z",
@@ -295,6 +303,36 @@ Request JSON 範例：
 }
 ```
 
+### `POST /api/v1/completion-certs/issue`
+
+- 首頁在完訓證明查詢成功且使用者按下「確認產生證書」或「下載證書」時呼叫，用於依申請種類產生或下載 PDF。
+- 此 API 為公開寫入端點，不要求管理者 session；但若 request 帶有 `Origin`，必須與目前網站同源，避免第三方網站直接跨站觸發發證。
+- Request 必須包含與公開查詢相同的 `documentType = completionCert`、`eventId`、`registrationNumber` 與 `email`；後端會重新查詢 `completionCerts` 權威資料，不信任前端傳入的姓名、單位、狀態或志工服務日期時數。
+- `certificateApplicationType` 決定產生文件類型，允許 `completionCert` 與 `volunteerServiceCert`；未提供時預設 `completionCert`。
+- `completionCert` 會產生完訓證明，寫入 `issued-certs/completionCert/{eventId}/{certId}.pdf`，並回填來源 `completionCerts` 的發證 metadata、下載統計與驗證 token。若該筆完訓證明已發行，會下載既有 blob。
+- `volunteerServiceCert` 會產生志工服務證明。若 `volunteerServiceCerts` 尚無對應文件，後端會由來源完訓證明與活動預設值建立志工服務證明資料，並把來源 `completionCerts.certStatus` 改為 `transferred`，同時寫入 `transferredToDocumentType`、`transferredToDocumentId`、`transferredAt` 與 `transferredBy = system:public-issue`。
+- 志工服務證明只允許活動票種設定支援 `volunteerServiceCert` 的完訓資料申請；若來源完訓證明已是 `issued`，不可再由公開流程轉移為志工服務證明。
+- 志工服務證明產生後會寫入 `issued-certs/volunteerServiceCert/{eventId}/{certId}.pdf`，並回填 `volunteerServiceCerts` 的發證 metadata 與驗證 token。若該筆志工服務證明已發行，會下載既有 blob。
+- `volunteerServiceOrganization` 可由使用者填寫志工服務單位名稱，長度上限 120 字；若未填寫，後端使用既有 `volunteerServiceCerts.serviceOrganization` 或來源完訓證明的 `organization`。
+- 若用戶在修改審核完成前完成任一發證流程，系統會把該筆 pending 修改申請改為 `cancelledByIssue` 並保留稽核欄位。
+- Response 直接串流 `application/pdf`；完訓證明下載檔名固定 `certificate.pdf`，志工服務證明下載檔名固定 `volunteer-service-certificate.pdf`。
+
+Request JSON 範例：
+
+```json
+{
+  "documentType": "completionCert",
+  "eventId": "evt_550e8400-e29b-41d4-a716-446655440000",
+  "registrationNumber": "100",
+  "email": "attendee@example.com",
+  "nameDisplay": "nameWithBadge",
+  "showOrganization": true,
+  "locale": "zh-TW",
+  "certificateApplicationType": "volunteerServiceCert",
+  "volunteerServiceOrganization": "iPlayground 志工隊"
+}
+```
+
 ### 語系規則
 
 - 首頁與公開驗證頁支援 `zh-TW` 與 `en-US`
@@ -367,16 +405,16 @@ Request JSON 範例：
 - 營業稅繳稅證明查詢成功後，首頁會改顯示可下載收據 view state，並鎖住活動、文件類型、統編與產製時間；活動與統編摘要同列顯示。收據清單依產製時間由早到晚排序，列上只突出使用者需要比對的產製時間與金額，不以檔名作為主要辨識資訊
 - 可下載收據清單使用表格呈現，左上角表頭提供全選 checkbox，資料列提供每筆 checkbox；預設只勾選查詢命中的那筆。表頭 checkbox 應支援未選、半選與全選狀態，半選代表目前只選取部分收據；全選控制不放在底部返回與下載操作旁，避免與提交下載行為混淆。手機版應保留足夠點擊範圍，並持續顯示 `已選取 {selected} / {total} 筆` 狀態
 - 可下載收據 view state 底部提供 `返回查詢` 與 `下載收據`；按下下載後按鈕文案改為 `收據下載準備中，請稍候。`，並暫時停用下載、全選與各筆勾選，直到下載完成或失敗後還原。若因短時間連續下載被擋，錯誤訊息顯示在下載按鈕上方，文案不得揭露實際冷卻秒數
-- 完訓證明查詢成功且 `certStatus` 為 `notIssued`、`changeRequested` 或 `transferred` 時，首頁顯示「選擇證明顯示方式」，讓使用者選擇姓名顯示方式與是否顯示公司名；若查詢回應的 `certificateApplicationTypes` 同時包含 `completionCert` 與 `volunteerServiceCert`，會在「選擇證明顯示方式」上方顯示「申請種類」，讓使用者選擇 `完訓證明` 或 `志工服務證明`；若 `certificateApplicationTypeOptions` 將某一申請種類標記為 disabled，首頁必須停用該選項並預設選擇第一個可用種類；準備生成模式會即時顯示對應語系與顯示選項的 PNG 預覽，並在確認按鈕旁提示確認後將無法更改
-- 「選擇證明顯示方式」目前包含 `返回查詢`、`確認產生證書`，並依 `canRequestChanges` 顯示 `提出修改申請`；其中 `返回查詢` 已可回到查詢表單，`提出修改申請` 已可切換到首頁內修改申請 view state 並寫入後端修改申請資料，`確認產生證書` 會呼叫發證 API 產生並下載 PDF；`issued` 下載模式不顯示 PNG 預覽，會鎖定顯示選項，並把按鈕文案改為 `下載證書`；下載檔名固定為 `certificate.pdf`
+- 完訓證明查詢成功且 `certStatus` 為 `notIssued`、`changeRequested`、`issued` 或 `transferred` 時，首頁顯示「選擇證明顯示方式」，讓使用者選擇姓名顯示方式與是否顯示公司名；若查詢回應的 `certificateApplicationTypes` 同時包含 `completionCert` 與 `volunteerServiceCert`，會在「選擇證明顯示方式」上方顯示「申請種類」，讓使用者選擇 `完訓證明` 或 `志工服務證明`；若 `certificateApplicationTypeOptions` 將某一申請種類標記為 disabled，首頁必須停用該選項並預設選擇第一個可用種類；選擇志工服務證明時，首頁顯示服務開始日期、結束日期、服務時數與可填寫的單位名稱；準備生成模式會即時顯示對應語系、申請種類與顯示選項的 PNG 預覽，並在確認按鈕旁提示確認後將無法更改
+- 「選擇證明顯示方式」目前包含 `返回查詢`、`確認產生證書`，並依 `canRequestChanges` 顯示 `提出修改申請`；其中 `返回查詢` 已可回到查詢表單，`提出修改申請` 已可切換到首頁內修改申請 view state 並寫入後端修改申請資料，`確認產生證書` 會呼叫發證 API 產生並下載 PDF；`issued` 下載模式不顯示 PNG 預覽，會鎖定顯示選項，並把按鈕文案改為 `下載證書`；下載檔名依申請種類固定為 `certificate.pdf` 或 `volunteer-service-certificate.pdf`
 - `changeRequested` 時，首頁會在「選擇證明顯示方式」顯示處理中提示，並說明若現在確認產生證書會視為放棄本次修改申請
 - 已完成審核的修改申請會在「選擇證明顯示方式」顯示通過或駁回結果；若 `reviewNote` 有值，提示會保留換行並在第二行顯示 `審核備註：...`
 - 顯示頁尾版權聲明
 
 ### `/verify/{certId}`
 
-- 作為完訓證明 PDF 內 QRCode 掃描後的公開驗證入口
-- 以 `{certId}` 作為驗證 token 查詢 `completionCerts.verificationTokenHash`，且只將 `certStatus = issued` 的紀錄視為有效
+- 作為證明 PDF 內 QRCode 掃描後的公開驗證入口
+- 以 `{certId}` 作為驗證 token 先查詢 `completionCerts.verificationTokenHash`，若查無有效完訓證明，再查詢 `volunteerServiceCerts.verificationTokenHash`；兩種文件都只將 `certStatus = issued` 的紀錄視為有效
 - 有效時顯示醒目的成功狀態，詳細資料列順序為驗證狀態、證明編號、活動、證明姓名、任職單位與發證時間
 - 任職單位只在該證書發證時實際選擇顯示公司名，且 `certificateDisplayOrganization` 有值時才顯示
 - 無效時顯示醒目的失敗狀態，仍保留證明編號、活動、證明姓名與發證時間欄位，但值顯示為 `未顯示`，且不顯示任職單位

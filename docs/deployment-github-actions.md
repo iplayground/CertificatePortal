@@ -280,7 +280,7 @@ python3 scripts/backfill_completion_cert_metrics.py --apply
 
 可用 `--event-id <event-id>` 限定單一活動。腳本可重複執行；回填完成後再次 dry-run 應顯示 `eventsUpdated: 0` 與 `completionCertsUpdated: 0`。
 
-首頁發證流程會在產生完訓證明 PDF 後上傳到 `issued-certs/completionCert/...`，並由程式指定為 Cool tier；若以手動方式補上或修正 `issued-certs` 內的已發證 PDF，也應同步設定為 Cool tier。
+首頁發證流程會在產生完訓證明或志工服務證明 PDF 後，依文件類型上傳到 `issued-certs/completionCert/...` 或 `issued-certs/volunteerServiceCert/...`，並由程式指定為 Cool tier；若以手動方式補上或修正 `issued-certs` 內的已發證 PDF，也應同步設定為 Cool tier。
 
 ## 注意事項
 

@@ -50,6 +50,10 @@ class FakeCompletionContainer:
         raise FakeCosmosNotFoundError()
 
 
+class FakeVolunteerContainer(FakeCompletionContainer):
+    pass
+
+
 class FakeEventContainer:
     def __init__(self, documents: dict[str, dict[str, Any]]) -> None:
         self.documents = documents
@@ -250,6 +254,62 @@ def test_verify_page_renders_valid_completion_certificate(
         "downloadCount": 1,
         "verificationCount": 3,
     }
+
+
+def test_verify_page_renders_valid_volunteer_service_certificate(
+    monkeypatch: Any,
+) -> None:
+    events_container = FakeEventContainer(
+        {
+            "evt_1": {
+                "id": "evt_1",
+                "name": "iPlayground 2026",
+            }
+        }
+    )
+    records_container = FakeCompletionContainer([])
+    volunteer_container = FakeVolunteerContainer(
+        [
+            {
+                "id": "vscert_1",
+                "eventId": "evt_1",
+                "number": 12,
+                "kktixId": "KKTIX-001",
+                "certStatus": "issued",
+                "verificationTokenHash": "volunteer-token",
+                "verificationCount": 2,
+                "certificateDisplayName": "王小明",
+                "certificateDisplayOrganization": "iPlayground 志工隊",
+                "certificateLocale": "zh-TW",
+                "issuedAt": "2026-05-01T08:00:00Z",
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        public_verification,
+        "get_completion_records_container",
+        lambda: records_container,
+    )
+    monkeypatch.setattr(
+        public_verification,
+        "get_volunteer_service_certs_container",
+        lambda: volunteer_container,
+    )
+    monkeypatch.setattr(
+        public_verification,
+        "get_events_container",
+        lambda: events_container,
+    )
+
+    response = verify_cert_page(build_request("volunteer-token"))
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 200
+    assert "此完訓證明有效" in body
+    assert "KKTIX-001-12" in body
+    assert "王小明" in body
+    assert "iPlayground 志工隊" in body
+    assert volunteer_container.documents[0]["verificationCount"] == 3
 
 
 def test_verify_js_updates_locale_without_reloading() -> None:

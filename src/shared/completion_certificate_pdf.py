@@ -98,6 +98,7 @@ class CompletionCertificatePdfData:
     verification_url: str
     locale: str = "zh-TW"
     seal_image_path: Path | None = None
+    copy_override: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -168,7 +169,7 @@ def build_completion_certificate_overlay(
     buffer = BytesIO()
     overlay = canvas.Canvas(buffer, pagesize=(page_width, page_height))
     set_fill_color(overlay, PDF_TEXT_COLOR)
-    copy = resolve_completion_certificate_copy(data.locale)
+    copy = data.copy_override or resolve_completion_certificate_copy(data.locale)
     font_name = font_set.regular_font_name
     latin_font_name = font_set.latin_font_name
     title_font_name = font_set.title_font_name
