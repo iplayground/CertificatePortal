@@ -211,7 +211,7 @@ partition key: /id
 
 `completionCertRequests` 只記錄會眾是否申請資料調整、申請備註、審核狀態與通知狀態。這類資料不是完訓證明權威清單本身，因此獨立存放。
 
-不保留原始 CSV 檔案。完訓證明 PDF 底圖模板跟隨 git 版控，因欄位座標需要與模板版本同步；志工服務證明沿用相同 PDF renderer 並套用志工服務文案。固定印章圖存放於 Blob Storage `document-assets` container，預設 blob 名稱為 `shared/organization-seal.png`；首頁證明預覽 PNG 也存放於 `document-assets`，完訓證明 blob 名稱格式為 `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`，志工服務證明 blob 名稱格式為 `volunteer-service-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`，預覽 PDF 備份則分別使用 `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 與 `volunteer-service-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並設定為 Archive tier。動態欄位使用的跨平台嵌入字體不提交到 git，部署 workflow 會從 private `document-assets` 下載共用 PDF regular 與 bold 字體素材，再放入 Function App 部署包。產生後 PDF 依文件類型存放於 Blob Storage `issued-certs/completionCert/{eventId}/{certId}.pdf` 或 `issued-certs/volunteerServiceCert/{eventId}/{certId}.pdf`，並以 Cool tier 儲存。Cosmos DB 只儲存證明清單資料、狀態、顯示選項與產生後檔案的 blob 名稱，不儲存 CSV 原文、印章圖、預覽圖、字體檔或 PDF 二進位。
+不保留原始 CSV 檔案。完訓證明 PDF 底圖模板跟隨 git 版控，因欄位座標需要與模板版本同步；志工服務證明沿用相同 PDF renderer 並套用志工服務文案。固定印章圖存放於 Blob Storage `document-assets` container，預設 blob 名稱為 `shared/organization-seal.png`；首頁證明樣式示意 PNG 也存放於 `document-assets`，完訓證明 blob 名稱格式為 `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`，志工服務證明 blob 名稱格式為 `volunteer-service-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png`，樣式示意 PDF 備份則分別使用 `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 與 `volunteer-service-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並設定為 Archive tier。動態欄位使用的跨平台嵌入字體不提交到 git，部署 workflow 會從 private `document-assets` 下載共用 PDF regular 與 bold 字體素材，再放入 Function App 部署包。產生後 PDF 依文件類型存放於 Blob Storage `issued-certs/completionCert/{eventId}/{certId}.pdf` 或 `issued-certs/volunteerServiceCert/{eventId}/{certId}.pdf`，並以 Cool tier 儲存。Cosmos DB 只儲存證明清單資料、狀態、顯示選項與產生後檔案的 blob 名稱，不儲存 CSV 原文、印章圖、樣式示意圖、字體檔或 PDF 二進位。
 
 `taxReceipts` 是營業稅繳稅證明 metadata 的權威資料來源。管理端逐筆新增時，後端會先驗證活動已開放 `taxReceipt` 文件類型、統編、整數金額、UTC 產製時間與檔案格式，再將 PDF、PNG 或 JPG/JPEG 檔案寫入 Blob Storage `tax-receipts` container，並將 metadata 寫入 Cosmos DB。Cosmos DB 不儲存檔案二進位；`sourceBlobName` 指向對應 Blob。
 
@@ -373,7 +373,7 @@ transferred
 
 管理中心完訓證明清單中的下載按鈕依 `certStatus` 判斷是否可用；目前只有 `issued` 可下載。`notIssued`、`failed`、`changeRequested` 與 `transferred` 不可下載，即使 `attendanceStatus` 為 `checkedIn` 也一樣。
 
-公開首頁在 `notIssued` 狀態的「選擇證明顯示方式」區塊提供「提出修改申請」入口，並會切換到首頁同卡片內的修改申請 view state。送出後會建立或更新 `completionCertRequests` 文件，並把對應 `completionCerts.certStatus` 改為 `changeRequested`；若同一張完訓證明已有 `approved` 或 `rejected` 修改申請，公開 API 不允許再次提出修改申請，且首頁會在「選擇證明顯示方式」顯示已通過或已駁回的審核結果。若已完成審核的申請有 `reviewNote`，首頁會在審核結果第二行顯示 `審核備註：...`。
+公開首頁在 `notIssued` 狀態的「選擇證明顯示方式」區塊提供「提出修改申請」入口，已轉移到 `volunteerServiceCert` 且對應志工服務證明仍未發行的資料也提供同一入口，並會切換到首頁同卡片內的修改申請 view state。送出後會建立或更新 `completionCertRequests` 文件；一般 `notIssued` 完訓證明會把對應 `completionCerts.certStatus` 改為 `changeRequested`，已轉移來源資料則維持 `transferred`，以避免破壞轉移稽核欄位。公開 API 只以同一張完訓證明是否已有 `pending` 修改申請作為再次提出的阻擋條件；`approved` 或 `rejected` 完成審核後可再次提出。若同一張證明已有 pending 申請，使用相同申請備註重送會更新同一筆申請，不同備註會回覆 `409`。首頁會顯示最近一次已通過或已駁回的審核結果；若已完成審核的申請有有效 `reviewNote`，首頁會在審核結果第二行顯示 `審核備註：...`，`null`、空字串或字串 `None` 不顯示備註行。
 
 公開首頁查詢到 `changeRequested` 狀態時仍會進入「選擇證明顯示方式」，但不再顯示「提出修改申請」。頁面會提示修改申請正在處理中，並告知使用者若現在確認產生證書，將視為放棄本次修改申請。
 
@@ -464,7 +464,7 @@ partition key: /eventId
 
 ### 資料調整申請文件
 
-`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。公開首頁送出修改申請時會寫入此 container；同一張完訓證明使用相同申請備註重送時，會使用穩定 id upsert 同一筆申請文件。管理端審核通過或駁回後會寫入審核欄位，並將對應 `completionCerts.certStatus` 從 `changeRequested` 恢復為 `notIssued`，讓後續發證流程可重新處理權威清單資料；若管理者在審核時轉移為志工服務證明，申請狀態會改為 `transferred`，來源完訓證明狀態會改為 `transferred` 並建立對應 `volunteerServiceCerts` 文件。同一張完訓證明已有 `approved` 或 `rejected` 申請後，不可再由公開首頁建立新的修改申請。管理端修改審核 API 會依 `eventId` 讀取 `events.name` 並以 `eventName` 回傳供審核視窗顯示；`eventName` 不存入 `completionCertRequests`，活動名稱權威仍在 `events` container。
+`completionCertRequests` 記錄會眾是否申請完訓證明資料調整、申請備註、管理者審核結果與審核完畢通知時間。公開首頁送出修改申請時會寫入此 container；同一張完訓證明同一時間只能有一筆 `pending` 申請，使用相同申請備註重送時，會使用穩定 id upsert 同一筆申請文件，已有 pending 且備註不同時會回覆 `409`。管理端審核通過或駁回後會寫入審核欄位，並將一般 `changeRequested` 完訓證明恢復為 `notIssued`，讓後續發證流程可重新處理權威清單資料；若來源資料已轉移到尚未發行的志工服務證明，且管理者在審核時選擇完訓證明，後端會刪除對應 `volunteerServiceCerts` 文件、清空來源完訓證明的轉移欄位，並恢復為 `notIssued`。若管理者在審核時轉移為志工服務證明，申請狀態會改為 `transferred`，來源完訓證明狀態會改為 `transferred` 並建立對應 `volunteerServiceCerts` 文件。已完成的 `approved` 或 `rejected` 申請不阻擋同一張完訓證明再次由公開首頁建立新的修改申請。管理端修改審核 API 會依 `eventId` 讀取 `events.name` 並以 `eventName` 回傳供審核視窗顯示；`eventName` 不存入 `completionCertRequests`，活動名稱權威仍在 `events` container。
 
 必要欄位：
 

@@ -37,7 +37,6 @@ from src.shared.completion_store import (
     find_completion_cert_document_for_public_lookup,
     get_completion_cert_requests_container,
     get_completion_records_container,
-    has_completed_completion_cert_request_document,
     list_completion_cert_documents,
     read_completed_completion_cert_request_document,
     read_completion_cert_document,
@@ -484,7 +483,9 @@ def read_public_non_negative_int(value: Any) -> int:
 
 def can_public_document_request_changes(document: dict[str, Any]) -> bool:
     cert_status = str(document.get("certStatus", "")).strip() or "notIssued"
-    if cert_status != "notIssued":
+    if cert_status != "notIssued" and not is_transferred_to_unissued_volunteer_service_cert(
+        document
+    ):
         return False
 
     completion_cert_id = str(document.get("id", "")).strip()
@@ -492,13 +493,54 @@ def can_public_document_request_changes(document: dict[str, Any]) -> bool:
         return False
 
     try:
-        return not has_completed_completion_cert_request_document(
+        pending_request_document = read_pending_completion_cert_request_document(
             container=get_completion_cert_requests_container(),
             completion_cert_id=completion_cert_id,
         )
+        if pending_request_document is not None:
+            return False
+        return True
     except (CompletionStoreConfigurationError, CompletionStoreOperationError):
         LOGGER.warning("Completion cert request status check is unavailable.", exc_info=True)
         return True
+
+
+def is_transferred_to_unissued_volunteer_service_cert(document: dict[str, Any]) -> bool:
+    if str(document.get("certStatus", "")).strip() != "transferred":
+        return False
+    if str(document.get("transferredToDocumentType", "")).strip() != "volunteerServiceCert":
+        return False
+
+    event_id = str(document.get("eventId", "")).strip()
+    completion_cert_id = str(document.get("id", "")).strip()
+    if not event_id or not completion_cert_id:
+        return False
+
+    volunteer_cert_id = str(document.get("transferredToDocumentId", "")).strip()
+    if not volunteer_cert_id:
+        volunteer_cert_id = build_volunteer_service_cert_id(
+            completion_cert_id=completion_cert_id,
+            event_id=event_id,
+        )
+
+    try:
+        volunteer_document = find_volunteer_service_cert_document(
+            cert_id=volunteer_cert_id,
+            container=get_volunteer_service_certs_container(),
+            event_id=event_id,
+        )
+    except (
+        VolunteerServiceStoreConfigurationError,
+        VolunteerServiceStoreOperationError,
+    ):
+        LOGGER.warning("Volunteer service cert status check is unavailable.", exc_info=True)
+        return True
+
+    if volunteer_document is None:
+        return True
+
+    volunteer_status = str(volunteer_document.get("certStatus", "")).strip() or "notIssued"
+    return volunteer_status == "notIssued"
 
 
 def read_public_document_completed_change_request(document: dict[str, Any]) -> dict[str, str] | None:
@@ -525,8 +567,16 @@ def read_public_document_completed_change_request(document: dict[str, Any]) -> d
     return {
         "status": status,
         "reviewedAt": str(request_document.get("reviewedAt", "")).strip(),
-        "reviewNote": str(request_document.get("reviewNote", "")).strip(),
+        "reviewNote": normalize_optional_review_note(request_document.get("reviewNote")),
     }
+
+
+def normalize_optional_review_note(value: Any) -> str:
+    if value is None:
+        return ""
+
+    normalized_value = str(value).strip()
+    return "" if normalized_value.lower() == "none" else normalized_value
 
 
 def submit_completion_cert_change_request(payload: dict[str, Any]) -> dict[str, Any]:
@@ -541,7 +591,10 @@ def submit_completion_cert_change_request(payload: dict[str, Any]) -> dict[str, 
         raise LookupError("completion certificate was not found")
 
     cert_status = str(public_document.get("certStatus", "")).strip() or "notIssued"
-    if cert_status not in {"notIssued", "changeRequested"}:
+    can_request_transferred_volunteer_cert = is_transferred_to_unissued_volunteer_service_cert(
+        public_document
+    )
+    if cert_status not in {"notIssued", "changeRequested"} and not can_request_transferred_volunteer_cert:
         raise PermissionError("completion certificate cannot request changes")
 
     completion_cert_id = str(public_document.get("id", "")).strip()
@@ -549,16 +602,20 @@ def submit_completion_cert_change_request(payload: dict[str, Any]) -> dict[str, 
         raise CompletionStoreOperationError("Completion certificate record is missing an id.")
 
     requests_container = get_completion_cert_requests_container()
-    if has_completed_completion_cert_request_document(
-        container=requests_container,
-        completion_cert_id=completion_cert_id,
-    ):
-        raise PermissionError("completion certificate already has a completed change request")
-
     request_id = build_completion_cert_request_id(
         payload["requesterNote"],
         completion_cert_id=completion_cert_id,
     )
+    pending_request_document = read_pending_completion_cert_request_document(
+        container=requests_container,
+        completion_cert_id=completion_cert_id,
+    )
+    if (
+        pending_request_document is not None
+        and str(pending_request_document.get("id", "")).strip() != request_id
+    ):
+        raise PermissionError("completion certificate already has a pending change request")
+
     request_document = build_completion_cert_request_document(
         completion_cert_id=completion_cert_id,
         event_id=payload["eventId"],
@@ -576,7 +633,10 @@ def submit_completion_cert_change_request(payload: dict[str, Any]) -> dict[str, 
         container=records_container,
         event_id=payload["eventId"],
     )
-    if str(cert_document.get("certStatus", "")).strip() != "changeRequested":
+    if (
+        str(cert_document.get("certStatus", "")).strip() != "changeRequested"
+        and not can_request_transferred_volunteer_cert
+    ):
         cert_document["certStatus"] = "changeRequested"
         cert_document["updatedAt"] = str(saved_request.get("updatedAt", "")).strip()
         replace_completion_cert_document(
@@ -2117,7 +2177,16 @@ def public_document_lookup_api(req: func.HttpRequest) -> func.HttpResponse:
             cert_document=document,
             event_document=event_document or {},
         )
-    if completed_change_request is not None:
+    try:
+        pending_change_request = read_pending_completion_cert_request_document(
+            container=get_completion_cert_requests_container(),
+            completion_cert_id=str(document.get("id", "")).strip(),
+        )
+    except (CompletionStoreConfigurationError, CompletionStoreOperationError):
+        pending_change_request = None
+    if pending_change_request is not None:
+        document_payload["changeRequestStatus"] = "pending"
+    elif completed_change_request is not None:
         document_payload["changeRequestReview"] = completed_change_request
 
     return build_home_api_json_response(

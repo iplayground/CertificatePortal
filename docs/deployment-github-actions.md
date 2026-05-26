@@ -129,7 +129,7 @@ unset TAX_RECEIPT_DOWNLOAD_TICKET_SECRET
 Blob container 用途：
 
 - `function-releases`：Flex Consumption 部署套件
-- `document-assets`：不進 git 的固定證明附件；目前已使用 `shared/organization-seal.png` 存放單位印章圖，並使用 `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png` 存放首頁完訓證明預覽圖、`volunteer-service-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png` 存放首頁志工服務證明預覽圖；預覽 PDF 備份分別存放於 `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 與 `volunteer-service-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並使用 Archive tier
+- `document-assets`：不進 git 的固定證明附件；目前已使用 `shared/organization-seal.png` 存放單位印章圖，並使用 `completion-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png` 存放首頁完訓證明樣式示意圖、`volunteer-service-cert/previews/png/{locale}-{nameDisplay}-{org|no-org}.png` 存放首頁志工服務證明樣式示意圖；樣式示意 PDF 備份分別存放於 `completion-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 與 `volunteer-service-cert/previews/pdf/{locale}-{nameDisplay}-{org|no-org}.pdf` 並使用 Archive tier
 - `issued-certs`：產生後可再次下載的證明 PDF；第一層以文件類型區分，例如完訓證明使用 `completionCert/{eventId}/{certId}.pdf`，志工服務證明使用 `volunteerServiceCert/{eventId}/{certId}.pdf`；應以 Cool tier 儲存
 - `tax-receipts`：管理端逐筆上傳的營業稅繳稅證明 PDF、PNG 或 JPG/JPEG 檔案
 
@@ -245,7 +245,7 @@ rollback 會重新 checkout rollback ref，並再次透過 `Azure/functions-acti
 - Tax receipt download ticket app settings：`TAX_RECEIPT_DOWNLOAD_TICKET_SECRET` 與 `TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS` 由 Bicep 參數或 CLI 寫入 Function App；secret 應由 Key Vault reference 或安全 CLI 流程提供，不提交到 repository
 - Cosmos containers：`events` 使用 `/id` 作為 partition key，供活動管理資料使用；完訓證明、志工服務證明與營業稅繳稅證明 containers 依 [cosmos-data-model.md](cosmos-data-model.md) 使用 `/eventId`
 
-Bicep 只建立 Blob containers、Function App app settings 與 GitHub Actions 讀取部署素材所需的 Storage Blob Data Reader 權限，不會上傳不進 git 的固定素材。重新建立環境後，仍需將單位印章圖、首頁證明預覽圖與共用 PDF regular/bold 字體檔上傳到 `document-assets`：
+Bicep 只建立 Blob containers、Function App app settings 與 GitHub Actions 讀取部署素材所需的 Storage Blob Data Reader 權限，不會上傳不進 git 的固定素材。重新建立環境後，仍需將單位印章圖、首頁證明樣式示意圖與共用 PDF regular/bold 字體檔上傳到 `document-assets`：
 
 - `shared/organization-seal.png`
 - `shared/fonts/STHeiti-Light.ttc`

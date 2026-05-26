@@ -3215,9 +3215,15 @@ def portal_admin_volunteer_service_cert_transfer_api(
             str(exc),
         )
     except VolunteerServiceStoreOperationError as exc:
+        issued_volunteer_service_cert = (
+            str(exc)
+            == "已發行的志工服務證明不可在修改審核中改回完訓證明，請先撤銷發行狀態。"
+        )
         return build_portal_api_error_response(
-            503,
-            "volunteer_service_transfer_unavailable",
+            409 if issued_volunteer_service_cert else 503,
+            "volunteer_service_cert_already_issued"
+            if issued_volunteer_service_cert
+            else "volunteer_service_transfer_unavailable",
             str(exc),
         )
 
@@ -4200,10 +4206,18 @@ def portal_admin_completion_cert_change_requests_review_api(
                 "updatedAt": reviewed_at,
             }
         else:
+            restore_transferred_volunteer_service_cert_for_completion_review(
+                cert_document=cert_document,
+                event_id=event_id,
+            )
             updated_cert_document = {
                 **cert_document,
                 **review_payload["updates"],
                 "certStatus": "notIssued",
+                "transferredToDocumentType": None,
+                "transferredToDocumentId": None,
+                "transferredAt": None,
+                "transferredBy": None,
                 "updatedAt": reviewed_at,
             }
         saved_cert_document = replace_completion_cert_document(
@@ -4244,9 +4258,15 @@ def portal_admin_completion_cert_change_requests_review_api(
             str(exc),
         )
     except VolunteerServiceStoreOperationError as exc:
+        issued_volunteer_service_cert = (
+            str(exc)
+            == "已發行的志工服務證明不可在修改審核中改回完訓證明，請先撤銷發行狀態。"
+        )
         return build_portal_api_error_response(
-            503,
-            "volunteer_service_transfer_unavailable",
+            409 if issued_volunteer_service_cert else 503,
+            "volunteer_service_cert_already_issued"
+            if issued_volunteer_service_cert
+            else "volunteer_service_transfer_unavailable",
             str(exc),
         )
     except CompletionStoreOperationError as exc:
@@ -4274,6 +4294,48 @@ def portal_admin_completion_cert_change_requests_review_api(
         )
 
     return build_portal_api_json_response(response_payload, status_code=200)
+
+
+def restore_transferred_volunteer_service_cert_for_completion_review(
+    *,
+    cert_document: dict[str, Any],
+    event_id: str,
+) -> None:
+    if str(cert_document.get("transferredToDocumentType", "")).strip() != "volunteerServiceCert":
+        return
+
+    volunteer_cert_id = str(cert_document.get("transferredToDocumentId", "")).strip()
+    if not volunteer_cert_id:
+        completion_cert_id = str(cert_document.get("id", "")).strip()
+        if not completion_cert_id:
+            return
+        volunteer_cert_id = build_volunteer_service_cert_id(
+            completion_cert_id=completion_cert_id,
+            event_id=event_id,
+        )
+
+    volunteer_container = get_volunteer_service_certs_container()
+    try:
+        volunteer_document = read_volunteer_service_cert_document(
+            cert_id=volunteer_cert_id,
+            container=volunteer_container,
+            event_id=event_id,
+        )
+    except VolunteerServiceStoreOperationError as exc:
+        if str(exc) == "找不到指定志工服務證明資料。":
+            return
+        raise
+
+    if str(volunteer_document.get("certStatus", "")).strip() == "issued":
+        raise VolunteerServiceStoreOperationError(
+            "已發行的志工服務證明不可在修改審核中改回完訓證明，請先撤銷發行狀態。"
+        )
+
+    delete_volunteer_service_cert_document(
+        cert_id=volunteer_cert_id,
+        container=volunteer_container,
+        event_id=event_id,
+    )
 
 
 @blueprint.function_name(name="portal_dashboard_page")

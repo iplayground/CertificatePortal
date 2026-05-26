@@ -3215,6 +3215,203 @@ def test_portal_admin_completion_cert_change_requests_review_api_approves_and_up
     assert fake_requests_container.items["ccreq_1"]["reviewNote"] == "已修正"
 
 
+def test_portal_admin_completion_cert_change_requests_review_api_approves_transferred_cert_and_removes_volunteer_service_cert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Ming",
+        "ticketName": "志工票",
+        "name": "王小明",
+        "organization": "志工組",
+        "email": "ming@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "transferred",
+        "transferredToDocumentType": "volunteerServiceCert",
+        "transferredToDocumentId": "vscert_1",
+        "transferredAt": "2026-05-25T03:00:00Z",
+        "transferredBy": "system:public-issue",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    fake_requests_container = FakeCompletionCertRequestsContainer()
+    fake_requests_container.items["ccreq_1"] = {
+        "id": "ccreq_1",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "pending",
+        "requesterEmail": "ming@example.com",
+        "requesterNote": "請改回完訓證明",
+        "reviewedBy": None,
+        "reviewedAt": None,
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": None,
+        "createdAt": "2026-04-30T08:00:00Z",
+        "updatedAt": "2026-04-30T08:00:00Z",
+    }
+    fake_volunteer_container = FakeVolunteerServiceCertsContainer()
+    fake_volunteer_container.items["vscert_1"] = {
+        "id": "vscert_1",
+        "eventId": "evt_1",
+        "sourceCompletionCertId": "ccert_1",
+        "number": 1,
+        "name": "王小明",
+        "email": "ming@example.com",
+        "serviceOrganization": "志工組",
+        "serviceHours": 12,
+        "serviceStartDate": "2026-07-24",
+        "serviceEndDate": "2026-07-25",
+        "downloadEnabled": True,
+        "certStatus": "notIssued",
+        "createdAt": "2026-05-25T03:00:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        lambda: fake_requests_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_volunteer_service_certs_container",
+        lambda: fake_volunteer_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "status": "approved",
+                "email": "new@example.com",
+                "name": "王小明",
+                "organization": "新公司",
+                "reviewNote": "改回完訓證明",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"requestid": "ccreq_1"},
+        url="http://localhost:7075/api/v1/admin/completion-cert-change-requests/ccreq_1",
+    )
+
+    response = portal_admin_completion_cert_change_requests_review_api(request)
+    restored_cert = fake_completion_container.items["ccert_1"]
+
+    assert response.status_code == 200
+    assert "vscert_1" not in fake_volunteer_container.items
+    assert restored_cert["certStatus"] == "notIssued"
+    assert restored_cert["transferredToDocumentType"] is None
+    assert restored_cert["transferredToDocumentId"] is None
+    assert restored_cert["transferredAt"] is None
+    assert restored_cert["transferredBy"] is None
+    assert restored_cert["email"] == "new@example.com"
+    assert restored_cert["organization"] == "新公司"
+    assert fake_requests_container.items["ccreq_1"]["status"] == "approved"
+
+
+def test_portal_admin_completion_cert_change_requests_review_api_rejects_completion_restore_when_volunteer_service_cert_is_issued(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_completion_container = FakeCompletionCertsContainer()
+    fake_completion_container.items["ccert_1"] = {
+        "id": "ccert_1",
+        "eventId": "evt_1",
+        "number": 1,
+        "kktixId": "KKTIX-001",
+        "badgeName": "Ming",
+        "ticketName": "志工票",
+        "name": "王小明",
+        "organization": "志工組",
+        "email": "ming@example.com",
+        "attendanceStatus": "checkedIn",
+        "certStatus": "transferred",
+        "transferredToDocumentType": "volunteerServiceCert",
+        "transferredToDocumentId": "vscert_1",
+        "transferredAt": "2026-05-25T03:00:00Z",
+        "transferredBy": "system:public-issue",
+        "issuedPdfBlobName": None,
+        "verificationTokenHash": None,
+        "issuedAt": None,
+        "createdAt": "2026-04-28T06:02:00Z",
+    }
+    fake_requests_container = FakeCompletionCertRequestsContainer()
+    fake_requests_container.items["ccreq_1"] = {
+        "id": "ccreq_1",
+        "completionCertId": "ccert_1",
+        "eventId": "evt_1",
+        "status": "pending",
+        "requesterEmail": "ming@example.com",
+        "requesterNote": "請改回完訓證明",
+        "reviewedBy": None,
+        "reviewedAt": None,
+        "reviewCompletedNotifiedAt": None,
+        "reviewNote": None,
+        "createdAt": "2026-04-30T08:00:00Z",
+        "updatedAt": "2026-04-30T08:00:00Z",
+    }
+    fake_volunteer_container = FakeVolunteerServiceCertsContainer()
+    fake_volunteer_container.items["vscert_1"] = {
+        "id": "vscert_1",
+        "eventId": "evt_1",
+        "sourceCompletionCertId": "ccert_1",
+        "number": 1,
+        "name": "王小明",
+        "email": "ming@example.com",
+        "serviceOrganization": "志工組",
+        "serviceHours": 12,
+        "serviceStartDate": "2026-07-24",
+        "serviceEndDate": "2026-07-25",
+        "downloadEnabled": True,
+        "certStatus": "issued",
+        "issuedPdfBlobName": "volunteerServiceCert/evt_1/vscert_1.pdf",
+        "createdAt": "2026-05-25T03:00:00Z",
+    }
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_records_container",
+        lambda: fake_completion_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_completion_cert_requests_container",
+        lambda: fake_requests_container,
+    )
+    monkeypatch.setattr(
+        "src.functions.portal.get_volunteer_service_certs_container",
+        lambda: fake_volunteer_container,
+    )
+    request = build_authorized_portal_api_request(
+        monkeypatch,
+        body=json.dumps(
+            {
+                "eventId": "evt_1",
+                "status": "approved",
+                "name": "王小明",
+                "organization": "新公司",
+                "reviewNote": "改回完訓證明",
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        method="PUT",
+        route_params={"requestid": "ccreq_1"},
+        url="http://localhost:7075/api/v1/admin/completion-cert-change-requests/ccreq_1",
+    )
+
+    response = portal_admin_completion_cert_change_requests_review_api(request)
+    body = response.get_body().decode("utf-8")
+
+    assert response.status_code == 409
+    assert '"code":"volunteer_service_cert_already_issued"' in body
+    assert "vscert_1" in fake_volunteer_container.items
+    assert fake_completion_container.items["ccert_1"]["certStatus"] == "transferred"
+    assert fake_requests_container.items["ccreq_1"]["status"] == "pending"
+
+
 def test_portal_admin_completion_cert_change_requests_review_api_rejects_pending_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

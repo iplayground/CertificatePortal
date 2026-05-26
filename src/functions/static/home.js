@@ -887,7 +887,9 @@ function renderCertificateCompanyOption(documentData) {
 }
 
 function renderCertificateOptionsStatus(documentData) {
-  const isChangeRequested = documentData?.certStatus === "changeRequested";
+  const isChangeRequested =
+    documentData?.certStatus === "changeRequested" ||
+    documentData?.changeRequestStatus === "pending";
   const canRequestChanges = typeof documentData?.canRequestChanges === "boolean"
     ? documentData.canRequestChanges
     : documentData?.certStatus === "notIssued";
@@ -1308,7 +1310,11 @@ async function submitCertificateChangeRequest() {
     );
     showCertificateChangeRequestFeedback(message);
     if (currentCertificateDocument) {
-      currentCertificateDocument.certStatus = "changeRequested";
+      if (currentCertificateDocument.certStatus === "transferred") {
+        currentCertificateDocument.changeRequestStatus = "pending";
+      } else {
+        currentCertificateDocument.certStatus = "changeRequested";
+      }
       currentCertificateDocument.canRequestChanges = false;
     }
     setCertificateOptionsChangeRequestStatus(message, "success");
