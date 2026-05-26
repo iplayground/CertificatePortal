@@ -6,7 +6,7 @@
 
 1. `infra/bicep/main.bicep` 定義 Azure 資源應該長成什麼樣子。
 2. Azure CLI 透過 `az deployment group create` 套用 `infra/` 內的 Bicep，實際建立或更新 Azure 資源。
-3. 若要啟用 `/portal` 的 Google Workspace SSO + Google Group 授權，需另依 `docs/portal-authentication.md` 完成 Google OAuth client、Cloud Identity API、Google Group 授權設定與對應 app settings 設定。
+3. 若要啟用 `/portal` 的 Google Workspace SSO + Google Group 授權，需另依 [portal-authentication.md](portal-authentication.md) 完成 Google OAuth client、Cloud Identity API、Google Group 授權設定與對應 app settings 設定。
 4. Azure Portal 目前只保留給 GitHub 來源綁定流程使用。
 5. `.github/workflows/deploy-function-app.yml` 假設上述資源已存在，並以 GitHub Actions OIDC + `Azure/functions-action@v1` 進行 remote build 與程式碼部署，不在每次 push 時重跑整份 Bicep。
 
@@ -20,7 +20,7 @@ Resource Group、Region 與 Function App 名稱由 Bicep 參數或 GitHub Action
 
 `functionAppName` 必須保持 Azure 全域唯一，並會同時影響 Function App 名稱、預設公開網址，以及衍生出的 Storage Account、Application Insights、Log Analytics 與 GitHub 部署身分命名。
 
-若未明確提供 `cosmosAccountName`，Bicep 會依 `functionAppName` 與 Resource Group 產生全域唯一的 Cosmos DB account 名稱。`cosmosDatabaseName` 預設為 `ipg-certificate`。目前已建立活動管理用的 `events` container，完訓證明用的 `completionCerts` 與 `completionCertRequests` containers，志工服務證明用的 `volunteerServiceCerts` container，以及營業稅繳稅證明用的 `taxReceipts` container。資料模型與欄位規則請參考 [cosmos-data-model.md](cosmos-data-model.md)。
+若未明確提供 `cosmosAccountName`，Bicep 會依 `functionAppName` 與 Resource Group 產生全域唯一的 Cosmos DB account 名稱。`cosmosDatabaseName` 預設為 `ipg-certificate`。Cosmos container 與資料模型請參考 [cosmos-data-model.md](cosmos-data-model.md)。
 
 因為 Cosmos DB account 停用 local auth，Azure Portal 的 Data Explorer 也需要 Cosmos native RBAC。Azure RBAC 的 `Owner` 或 `Contributor` 可管理 account，但不會自動取得 Cosmos 資料面讀取權限。
 
@@ -53,37 +53,7 @@ az deployment group create \
 
 之後若有基礎設施變更，請另外以人工執行或獨立的高權限流程套用 Bicep，而不要直接放進日常程式碼部署 workflow。這樣可避免為一般 code deploy 身分開過大的 Azure 權限。
 
-若要啟用管理平台 `/portal` 的 Google Workspace SSO + Google Group 授權，請另外依 `docs/portal-authentication.md` 完成 Google OAuth client、Cloud Identity API、Google Group 授權設定與對應 app settings 設定。Cloud Identity API 請依該文件使用 GCP Console 啟用。
-
-production 的 portal 登入設定目前建議用 Azure CLI 寫入，不在 Azure Portal 手動輸入：
-
-```bash
-az functionapp config appsettings set \
-  --resource-group <resource-group-name> \
-  --name <function-app-name> \
-  --settings \
-    PORTAL_GOOGLE_CLIENT_ID=<google-client-id> \
-    PORTAL_GOOGLE_CLIENT_SECRET=<google-client-secret> \
-    PORTAL_GOOGLE_REDIRECT_URI=https://cert.iplayground.io/portal/auth/google/callback \
-    PORTAL_GOOGLE_ALLOWED_GROUP_KEYS=<allowed-group-name-1>,<allowed-group-name-2>
-```
-
-營業稅繳稅證明公開下載 ticket 必須使用專用 HMAC secret，不得共用 Google OAuth client secret。初次設定或輪替時建議用 CLI 產生隨機值後直接寫入 Function App app settings，避免將 secret 寫入 shell history、文件或 repository：
-
-```bash
-TAX_RECEIPT_DOWNLOAD_TICKET_SECRET="$(openssl rand -hex 32)"
-
-az functionapp config appsettings set \
-  --resource-group <resource-group-name> \
-  --name <function-app-name> \
-  --settings \
-    TAX_RECEIPT_DOWNLOAD_TICKET_SECRET="${TAX_RECEIPT_DOWNLOAD_TICKET_SECRET}" \
-    TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS=600
-
-unset TAX_RECEIPT_DOWNLOAD_TICKET_SECRET
-```
-
-`TAX_RECEIPT_DOWNLOAD_TICKET_MAX_AGE_SECONDS` 預設為 `600`。若營運上需要延長公開下載 ticket 有效時間，可調整此 app setting；不建議設定過長，避免公開查詢後取得的短效下載資格被長時間重用。
+若要啟用管理平台 `/portal` 的 Google Workspace SSO + Google Group 授權，或設定營業稅繳稅證明公開下載 ticket，請依 [portal-authentication.md](portal-authentication.md) 寫入 production app settings。Cloud Identity API 請依該文件使用 GCP Console 啟用。
 
 ## Azure Portal 與 GitHub 連線流程
 
@@ -102,24 +72,25 @@ unset TAX_RECEIPT_DOWNLOAD_TICKET_SECRET
 
 若 Azure Portal 後續未正確辨識既有 workflow，而改為要求使用其他檔名，應先確認影響範圍後再調整 repo 內的 workflow 檔案。
 
-## 這次 Bicep 會建立的資源
+## Bicep 建立的資源
 
 - 1 個 Flex Consumption Function App
 - 1 個 Flex Consumption plan (`FC1`)
 - 1 個 Storage Account
-- 4 個 Blob containers
-- `function-releases`
-- `document-assets`
-- `issued-certs`
+- 4 個 Blob containers：
+  - `function-releases`
+  - `document-assets`
+  - `issued-certs`
+  - `tax-receipts`
 - 1 個 Azure Cosmos DB for NoSQL serverless account，使用 Session consistency，並停用 local auth
 - 1 個 Cosmos DB SQL database，預設名稱 `ipg-certificate`
-- 6 個 Cosmos DB SQL containers
-- `events`，partition key 為 `/id`
-- `completionCerts`，partition key 為 `/eventId`
-- `completionCertRequests`，partition key 為 `/eventId`
-- `volunteerServiceCerts`，partition key 為 `/eventId`
-- `taxReceipts`，partition key 為 `/eventId`
-- `publicLookupAttempts`，partition key 為 `/id`
+- 6 個 Cosmos DB SQL containers：
+  - `events`，partition key 為 `/id`
+  - `completionCerts`，partition key 為 `/eventId`
+  - `completionCertRequests`，partition key 為 `/eventId`
+  - `volunteerServiceCerts`，partition key 為 `/eventId`
+  - `taxReceipts`，partition key 為 `/eventId`
+  - `publicLookupAttempts`，partition key 為 `/id`
 - 1 個 Log Analytics Workspace
 - 1 個 Application Insights
 - 1 個 GitHub Actions 專用 user-assigned managed identity

@@ -22,9 +22,9 @@ Google OAuth client 必須維持 `Internal` 設定，作為排除非組織帳號
 
 若 Google OAuth callback 發生 `access_denied`、群組未授權，或其他登入失敗，應用程式會以一次性 flash cookie 將錯誤狀態帶回 `/portal`，再由登入頁顯示 alert；錯誤訊號不透過 URL query 傳遞。
 
-## 這次實際採用的設定流程
+## 設定流程
 
-目前專案採用下列組合：
+管理平台登入與授權採用下列組合：
 
 - Google OAuth client
 - 1 個或多個允許登入管理平台的 Google Group
